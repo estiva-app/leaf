@@ -1,0 +1,70 @@
+name: deploy
+
+# Every pull request and every push to main runs the checks. There is no deploy
+# job yet: a new app has nowhere to go until it has a home. When it does, the job
+# goes here, and it needs `check` and `gate` first.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: deploy-leaf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck the app
+        run: npx tsc -b tsconfig.app.json
+      - name: Typecheck the settings files
+        run: npx tsc -b tsconfig.node.json
+      - name: Lint — everything, the token contract included
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      # A class only a package part uses reaches the stylesheet only if
+      # tailwind.config.js spreads estivaContent. When it does not, the build still
+      # succeeds and parts render at the wrong size, so this is where it is caught.
+      - name: The package's classes survive Tailwind's purge
+        run: |
+          if ! grep -qr "max-h-72" dist/assets/*.css; then
+            echo "::error::a class used only by @estiva-app/ui is missing from the built CSS — check estivaContent is spread into tailwind.config.js"
+            exit 1
+          fi
+
+  # The UI Guardrails, the one check a merge requires: the package's gate rules
+  # (each refusal names what to use instead), the token contract, and the
+  # catalogue. `npm run lint:rules` also writes .gates-count.json and fails on
+  # an eslint-disable that switches a rule off.
+  #
+  # A job of its own, because GitHub can require only a whole job, by its name:
+  # the rule on main requires `gate`. Renaming it leaves every pull request
+  # waiting for a check that never reports.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Every step of the gate, the same command Peek and Ship run: the gate
+      # lint and `.gates-count.json` (committed, or this fails), the token
+      # contract, the catalogue (every part says in one line what it is for),
+      # and the wall's own settings: the editor hook in .claude/settings.json
+      # refuses a raw button, and every folder the gate skips is named in
+      # docs/GATES-DEBT.md.
+      - name: The gate (estiva-gates ci)
+        run: npx estiva-gates ci
