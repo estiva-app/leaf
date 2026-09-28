@@ -2,7 +2,7 @@ import type { Preview } from '@storybook/react-vite'
 import '../src/index.css'
 
 // The app's one theme, selected the way the app selects it: on <html>.
-document.documentElement.dataset.theme = "light"
+document.documentElement.dataset.theme = "leaf"
 
 const preview: Preview = {
   // Every story file gets a Docs page, as in Peek and Ship: the catalogue links each
