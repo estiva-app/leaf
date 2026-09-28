@@ -6,7 +6,7 @@ import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
 
-/** The frame: the package's AppShell with a sidebar, and the one page. */
+/** The frame: the package's AppShell in its inset manner, with a sidebar, and the one page. */
 export function App() {
   const signedIn = currentToken() !== null
   const [me, setMe] = useState<Identity>({})
@@ -25,6 +25,7 @@ export function App() {
 
   return (
     <AppShell
+      variant="inset"
       logo={APP_TITLE}
       identity={<IdentityMenu me={me} signedIn={signedIn} idBase={ID_CONFIG?.base} onSignOut={signedIn ? beginSignOut : undefined} />}
       nav={
