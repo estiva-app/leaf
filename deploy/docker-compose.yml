@@ -1,0 +1,19 @@
+# Leaf on the box. Lives at /opt/estiva-leaf/docker-compose.yml.
+#
+# Bound to loopback, like everything else there: `cloudflared` reaches it
+# locally, and binding wider would expose it past the Hetzner firewall. 8084
+# because Ship has 8081, Peek 8082 and the docs 8083.
+
+name: estiva-leaf
+
+services:
+  estiva-leaf:
+    image: ${ESTIVA_LEAF_IMAGE:-ghcr.io/estiva-app/leaf:main}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8084:80'
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
