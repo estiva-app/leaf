@@ -1,13 +1,18 @@
 name: deploy
 
-# Every pull request and every push to main runs the checks. There is no deploy
-# job yet: a new app has nowhere to go until it has a home. When it does, the job
-# goes here, and it needs `check` and `gate` first.
+# Every pull request and every push to main runs the checks. A push to main then
+# publishes an image to GHCR, and the box pulls it within two minutes
+# (deploy/README.md). This workflow never connects to the box, and must never be
+# given a key that would let it.
 
 on:
   push:
     branches: [main]
   pull_request:
+  # GitHub can drop a push event, and main refuses direct pushes, so nothing
+  # else could re-trigger one. `gh workflow run deploy.yml -R estiva-app/leaf
+  # --ref main` publishes main as it stands; from any other ref it only checks.
+  workflow_dispatch:
 
 concurrency:
   group: deploy-leaf-${{ github.ref }}
@@ -68,3 +73,55 @@ jobs:
       # docs/GATES-DEBT.md.
       - name: The gate (estiva-gates ci)
         run: npx estiva-gates ci
+
+  # The box pulls `:main` from a systemd timer with nobody watching, so a publish
+  # is a deploy: every check that can stop a broken bundle stops this.
+  publish:
+    needs: [check, gate]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # The image is an envelope for dist/, as Ship's and Peek's are. The relay
+      # URL is the workspace, so it is baked into the bundle rather than read at
+      # runtime; changing where it points is a rebuild, by design. The client id
+      # must match a `client_id` seeded in Estiva ID, or sign-in answers
+      # "Unknown or disabled app".
+      - name: Build
+        run: npm run build
+        env:
+          VITE_ESTIVA_ID_ORIGIN: https://id.estiva.app
+          VITE_ESTIVA_ID_CLIENT_ID: estiva-leaf
+          VITE_RELAY_URL: https://estiva.estiva.app
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # `main` is what the box tracks; the sha tag is what makes a rollback
+          # possible without rebuilding.
+          tags: |
+            ghcr.io/${{ github.repository }}:main
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -49,6 +49,14 @@ as its own app, with:
 Anything left out fails at the very last step: every screen looks right, and
 nothing arrives.
 
+On the real Estiva ID Leaf is `estiva-leaf` (`src/db/seed.ts` in estiva-id).
+
+## Deploy
+
+A merge to `main` deploys to https://leaf.estiva.app within about three
+minutes: CI publishes an image and the box pulls it. How, and what lives
+outside this repo: [deploy/README.md](deploy/README.md).
+
 ## The checks
 
 | command | what |

@@ -1,0 +1,14 @@
+# The image carries only the prebuilt dist/ and the nginx config. Everything
+# else would be dead weight in the build context, and dist/ is the one thing
+# that must not be ignored.
+node_modules
+.git
+.github
+.claude
+.storybook
+storybook-static
+src
+scripts
+docs
+index.html
+*.local
