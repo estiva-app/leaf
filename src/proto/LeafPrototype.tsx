@@ -17,7 +17,7 @@ import {
   type NavTreeGroup,
   type NavTreeNode,
 } from '@estiva-app/ui'
-import { DocumentPage } from './DocumentPage'
+import { DocumentPage, type CommentsIn } from './DocumentPage'
 import { DOCS, FOLDERS, PEOPLE, RECENT, THREADS, type Doc, type TreeDoc, type TreeFolder } from './fixtures'
 
 const nodeOf = (d: TreeDoc): NavTreeNode => ({
@@ -74,7 +74,8 @@ function HomePage({ empty, loading, onOpen, onNew }: { empty?: boolean; loading?
   }
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
-      <Panel className="min-w-0 flex-1" title="Home" bodyClassName="px-12 pt-10 pb-24">
+      <div className="flex min-w-0 flex-1 flex-col">
+      <Panel title="Home" bodyClassName="px-12 pt-10 pb-24">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
           <SectionHeader title="Recent" hover="none" />
           {loading ? (
@@ -100,6 +101,7 @@ function HomePage({ empty, loading, onOpen, onNew }: { empty?: boolean; loading?
           )}
         </div>
       </Panel>
+      </div>
     </div>
   )
 }
@@ -108,8 +110,8 @@ function HomePage({ empty, loading, onOpen, onNew }: { empty?: boolean; loading?
 function ElsewherePage({ doc }: { doc: TreeDoc }) {
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
+      <div className="flex min-w-0 flex-1 flex-col">
       <Panel
-        className="min-w-0 flex-1"
         title={
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate text-body-2-strong text-text-primary">{doc.label}</p>
@@ -120,6 +122,7 @@ function ElsewherePage({ doc }: { doc: TreeDoc }) {
       >
         <EmptyState scope="page" icon={<KindIcon kind={doc.kind} />} message={`${doc.label} lives in ${doc.app}.`} action={{ label: `Open in ${doc.app}`, onClick: () => {} }} />
       </Panel>
+      </div>
     </div>
   )
 }
@@ -129,8 +132,12 @@ export interface LeafPrototypeProps {
   start?: string
   /** The comments column shown on the first document. Absent: shown when it has threads. */
   sidePanel?: boolean
-  /** A block being commented on when the page opens. */
-  draft?: { id: string; quote: string }
+  /** Words being commented on when the page opens: their block and the words. */
+  draft?: { block: string; quote: string }
+  /** A thread open when the page opens. */
+  active?: string
+  /** Where a comment on words is read: the column (A) or a bubble on the words (B). */
+  commentsIn?: CommentsIn
   /** Reads still on their way. */
   loading?: boolean
   /** A workspace with nothing in it yet. */
@@ -141,7 +148,7 @@ export interface LeafPrototypeProps {
  * Leaf, drawn whole from estiva-ui parts: the inset frame Leaf already has,
  * the Folders tree, Home, and a document with its comments.
  */
-export function LeafPrototype({ start = 'home', sidePanel, draft, loading, empty }: LeafPrototypeProps) {
+export function LeafPrototype({ start = 'home', sidePanel, draft, active, commentsIn = 'column', loading, empty }: LeafPrototypeProps) {
   const [page, setPage] = useState(start)
   const [titles, setTitles] = useState<Record<string, string>>({})
   // Peek's rule (Katerina, 7 October): shown when there is something to show, hidden when nothing; a close is remembered per file.
@@ -154,7 +161,8 @@ export function LeafPrototype({ start = 'home', sidePanel, draft, loading, empty
   const tree = empty || loading ? undefined : findDoc(FOLDERS, page)
   const doc = page === 'home' ? null : docFor(page, tree?.label ?? '')
   const threads = THREADS.filter((t) => t.doc === page)
-  const shown = doc ? !(hidden[page] ?? threads.length === 0) : false
+  // In bubbles (B) the column starts hidden: the words are where comments are read.
+  const shown = doc ? !(hidden[page] ?? (commentsIn === 'bubble' || threads.length === 0)) : false
 
   return (
     <AppProvider navigate={navigate}>
@@ -191,7 +199,9 @@ export function LeafPrototype({ start = 'home', sidePanel, draft, loading, empty
             sidePanel={shown}
             onToggleSidePanel={() => setHidden((h) => ({ ...h, [page]: shown }))}
             onRename={(title) => setTitles((t) => ({ ...t, [page]: title }))}
+            commentsIn={commentsIn}
             initialDraft={page === start ? draft : null}
+            initialActive={page === start ? active : null}
             loading={loading}
           />
         )}

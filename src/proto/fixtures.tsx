@@ -119,11 +119,14 @@ export interface Comment {
   text: string
 }
 
-/** A thread on one block, or on the whole document when `block` is absent. */
+/**
+ * A thread. `anchor` is SPEC §13.6's block id, plus the words the comment is
+ * about (a quote, found again in the block); absent = the whole document.
+ */
 export interface Thread {
   id: string
   doc: string
-  block?: { id: string; quote: string }
+  anchor?: { block: string; quote: string }
   comments: Comment[]
   resolved?: boolean
 }
@@ -132,11 +135,26 @@ export const THREADS: Thread[] = [
   {
     id: 't1',
     doc: 'launch-plan',
-    block: { id: 'lp-4', quote: 'We start with the teams who asked first, and grow from what they tell us.' },
+    anchor: { block: 'lp-4', quote: 'the teams who asked first' },
     comments: [
       { id: 'c1', by: 'ana', when: '2h', text: 'Should we name the teams here, or keep it general?' },
       { id: 'c2', by: 'ravi', when: '1h', text: 'General. I am putting the names in Checklist instead.' },
     ],
+  },
+  {
+    id: 't4',
+    doc: 'launch-plan',
+    anchor: { block: 'lp-6', quote: 'owns the press notes' },
+    comments: [
+      { id: 'c5', by: 'mia', when: '40m', text: 'Still true after the reshuffle?' },
+      { id: 'c6', by: 'ravi', when: '20m', text: 'Yes, still mine.' },
+    ],
+  },
+  {
+    id: 't5',
+    doc: 'launch-plan',
+    anchor: { block: 'lp-2', quote: 'Aims' },
+    comments: [{ id: 'c7', by: 'ana', when: '3 days ago', text: 'Rename this to Goals?' }],
   },
   {
     id: 't2',
@@ -146,7 +164,7 @@ export const THREADS: Thread[] = [
   {
     id: 't3',
     doc: 'launch-plan',
-    block: { id: 'lp-1', quote: 'This page is where the launch lives' },
+    anchor: { block: 'lp-1', quote: 'where the launch lives' },
     comments: [{ id: 'c4', by: 'ravi', when: '3 days ago', text: 'Typo in the second line.' }],
     resolved: true,
   },
