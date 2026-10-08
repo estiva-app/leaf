@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import {
@@ -21,7 +21,6 @@ import {
   Divider,
   EditableText,
   EmptyState,
-  Form,
   IconButton,
   KindIcon,
   MembersPill,
@@ -33,7 +32,6 @@ import {
   Popover,
   SkeletonBar,
   SkeletonList,
-  Textarea,
   Toolbar,
   ToolbarButton,
   richTextClassName,
@@ -42,7 +40,10 @@ import {
 import {
   BlockId,
   CaptionedReference,
+  COMPOSE_EDITOR_CLASSES,
   CommentHighlights,
+  ComposeBox,
+  ComposeKeys,
   EditorBlockHandle,
   KeptSelection,
   PersonMention,
@@ -232,51 +233,36 @@ function CommentBody({ by, when, text }: { by: PersonId; when: string; text: str
   )
 }
 
-/** The box a comment or a reply is written in: one field, and its buttons. */
-function Composer({
-  placeholder,
-  send,
-  onSend,
-  onCancel,
-  autoFocus,
-}: {
-  placeholder: string
-  send: string
-  onSend: (text: string) => void
-  onCancel?: () => void
-  autoFocus?: boolean
-}) {
-  const [text, setText] = useState('')
-  const field = useRef<HTMLTextAreaElement>(null)
+/** The extensions every comment box has: the document's `@` and `[`, the selection strip's link, and Enter to send. */
+const commentExtensions = () => [
+  StarterKit.configure({ link: { openOnClick: false } }),
+  KeptSelection,
+  ComposeKeys,
+  PersonMention.configure({ people: () => MENTION_PEOPLE }),
+  CaptionedReference.configure({ icon: <KindIcon kind="file" size={14} tone="inherit" />, iconFor: chipIcon }),
+  ReferenceTrigger.configure({
+    items: () => THINGS,
+    ariaLabel: 'Point at a file',
+    sectionLabel: 'Files in your apps',
+    icon: <KindIcon kind="file" />,
+    iconFor: rowIcon,
+    nodeName: 'captionedReference',
+  }),
+]
+
+/** The box a comment or a reply is written in: the package's ComposeBox, Peek's box. */
+function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onSend: (text: string) => void; autoFocus?: boolean }) {
+  const editor = useEditor({
+    extensions: commentExtensions(),
+    editorProps: { attributes: { class: COMPOSE_EDITOR_CLASSES, 'aria-label': placeholder } },
+  })
   // A frame late: the selection strip gives the focus back to the text as it closes, after this box mounts.
   useEffect(() => {
-    if (!autoFocus) return
-    const frame = requestAnimationFrame(() => field.current?.focus({ preventScroll: true }))
+    if (!autoFocus || !editor) return
+    const frame = requestAnimationFrame(() => editor.commands.focus())
     return () => cancelAnimationFrame(frame)
-  }, [autoFocus])
-  return (
-    <Form
-      layout="free"
-      className="flex flex-col gap-2"
-      onSubmit={() => {
-        if (!text.trim()) return
-        onSend(text.trim())
-        setText('')
-      }}
-    >
-      <Textarea ref={field} rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={placeholder} />
-      <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button size="small" variant="muted" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
-        <Button size="small" variant="primary" type="submit" disabledReason={text.trim() ? undefined : 'Write something first'}>
-          {send}
-        </Button>
-      </div>
-    </Form>
-  )
+  }, [autoFocus, editor])
+  return <ComposeBox editor={editor} placeholder={<span>{placeholder}</span>} selection={{ link: true }} onSend={(ed) => onSend(ed.getText().trim())} />
 }
 
 /** What a thread is about, said in one line over its comments. */
@@ -317,7 +303,7 @@ function ThreadCard({
       {active && onReply && (
         // A press inside the box must not reach the card's own click.
         <div onClickCapture={(e) => e.stopPropagation()}>
-          <Composer placeholder="Reply…" send="Reply" onSend={onReply} />
+          <Composer placeholder="Reply…" onSend={onReply} />
         </div>
       )}
       {onResolve && (
@@ -497,13 +483,13 @@ export function DocumentPage({
           contentClassName="flex flex-col gap-3 p-3"
         >
           {draft ? (
-            <Composer placeholder="Comment on these words…" send="Comment" onSend={(text) => send(text)} onCancel={() => setDraft(null)} autoFocus />
+            <Composer placeholder="Comment on these words…" onSend={(text) => send(text)} autoFocus />
           ) : activeThread ? (
             <>
               {activeThread.comments.map((c) => (
                 <CommentBody key={c.id} by={c.by} when={c.when} text={c.text} />
               ))}
-              <Composer placeholder="Reply…" send="Reply" onSend={(text) => reply(activeThread.id, text)} />
+              <Composer placeholder="Reply…" onSend={(text) => reply(activeThread.id, text)} />
               <Divider />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-caption text-text-muted">{`${activeThread.comments.length} ${activeThread.comments.length === 1 ? 'comment' : 'comments'}`}</span>
@@ -542,7 +528,6 @@ export function DocumentPage({
                   <Composer
                     key={!bubbles && draft ? `${draft.block}:${draft.quote}` : 'document'}
                     placeholder={!bubbles && draft ? 'Comment on these words…' : 'Comment on this document…'}
-                    send="Comment"
                     // In bubbles, this box is for the whole document only.
                     onSend={(text) => send(text, bubbles ? null : draft)}
                     autoFocus={!bubbles && !!draft}
