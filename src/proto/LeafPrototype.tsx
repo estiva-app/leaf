@@ -116,9 +116,9 @@ function ElsewherePage({ doc }: { doc: TreeDoc }) {
             <Chip type="neutral" label={doc.app ?? ''} className="shrink-0" />
           </div>
         }
-        bodyClassName="flex flex-col pt-10"
+        bodyClassName="flex flex-1 flex-col"
       >
-        <EmptyState scope="section" icon={<KindIcon kind={doc.kind} />} message={`${doc.label} lives in ${doc.app}.`} action={{ label: `Open in ${doc.app}`, onClick: () => {} }} />
+        <EmptyState scope="page" icon={<KindIcon kind={doc.kind} />} message={`${doc.label} lives in ${doc.app}.`} action={{ label: `Open in ${doc.app}`, onClick: () => {} }} />
       </Panel>
     </div>
   )
