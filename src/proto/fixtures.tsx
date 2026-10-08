@@ -1,11 +1,12 @@
-import type { JSONContent } from '@tiptap/react'
-import type { CaptionedItem, MentionPerson } from '@estiva-app/ui/editor'
+import { publishableFromEditor, type ContentFormat, type EditorDocument } from '@estiva-app/protocol'
+import type { CaptionedItem } from '@estiva-app/ui/editor'
 import type { ThingKind } from '@estiva-app/ui'
 
 /**
  * Invented data for the Leaf prototype: no real people, no real files. What a
- * relay would send is not decided yet (it is Jan's), so these are shaped for
- * the screens only.
+ * relay would send is not decided yet (it is Jan's). Documents and comments are
+ * kept the way the protocol stores them — a value and its format — and opened
+ * and drawn through `@estiva-app/protocol`, as the real app will.
  */
 
 export const PEOPLE = {
@@ -17,11 +18,9 @@ export const PEOPLE = {
 
 export type PersonId = keyof typeof PEOPLE
 
-export const MENTION_PEOPLE: MentionPerson[] = (Object.keys(PEOPLE) as PersonId[]).map((id) => ({
-  id,
-  name: PEOPLE[id].name,
-  pubkey: null,
-}))
+/** A person, as a reference names them: `nostr:npub…` (invented, not a real key). */
+export const personUri = (id: PersonId) => `nostr:npub-${id}`
+export const personOf = (uri: string): PersonId | undefined => (Object.keys(PEOPLE) as PersonId[]).find((id) => personUri(id) === uri)
 
 /** One thing another app owns, as `[` lists it and a chip names it. */
 export interface Thing extends CaptionedItem {
@@ -36,7 +35,20 @@ export const THINGS: Thing[] = [
   { id: 'checklist', label: 'Checklist', snippet: 'Everything a new team needs on day one.', uri: 'nostr:leaf-doc-checklist', kind: 'file', app: 'Leaf', description: 'Leaf · document' },
 ]
 
-export const kindOf = (uri: string | null): ThingKind | undefined => THINGS.find((t) => t.uri === uri)?.kind
+export const thingOf = (uri: string | null) => THINGS.find((t) => t.uri === uri)
+export const kindOf = (uri: string | null): ThingKind | undefined => thingOf(uri)?.kind
+
+/** A body as the protocol stores it: the value, and the format its tag says. */
+export interface Stored {
+  value: string
+  format: ContentFormat
+}
+
+/** What a save writes, from an editor's document. */
+export const storedFrom = (doc: EditorDocument): Stored => {
+  const { value, contentFormat } = publishableFromEditor(doc)
+  return { value, format: contentFormat ? 'blocks' : 'marker' }
+}
 
 /** A Leaf document, as the prototype keeps it. */
 export interface Doc {
@@ -45,18 +57,18 @@ export interface Doc {
   folder: string
   editedBy: PersonId
   edited: string
-  content: JSONContent
+  /** When, in full: the tooltip behind `edited`. */
+  editedAt: string
+  body: Stored
 }
 
 const text = (t: string) => ({ type: 'text', text: t })
-const ref = (id: string) => {
-  const t = THINGS.find((x) => x.id === id)!
-  return { type: 'captionedReference', attrs: { id: t.id, label: t.label, snippet: t.snippet, uri: t.uri } }
-}
-const mention = (id: PersonId) => ({ type: 'mention', attrs: { id, label: PEOPLE[id].name } })
+const ref = (uri: string) => ({ type: 'reference', attrs: { uri } })
+const thing = (id: string) => ref(THINGS.find((x) => x.id === id)!.uri)
 const p = (blockId: string, ...content: object[]) => ({ type: 'paragraph', attrs: { blockId }, content })
 const h = (blockId: string, level: 1 | 2, t: string) => ({ type: 'heading', attrs: { level, blockId }, content: [text(t)] })
 const li = (blockId: string, t: string) => ({ type: 'listItem', attrs: { blockId }, content: [{ type: 'paragraph', content: [text(t)] }] })
+const doc = (...content: object[]) => storedFrom({ type: 'doc', content } as EditorDocument)
 
 export const DOCS: Doc[] = [
   {
@@ -65,27 +77,17 @@ export const DOCS: Doc[] = [
     folder: 'Launch',
     editedBy: 'ana',
     edited: '2 minutes ago',
-    content: {
-      type: 'doc',
-      content: [
-        p('lp-1', text('This page is where the launch lives: what we promise, who we start with, and how far along the work is. The work itself is '), ref('onboarding'), text(' in Ship.')),
-        h('lp-2', 1, 'Goals'),
-        {
-          type: 'bulletList',
-          attrs: { blockId: 'lp-3' },
-          content: [
-            li('lp-3a', 'Every new team is set up in one sitting.'),
-            li('lp-3b', 'No one has to ask where a document lives.'),
-            li('lp-3c', 'The first week feels calm, not busy.'),
-          ],
-        },
-        p('lp-4', text('We start with the teams who asked first, and grow from what they tell us.')),
-        h('lp-5', 1, 'Who does what'),
-        p('lp-6', text('Pricing questions go to '), ref('pricing'), text(' in Peek, and '), mention('ravi'), text(' owns the press notes. The day-one list is in '), ref('checklist'), text('.')),
-        h('lp-7', 2, 'Open questions'),
-        p('lp-8', text('Do we invite by link from the start, or only by name? See '), ref('invite'), text('.')),
-      ],
-    },
+    editedAt: '9 Oct 2026, 09:58',
+    body: doc(
+      p('lp-1', text('This page is where the launch lives: what we promise, who we start with, and how far along the work is. The work itself is '), thing('onboarding'), text(' in Ship.')),
+      h('lp-2', 1, 'Goals'),
+      { type: 'bulletList', attrs: { blockId: 'lp-3' }, content: [li('lp-3a', 'Every new team is set up in one sitting.'), li('lp-3b', 'No one has to ask where a document lives.'), li('lp-3c', 'The first week feels calm, not busy.')] },
+      p('lp-4', text('We start with the teams who asked first, and grow from what they tell us.')),
+      h('lp-5', 1, 'Who does what'),
+      p('lp-6', text('Pricing questions go to '), thing('pricing'), text(' in Peek, and '), ref(personUri('ravi')), text(' owns the press notes. The day-one list is in '), thing('checklist'), text('.')),
+      h('lp-7', 2, 'Open questions'),
+      p('lp-8', text('Do we invite by link from the start, or only by name? See '), thing('invite'), text('.')),
+    ),
   },
   {
     id: 'checklist',
@@ -93,22 +95,13 @@ export const DOCS: Doc[] = [
     folder: 'Launch',
     editedBy: 'ravi',
     edited: 'yesterday',
-    content: {
-      type: 'doc',
-      content: [
-        p('cl-1', text('What a new team needs on its first day.')),
-        { type: 'orderedList', attrs: { blockId: 'cl-2' }, content: [li('cl-2a', 'A Folder with their name.'), li('cl-2b', 'One welcome topic in Peek.'), li('cl-2c', 'This list, copied.')] },
-      ],
-    },
+    editedAt: '8 Oct 2026, 16:20',
+    body: doc(
+      p('cl-1', text('What a new team needs on its first day.')),
+      { type: 'orderedList', attrs: { blockId: 'cl-2' }, content: [li('cl-2a', 'A Folder with their name.'), li('cl-2b', 'One welcome topic in Peek.'), li('cl-2c', 'This list, copied.')] },
+    ),
   },
-  {
-    id: 'blank',
-    title: '',
-    folder: 'Launch',
-    editedBy: 'me',
-    edited: 'just now',
-    content: { type: 'doc', content: [{ type: 'paragraph', attrs: { blockId: 'bl-1' } }] },
-  },
+  { id: 'blank', title: '', folder: 'Launch', editedBy: 'me', edited: 'just now', editedAt: '9 Oct 2026, 10:00', body: { value: '', format: 'marker' } },
 ]
 
 /** One comment in a thread. */
@@ -116,8 +109,12 @@ export interface Comment {
   id: string
   by: PersonId
   when: string
-  text: string
+  /** When, in full: the tooltip behind `when`. */
+  at: string
+  body: Stored
 }
+
+const said = (t: string): Stored => ({ value: t, format: 'marker' })
 
 /**
  * A thread. `anchor` is SPEC §13.6's block id, plus the words the comment is
@@ -137,8 +134,8 @@ export const THREADS: Thread[] = [
     doc: 'launch-plan',
     anchor: { block: 'lp-4', quote: 'the teams who asked first' },
     comments: [
-      { id: 'c1', by: 'ana', when: '2h', text: 'Should we name the teams here, or keep it general?' },
-      { id: 'c2', by: 'ravi', when: '1h', text: 'General. I am putting the names in Checklist instead.' },
+      { id: 'c1', by: 'ana', when: '2h', at: '9 Oct 2026, 08:00', body: said('Should we name the teams here, or keep it general?') },
+      { id: 'c2', by: 'ravi', when: '1h', at: '9 Oct 2026, 09:00', body: said('General. I am putting the names in Checklist instead.') },
     ],
   },
   {
@@ -146,26 +143,26 @@ export const THREADS: Thread[] = [
     doc: 'launch-plan',
     anchor: { block: 'lp-6', quote: 'owns the press notes' },
     comments: [
-      { id: 'c5', by: 'mia', when: '40m', text: 'Still true after the reshuffle?' },
-      { id: 'c6', by: 'ravi', when: '20m', text: 'Yes, still mine.' },
+      { id: 'c5', by: 'mia', when: '40m', at: '9 Oct 2026, 09:20', body: said('Still true after the reshuffle?') },
+      { id: 'c6', by: 'ravi', when: '20m', at: '9 Oct 2026, 09:40', body: said('Yes, still mine.') },
     ],
   },
   {
     id: 't5',
     doc: 'launch-plan',
     anchor: { block: 'lp-2', quote: 'Aims' },
-    comments: [{ id: 'c7', by: 'ana', when: '3 days ago', text: 'Rename this to Goals?' }],
+    comments: [{ id: 'c7', by: 'ana', when: '3 days ago', at: '6 Oct 2026, 11:15', body: said('Rename this to Goals?') }],
   },
   {
     id: 't2',
     doc: 'launch-plan',
-    comments: [{ id: 'c3', by: 'mia', when: 'Yesterday', text: 'Draft reads well. I will add the pricing part tomorrow.' }],
+    comments: [{ id: 'c3', by: 'mia', when: 'Yesterday', at: '8 Oct 2026, 17:05', body: said('Draft reads well. I will add the pricing part tomorrow.') }],
   },
   {
     id: 't3',
     doc: 'launch-plan',
     anchor: { block: 'lp-1', quote: 'where the launch lives' },
-    comments: [{ id: 'c4', by: 'ravi', when: '3 days ago', text: 'Typo in the second line.' }],
+    comments: [{ id: 'c4', by: 'ravi', when: '3 days ago', at: '6 Oct 2026, 10:02', body: said('Typo in the second line.') }],
     resolved: true,
   },
 ]
@@ -217,9 +214,9 @@ export const FOLDERS: TreeFolder[] = [
 ]
 
 /** The Home page's recent documents, newest first. */
-export const RECENT: { id: string; title: string; folder: string; by: PersonId; when: string }[] = [
-  { id: 'launch-plan', title: 'Launch plan', folder: 'Launch', by: 'ana', when: '2 minutes ago' },
-  { id: 'checklist', title: 'Checklist', folder: 'Launch', by: 'ravi', when: 'Yesterday' },
-  { id: 'type-scale', title: 'Type scale notes', folder: 'Design', by: 'mia', when: '3 days ago' },
-  { id: 'interviews', title: 'Interview guide', folder: 'Design', by: 'me', when: 'Last week' },
+export const RECENT: { id: string; title: string; folder: string; by: PersonId; when: string; at: string }[] = [
+  { id: 'launch-plan', title: 'Launch plan', folder: 'Launch', by: 'ana', when: '2 minutes ago', at: '9 Oct 2026, 09:58' },
+  { id: 'checklist', title: 'Checklist', folder: 'Launch', by: 'ravi', when: 'Yesterday', at: '8 Oct 2026, 16:20' },
+  { id: 'type-scale', title: 'Type scale notes', folder: 'Design', by: 'mia', when: '3 days ago', at: '6 Oct 2026, 14:40' },
+  { id: 'interviews', title: 'Interview guide', folder: 'Design', by: 'me', when: 'Last week', at: '1 Oct 2026, 12:10' },
 ]

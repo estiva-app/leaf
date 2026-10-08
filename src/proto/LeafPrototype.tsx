@@ -14,6 +14,9 @@ import {
   SectionHeader,
   Sidebar,
   SkeletonList,
+  ToastProvider,
+  TooltipProvider,
+  WithTooltip,
   type NavTreeGroup,
   type NavTreeNode,
 } from '@estiva-app/ui'
@@ -60,71 +63,48 @@ const docFor = (id: string, label: string): Doc =>
     folder: FOLDERS.find((f) => findDoc([f], id))?.title ?? '',
     editedBy: 'mia',
     edited: 'last week',
-    content: { type: 'doc', content: [{ type: 'paragraph', attrs: { blockId: `${id}-1` } }] },
+    editedAt: '1 Oct 2026, 12:10',
+    body: { value: '', format: 'marker' },
   }
 
-/** Home: the documents you touched last, newest first. */
-function HomePage({ empty, loading, onOpen, onNew }: { empty?: boolean; loading?: boolean; onOpen: (id: string) => void; onNew: () => void }) {
-  if (empty) {
-    return (
-      <div className="flex min-h-0 flex-1">
-        <EmptyState scope="page" icon={<IconFilePlus size={24} stroke={1.5} />} message="No documents yet." action={{ label: 'New document', onClick: onNew }} />
-      </div>
-    )
-  }
+/** Home: the documents you touched last, newest first. Each row is a link; AppProvider changes page. */
+function HomePage({ empty, loading, onNew }: { empty?: boolean; loading?: boolean; onNew: () => void }) {
+  // The whole page empty: the EmptyState straight into the frame's main, as Leaf's HomePage has it.
+  if (empty) return <EmptyState scope="page" icon={<IconFilePlus size={16} stroke={1.5} />} message="No documents yet." action={{ label: 'New document', onClick: onNew }} />
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-      <Panel title="Home" bodyClassName="px-12 pt-10 pb-24">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
-          <SectionHeader title="Recent" hover="none" />
-          {loading ? (
-            <SkeletonList rows={4} />
-          ) : (
-            RECENT.map((r) => (
-              <Card
-                key={r.id}
-                href={`/d/${r.id}`}
-                hover="fill"
-                quietUntilHover
-                onClick={(e) => {
-                  e.preventDefault()
-                  onOpen(r.id)
-                }}
-                className="flex items-center gap-3 px-3 py-2"
-              >
-                <KindIcon kind="file" />
-                <span className="min-w-0 flex-1 truncate text-body-2-strong text-text-primary">{r.title}</span>
-                <span className="shrink-0 text-caption text-text-muted">{`${r.folder} · ${PEOPLE[r.by].name}, ${r.when}`}</span>
-              </Card>
-            ))
-          )}
-        </div>
-      </Panel>
+        <Panel title="Home" bodyClassName="px-12 pt-10 pb-24">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
+            <SectionHeader title="Recent" hover="none" />
+            {loading ? (
+              <SkeletonList rows={4} />
+            ) : (
+              RECENT.map((r) => (
+                <Card key={r.id} href={`/d/${r.id}`} hover="fill" quietUntilHover className="flex items-center gap-3 px-3 py-2">
+                  <KindIcon kind="file" />
+                  <WithTooltip label={r.title} wrapperClassName="min-w-0 flex-1">
+                    <span className="block truncate text-body-2-strong text-text-primary">{r.title}</span>
+                  </WithTooltip>
+                  <span className="shrink-0 text-caption text-text-muted">
+                    {`${r.folder} · ${PEOPLE[r.by].name}, `}
+                    <WithTooltip inline label={r.at}>
+                      <span>{r.when}</span>
+                    </WithTooltip>
+                  </span>
+                </Card>
+              ))
+            )}
+          </div>
+        </Panel>
       </div>
     </div>
   )
 }
 
-/** Another app's file, picked in Leaf's tree: Leaf says whose it is and leads there. */
+/** Another app's file, picked in Leaf's tree: Leaf says whose it is. A page EmptyState straight into main, as Peek's Folders page has one. */
 function ElsewherePage({ doc }: { doc: TreeDoc }) {
-  return (
-    <div className="flex min-h-0 flex-1 [contain:size]">
-      <div className="flex min-w-0 flex-1 flex-col">
-      <Panel
-        title={
-          <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-body-2-strong text-text-primary">{doc.label}</p>
-            <Chip type="neutral" label={doc.app ?? ''} className="shrink-0" />
-          </div>
-        }
-        bodyClassName="flex flex-1 flex-col"
-      >
-        <EmptyState scope="page" icon={<KindIcon kind={doc.kind} />} message={`${doc.label} lives in ${doc.app}.`} action={{ label: `Open in ${doc.app}`, onClick: () => {} }} />
-      </Panel>
-      </div>
-    </div>
-  )
+  return <EmptyState scope="page" icon={<KindIcon kind={doc.kind} />} message={`${doc.label} lives in ${doc.app}. Open it there.`} />
 }
 
 export interface LeafPrototypeProps {
@@ -155,7 +135,7 @@ export function LeafPrototype({ start = 'home', sidePanel, draft, active, commen
   const [hidden, setHidden] = useState<Record<string, boolean>>(sidePanel === undefined ? {} : { [start]: !sidePanel })
 
   const folders = empty ? [] : loading ? null : FOLDERS
-  const open = (id: string) => setPage(id)
+  // Every link — the tree, Home's rows — changes page through here (AppProvider.mdx).
   const navigate = (href: string) => setPage(href === '/' ? 'home' : href.replace('/d/', ''))
 
   const tree = empty || loading ? undefined : findDoc(FOLDERS, page)
@@ -165,47 +145,47 @@ export function LeafPrototype({ start = 'home', sidePanel, draft, active, commen
   const shown = doc ? !(hidden[page] ?? (commentsIn === 'bubble' || threads.length === 0)) : false
 
   return (
-    <AppProvider navigate={navigate}>
-      <AppShell
-        variant="inset"
-        logo="Leaf"
-        identity={<IdentityMenu me={PEOPLE.me} signedIn />}
-        nav={
-          <Sidebar>
-            <NavItem href="/" label="Home" icon={<IconHome size={16} stroke={1.5} />} active={page === 'home'} />
-            <NavTree
-              title="Folders"
-              titleActions={[{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => open('blank') }]}
-              groups={groupsOf(folders)}
-              selected={page === 'home' ? undefined : page}
-              onSelect={(node, event) => {
-                event.preventDefault()
-                open(node.id)
-              }}
-              emptyMessage="No Folders yet."
-            />
-          </Sidebar>
-        }
-      >
-        {page === 'home' || !doc ? (
-          <HomePage empty={empty} loading={loading} onOpen={open} onNew={() => open('blank')} />
-        ) : tree?.app ? (
-          <ElsewherePage doc={tree} />
-        ) : (
-          <DocumentPage
-            key={page}
-            doc={{ ...doc, title: titles[page] ?? doc.title }}
-            threads={threads}
-            sidePanel={shown}
-            onToggleSidePanel={() => setHidden((h) => ({ ...h, [page]: shown }))}
-            onRename={(title) => setTitles((t) => ({ ...t, [page]: title }))}
-            commentsIn={commentsIn}
-            initialDraft={page === start ? draft : null}
-            initialActive={page === start ? active : null}
-            loading={loading}
-          />
-        )}
-      </AppShell>
-    </AppProvider>
+    <TooltipProvider>
+      <ToastProvider>
+        <AppProvider navigate={navigate}>
+          <AppShell
+            variant="inset"
+            logo="Leaf"
+            identity={<IdentityMenu me={PEOPLE.me} signedIn />}
+            nav={
+              <Sidebar>
+                <NavItem href="/" label="Home" icon={<IconHome size={16} stroke={1.5} />} active={page === 'home'} />
+                <NavTree
+                  title="Folders"
+                  titleActions={[{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => setPage('blank') }]}
+                  groups={groupsOf(folders)}
+                  selected={page === 'home' ? undefined : page}
+                  emptyMessage="No Folders yet."
+                />
+              </Sidebar>
+            }
+          >
+            {page === 'home' || !doc ? (
+              <HomePage empty={empty} loading={loading} onNew={() => setPage('blank')} />
+            ) : tree?.app ? (
+              <ElsewherePage doc={tree} />
+            ) : (
+              <DocumentPage
+                key={page}
+                doc={{ ...doc, title: titles[page] ?? doc.title }}
+                threads={threads}
+                sidePanel={shown}
+                onToggleSidePanel={() => setHidden((h) => ({ ...h, [page]: shown }))}
+                onRename={(title) => setTitles((t) => ({ ...t, [page]: title }))}
+                commentsIn={commentsIn}
+                initialDraft={page === start ? draft : null}
+                initialActive={page === start ? active : null}
+                loading={loading}
+              />
+            )}
+          </AppShell>
+        </AppProvider>
+      </ToastProvider>
+    </TooltipProvider>
   )
 }

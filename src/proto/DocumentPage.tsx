@@ -1,20 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { TableKit } from '@tiptap/extension-table'
+import { IconCircleCheck, IconLayoutSidebarRight, IconLink, IconMessage, IconMessagePlus, IconX } from '@tabler/icons-react'
+import { documentForEditing, toEditorDocument, toRenderTree } from '@estiva-app/protocol'
 import {
-  IconArchive,
-  IconArrowsMove,
-  IconCursorText,
-  IconDotsVertical,
-  IconHistory,
-  IconLayoutSidebarRight,
-  IconLink,
-  IconMessage,
-  IconMessagePlus,
-  IconX,
-} from '@tabler/icons-react'
-import {
-  Button,
   Card,
   Chip,
   CollapsibleSection,
@@ -23,33 +13,34 @@ import {
   EmptyState,
   IconButton,
   KindIcon,
+  MembersDialog,
   MembersPill,
-  Menu,
   MenuItem,
-  MenuSeparator,
   Panel,
   Person,
   Popover,
+  RichText,
   SkeletonBar,
-  SkeletonList,
   Toolbar,
   ToolbarButton,
+  WithTooltip,
   richTextClassName,
+  useToast,
   type HandleBlock,
 } from '@estiva-app/ui'
 import {
+  AttachmentNode,
   BlockId,
-  CaptionedReference,
   COMPOSE_EDITOR_CLASSES,
   CommentHighlights,
   ComposeBox,
   ComposeKeys,
   EditorBlockHandle,
-  KeptSelection,
-  PersonMention,
+  ReferenceNode,
   ReferenceTrigger,
   SelectionToolbar,
   SlashCommands,
+  UnknownBlock,
   blockDropCursor,
   commentElement,
   commentRange,
@@ -59,8 +50,10 @@ import {
   typeTrigger,
   type BlockTurnInto,
   type CommentAnchor,
+  type ReferenceViewProps,
 } from '@estiva-app/ui/editor'
-import { MENTION_PEOPLE, PEOPLE, THINGS, kindOf, type Doc, type PersonId, type Thread } from './fixtures'
+import { PEOPLE, THINGS, kindOf, storedFrom, type Doc, type PersonId, type Stored, type Thread } from './fixtures'
+import { Reference } from './Reference'
 
 /** Where a comment is read: the column beside the text, or a bubble on the words. */
 export type CommentsIn = 'column' | 'bubble'
@@ -78,26 +71,45 @@ const TURN_INTO: BlockTurnInto[] = [
   { label: 'Code', run: (editor) => editor.chain().setCodeBlock().run(), active: (node) => node.type.name === 'codeBlock' },
 ]
 
-/** The icon each thing wears, from the package's one table: 14px in a chip, 16px in a row. */
-const chipIcon = (uri: string | null) => {
-  const kind = kindOf(uri)
-  return kind ? <KindIcon kind={kind} size={14} tone="inherit" /> : undefined
-}
+/** The `[` list's row icons, from the package's one table. */
 const rowIcon = (uri: string) => {
   const kind = kindOf(uri)
   return kind ? <KindIcon kind={kind} /> : undefined
 }
 
+/** A reference in the editor: Leaf's chip, the one a reader sees. */
+const ReferenceView = ({ uri }: ReferenceViewProps) => <Reference uri={uri} />
+
 /**
- * Scroll the panel `el` sits in until it shows — that panel only. The browser's
- * own scrollIntoView also scrolls the frame around the panel, and the headers
- * left the screen (measured 9 October).
+ * The grammar of a block document, as Ship's description and Peek's
+ * BlockDocumentField have it (BlockNodes.mdx): no link mark and no strike —
+ * the stored document has neither — headings 1 to 3, tables, an id on every
+ * block, a block it cannot edit kept whole, a reference and a file. `[` inserts
+ * the protocol's reference node, which a save keeps.
  */
-function reveal(el: HTMLElement | null) {
-  let box = el?.parentElement ?? null
-  // The nearest box that scrolls at all is the panel's; when it has room, nothing moves.
-  while (box && !/auto|scroll/.test(getComputedStyle(box).overflowY)) box = box.parentElement
-  if (!el || !box) return
+const blockDocument = () => [
+  StarterKit.configure({ link: false, strike: false, heading: { levels: [1, 2, 3] }, dropcursor: blockDropCursor }),
+  TableKit.configure({ table: { resizable: false } }),
+  BlockId,
+  ReferenceNode.configure({ view: ReferenceView }),
+  UnknownBlock,
+  AttachmentNode,
+  ReferenceTrigger.configure({
+    items: () => THINGS,
+    ariaLabel: 'Point at a file',
+    sectionLabel: 'Files in your apps',
+    icon: <KindIcon kind="file" />,
+    iconFor: rowIcon,
+    nodeName: 'reference',
+  }),
+]
+
+/** Opens a stored body in an editor, through the protocol. */
+const opened = (body: Stored) => toEditorDocument(documentForEditing(body.value, body.format))
+
+/** Scroll `box` — a Panel's body — until `el` shows. Only that box moves. */
+function scrollWithin(box: HTMLElement | null, el: HTMLElement | null) {
+  if (!box || !el) return
   const at = el.getBoundingClientRect()
   const view = box.getBoundingClientRect()
   if (at.top < view.top) box.scrollBy({ top: at.top - view.top - 16, behavior: 'smooth' })
@@ -105,7 +117,7 @@ function reveal(el: HTMLElement | null) {
 }
 
 /**
- * The editor of one document: the package's block handle, `/`, `[`, `@`, the
+ * The editor of one document: the package's block handle, `/`, `[`, the
  * selection strip with Comment in it, and comments drawn on their words.
  */
 function DocumentEditor({
@@ -113,43 +125,26 @@ function DocumentEditor({
   onReady,
   onComment,
   onSelectHighlight,
+  onCopyLink,
 }: {
   doc: Doc
   onReady: (editor: Editor) => void
   onComment: (draft: NonNullable<Draft>) => void
   onSelectHighlight: (id: string) => void
+  onCopyLink: () => void
 }) {
+  const [empty, setEmpty] = useState(!doc.body.value)
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ dropcursor: blockDropCursor, link: { openOnClick: false } }),
-      BlockId,
-      KeptSelection,
+      ...blockDocument(),
       CommentHighlights,
-      PersonMention.configure({ people: () => MENTION_PEOPLE }),
-      CaptionedReference.configure({ icon: <KindIcon kind="file" size={14} tone="inherit" />, iconFor: chipIcon }),
-      ReferenceTrigger.configure({
-        items: () => THINGS,
-        ariaLabel: 'Point at a file',
-        sectionLabel: 'Files in your apps',
-        icon: <KindIcon kind="file" />,
-        iconFor: rowIcon,
-        nodeName: 'captionedReference',
-      }),
       SlashCommands.configure({
-        sections: [
-          formatSection('block'),
-          {
-            label: 'Insert',
-            commands: [
-              { key: 'insert-[', row: { label: 'A file from another app', shortcut: '[' }, run: typeTrigger('[') },
-              { key: 'insert-@', row: { label: 'Mention', shortcut: '@' }, run: typeTrigger('@') },
-            ],
-          },
-        ],
+        sections: [formatSection('block'), { label: 'Insert', commands: [{ key: 'insert-[', row: { label: 'A file from another app', shortcut: '[' }, run: typeTrigger('[') }] }],
       }),
     ],
-    content: doc.content,
-    editorProps: { attributes: { class: richTextClassName('default', 'outline-none'), 'aria-label': 'Document' } },
+    content: opened(doc.body),
+    editorProps: { attributes: { 'aria-label': 'Document', role: 'textbox', 'aria-multiline': 'true', class: richTextClassName('default', 'outline-none') } },
+    onUpdate: ({ editor: e }) => setEmpty(e.isEmpty),
   })
 
   useEffect(() => {
@@ -166,7 +161,7 @@ function DocumentEditor({
     }
   }, [editor, onSelectHighlight])
 
-  /** A whole block's words, as the document holds them: chips carry no words, so the page's text would not be found again. */
+  /** A whole block's words, as the document holds them. */
   const blockText = (id: string) => {
     let text = ''
     editor?.state.doc.descendants((node) => {
@@ -180,26 +175,25 @@ function DocumentEditor({
     return text
   }
 
-  const rows = (block: HandleBlock) => (
-    <>
-      <MenuItem
-        label="Comment"
-        leading={<IconMessage size={16} stroke={1.5} />}
-        onClick={() => block.id && onComment({ block: block.id, quote: blockText(block.id) })}
-      />
-      <MenuItem label="Copy link" leading={<IconLink size={16} stroke={1.5} />} />
-    </>
-  )
+  // A block with no id cannot be pointed at: no rows of Leaf's (Ship's blockRows does the same).
+  const rows = (block: HandleBlock) =>
+    block.id ? (
+      <>
+        <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onComment({ block: block.id!, quote: blockText(block.id!) })} />
+        <MenuItem label="Copy link" leading={<IconLink size={16} stroke={1.5} className="text-text-secondary" />} onClick={onCopyLink} />
+      </>
+    ) : null
 
   return (
     <>
       <EditorBlockHandle editor={editor} turnInto={TURN_INTO} actions={rows} className="mt-8">
         <EditorContent editor={editor} />
+        {/* Ship's pattern: muted words over an empty editor, from the editor's own `isEmpty`. */}
+        {empty && <span aria-hidden className="pointer-events-none absolute left-0 top-0 text-body-2 text-text-muted">Type / for headings and lists, or [ to point at a file.</span>}
       </EditorBlockHandle>
       <SelectionToolbar
         editor={editor}
         marks={['bold', 'italic', 'underline', 'code']}
-        link
         actions={[
           {
             label: 'Comment',
@@ -218,42 +212,10 @@ function DocumentEditor({
   )
 }
 
-/** One comment: the face and name, when, and what was said. */
-function CommentBody({ by, when, text }: { by: PersonId; when: string; text: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <span className="text-body-2-strong text-text-primary">
-          <Person name={PEOPLE[by].name} />
-        </span>
-        <span className="text-caption text-text-muted">{when}</span>
-      </div>
-      <p className="text-body-2 text-text-primary">{text}</p>
-    </div>
-  )
-}
-
-/** The extensions every comment box has: the document's `@` and `[`, the selection strip's link, and Enter to send. */
-const commentExtensions = () => [
-  StarterKit.configure({ link: { openOnClick: false } }),
-  KeptSelection,
-  ComposeKeys,
-  PersonMention.configure({ people: () => MENTION_PEOPLE }),
-  CaptionedReference.configure({ icon: <KindIcon kind="file" size={14} tone="inherit" />, iconFor: chipIcon }),
-  ReferenceTrigger.configure({
-    items: () => THINGS,
-    ariaLabel: 'Point at a file',
-    sectionLabel: 'Files in your apps',
-    icon: <KindIcon kind="file" />,
-    iconFor: rowIcon,
-    nodeName: 'captionedReference',
-  }),
-]
-
-/** The box a comment or a reply is written in: the package's ComposeBox, Peek's box. */
-function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onSend: (text: string) => void; autoFocus?: boolean }) {
+/** The box a comment or a reply is written in: the package's ComposeBox, Peek's box, writing the document's grammar. */
+function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onSend: (body: Stored) => void; autoFocus?: boolean }) {
   const editor = useEditor({
-    extensions: commentExtensions(),
+    extensions: [...blockDocument(), ComposeKeys],
     editorProps: { attributes: { class: COMPOSE_EDITOR_CLASSES, 'aria-label': placeholder } },
   })
   // A frame late: the selection strip gives the focus back to the text as it closes, after this box mounts.
@@ -262,17 +224,47 @@ function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onS
     const frame = requestAnimationFrame(() => editor.commands.focus())
     return () => cancelAnimationFrame(frame)
   }, [autoFocus, editor])
-  return <ComposeBox editor={editor} placeholder={<span>{placeholder}</span>} selection={{ link: true }} onSend={(ed) => onSend(ed.getText().trim())} />
+  return <ComposeBox editor={editor} placeholder={<span>{placeholder}</span>} onSend={(ed) => onSend(storedFrom(ed.getJSON()))} />
 }
 
-/** What a thread is about, said in one line over its comments. */
+/** One comment: the face and name, when (the date on hover), and what was said, drawn by the package's RichText. */
+function CommentBody({ by, when, at, body }: { by: PersonId; when: string; at: string; body: Stored }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 text-body-2-strong text-text-primary">
+          <Person name={PEOPLE[by].name} />
+        </span>
+        <WithTooltip inline label={at}>
+          <span className="whitespace-nowrap text-caption text-text-muted">{when}</span>
+        </WithTooltip>
+      </div>
+      <RichText blocks={toRenderTree(body.value, body.format)} renderReference={(uri) => <Reference uri={uri} />} />
+    </div>
+  )
+}
+
+/** What a thread is about, in one line; the whole quote on hover when it is cut. */
 function AnchorLine({ thread, detached }: { thread: Thread; detached: boolean }) {
   if (!thread.anchor) return <p className="text-caption text-text-muted">On the whole document</p>
   if (detached) {
     // SPEC §13.6: a detached anchor is said, never shown as a comment on the whole document.
     return <p className="text-caption text-text-muted">{`On “${thread.anchor.quote}”, which has since been changed or deleted`}</p>
   }
-  return <p className="line-clamp-2 text-caption text-text-secondary">{`“${thread.anchor.quote}”`}</p>
+  return (
+    <WithTooltip label={thread.anchor.quote} wrapperClassName="min-w-0">
+      <p className="truncate text-caption text-text-secondary">{`“${thread.anchor.quote}”`}</p>
+    </WithTooltip>
+  )
+}
+
+/** Resolve, as Peek has it: an icon button that turns green when pointed at. */
+function ResolveButton({ onResolve }: { onResolve: () => void }) {
+  return (
+    <IconButton variant="resolve" tooltip="Resolve" aria-label="Resolve" onClick={onResolve}>
+      <IconCircleCheck size={16} stroke={1.5} />
+    </IconButton>
+  )
 }
 
 /**
@@ -292,35 +284,59 @@ function ThreadCard({
   active?: boolean
   onActivate?: () => void
   onResolve?: () => void
-  onReply?: (text: string) => void
+  onReply?: (body: Stored) => void
 }) {
+  // Peek's ConversationCard rule: a click on a control inside is the control's, not the card's.
+  const click = (e: MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, a, [role="button"], [data-interactive], [contenteditable="true"]')) return
+    onActivate?.()
+  }
   return (
-    <Card data-thread-id={thread.id} selected={active} onClick={onActivate} className="flex flex-col gap-3 p-3">
-      <AnchorLine thread={thread} detached={detached} />
+    <Card data-thread-id={thread.id} hover="fill" quietUntilHover selected={active} onClick={onActivate ? click : undefined} className="flex shrink-0 flex-col gap-3 p-3">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <AnchorLine thread={thread} detached={detached} />
+        </div>
+        {onResolve && <ResolveButton onResolve={onResolve} />}
+      </div>
       {thread.comments.map((c) => (
-        <CommentBody key={c.id} by={c.by} when={c.when} text={c.text} />
+        <CommentBody key={c.id} by={c.by} when={c.when} at={c.at} body={c.body} />
       ))}
-      {active && onReply && (
-        // A press inside the box must not reach the card's own click.
-        <div onClickCapture={(e) => e.stopPropagation()}>
-          <Composer placeholder="Reply…" onSend={onReply} />
-        </div>
-      )}
-      {onResolve && (
-        <div className="flex items-center gap-2">
-          <Button
-            size="small"
-            variant="resolve"
-            onClick={(e) => {
-              e.stopPropagation()
-              onResolve()
-            }}
-          >
-            Resolve
-          </Button>
-        </div>
-      )}
+      {active && onReply && <Composer placeholder="Reply…" onSend={onReply} />}
     </Card>
+  )
+}
+
+/** Placeholders shaped like a document: its title and its paragraphs, built from the bar. */
+function DocumentSkeleton() {
+  return (
+    <div className="flex animate-skeleton-in flex-col gap-6" aria-hidden>
+      <SkeletonBar className="h-6 w-64" />
+      <div className="mt-6 flex flex-col gap-3">
+        <SkeletonBar className="h-3.5 w-full" />
+        <SkeletonBar className="h-3.5 w-11/12" />
+        <SkeletonBar className="h-3.5 w-3/5" />
+      </div>
+      <div className="flex flex-col gap-3">
+        <SkeletonBar className="h-3.5 w-full" />
+        <SkeletonBar className="h-3.5 w-4/5" />
+      </div>
+    </div>
+  )
+}
+
+/** Placeholders shaped like the column's cards. */
+function ThreadsSkeleton() {
+  return (
+    <div className="flex animate-skeleton-in flex-col gap-3" aria-hidden>
+      {[0, 1].map((i) => (
+        <Card key={i} className="flex flex-col gap-3 p-3">
+          <SkeletonBar className="h-3.5 w-40" />
+          <SkeletonBar className="h-3.5 w-full" />
+          <SkeletonBar className="h-3.5 w-2/3" />
+        </Card>
+      ))}
+    </div>
   )
 }
 
@@ -356,11 +372,16 @@ export function DocumentPage({
   const [draft, setDraft] = useState<Draft>(initialDraft)
   const [active, setActive] = useState<string | null>(initialActive)
   const [editor, setEditor] = useState<Editor | null>(null)
+  const [membersOpen, setMembersOpen] = useState(false)
   /** The highlight a bubble stands beside, read after the highlights are drawn. */
   const [bubbleAt, setBubbleAt] = useState<HTMLElement | null>(null)
-  const members = [PEOPLE.ana, PEOPLE.ravi, PEOPLE.mia, PEOPLE.me]
+  const docBody = useRef<HTMLDivElement>(null)
+  const columnBody = useRef<HTMLDivElement>(null)
+  const { showToast } = useToast()
+  const members = (Object.keys(PEOPLE) as PersonId[]).map((id) => ({ id, name: PEOPLE[id].name }))
   const editedBy = PEOPLE[doc.editedBy].name
   const bubbles = commentsIn === 'bubble'
+  const title = doc.title || 'Untitled'
 
   const open = threads.filter((t) => !t.resolved)
   const resolved = threads.filter((t) => t.resolved)
@@ -377,35 +398,43 @@ export function DocumentPage({
     return () => cancelAnimationFrame(frame)
   }, [editor, threads, draft, active, bubbles])
 
-  // A thread chosen in the column: bring its words into view. A highlight chosen in the text: bring its card into view.
+  // A thread chosen in the column: its words come into view. A highlight chosen in the text: its card does. Each Panel scrolls its own body.
   useEffect(() => {
     if (!active || !editor) return
-    reveal(commentElement(editor, active))
-    reveal(document.querySelector<HTMLElement>(`[data-thread-id="${active}"]`))
+    scrollWithin(docBody.current, commentElement(editor, active))
+    scrollWithin(columnBody.current, columnBody.current?.querySelector<HTMLElement>(`[data-thread-id="${active}"]`) ?? null)
   }, [active, editor])
 
-  const startComment = (next: NonNullable<Draft>) => {
-    setActive(null)
-    setDraft(next)
-    if (!bubbles && !sidePanel) onToggleSidePanel()
-  }
-  const send = (text: string, anchor: Draft = draft) => {
-    const id = `t${Date.now()}`
-    setThreads((all) => [...all, { id, doc: doc.id, anchor: anchor ?? undefined, comments: [{ id: `c${Date.now()}`, by: 'me', when: 'Just now', text }] }])
-    setDraft(null)
-    setActive(bubbles ? null : id)
-  }
-  const reply = (id: string, text: string) =>
-    setThreads((all) => all.map((t) => (t.id === id ? { ...t, comments: [...t.comments, { id: `c${Date.now()}`, by: 'me', when: 'Just now', text }] } : t)))
-  const resolve = (id: string) => {
-    setThreads((all) => all.map((t) => (t.id === id ? { ...t, resolved: true } : t)))
-    setActive(null)
-  }
-
+  const startComment = useCallback(
+    (next: NonNullable<Draft>) => {
+      setActive(null)
+      setDraft(next)
+      if (!bubbles && !sidePanel) onToggleSidePanel()
+    },
+    [bubbles, sidePanel, onToggleSidePanel],
+  )
   const selectHighlight = useCallback((id: string) => {
     setDraft(null)
     setActive(id)
   }, [])
+  const copyLink = useCallback(() => {
+    navigator.clipboard.writeText(window.location.href).then(
+      () => showToast({ label: 'Link copied', type: 'success' }),
+      () => showToast({ label: 'Could not copy the link', type: 'error' }),
+    )
+  }, [showToast])
+  const send = (body: Stored, anchor: Draft = draft) => {
+    const id = `t${Date.now()}`
+    setThreads((all) => [...all, { id, doc: doc.id, anchor: anchor ?? undefined, comments: [{ id: `c${Date.now()}`, by: 'me', when: 'Just now', at: 'Just now', body }] }])
+    setDraft(null)
+    setActive(bubbles ? null : id)
+  }
+  const reply = (id: string, body: Stored) =>
+    setThreads((all) => all.map((t) => (t.id === id ? { ...t, comments: [...t.comments, { id: `c${Date.now()}`, by: 'me', when: 'Just now', at: 'Just now', body }] } : t)))
+  const resolve = (id: string) => {
+    setThreads((all) => all.map((t) => (t.id === id ? { ...t, resolved: true } : t)))
+    setActive(null)
+  }
 
   const activeThread = open.find((t) => t.id === active)
 
@@ -413,58 +442,51 @@ export function DocumentPage({
     <div className="flex min-h-0 flex-1 [contain:size]">
       {/* Each panel in a column the row stretches to its height, as Peek's frame has them: a Panel alone grows with its content. */}
       <div className="flex min-w-0 flex-1 flex-col">
-      <Panel
-        title={<p className="truncate text-body-2-strong text-text-primary">{doc.title || 'Untitled'}</p>}
-        actions={
-          <div className="flex shrink-0 items-center gap-2">
-            <MembersPill members={members} />
-            <Toolbar aria-label="Document actions" surface={false}>
-              <ToolbarButton tooltip={sidePanel ? 'Hide comments' : 'Show comments'} aria-label={sidePanel ? 'Hide comments' : 'Show comments'} pressed={sidePanel} onClick={onToggleSidePanel}>
-                <IconLayoutSidebarRight size={16} stroke={1.5} />
-              </ToolbarButton>
-              <ToolbarButton tooltip="Copy link" aria-label="Copy link">
-                <IconLink size={16} stroke={1.5} />
-              </ToolbarButton>
-              <Menu
-                align="right"
-                trigger={
-                  <ToolbarButton tooltip="More actions" aria-label="More actions">
-                    <IconDotsVertical size={16} stroke={1.5} />
-                  </ToolbarButton>
-                }
-              >
-                <MenuItem label="Rename" leading={<IconCursorText size={16} stroke={1.5} />} />
-                <MenuItem label="Move to…" leading={<IconArrowsMove size={16} stroke={1.5} />} />
-                <MenuItem label="Version history" leading={<IconHistory size={16} stroke={1.5} />} />
-                <MenuSeparator />
-                <MenuItem label="Archive" leading={<IconArchive size={16} stroke={1.5} />} />
-              </Menu>
-            </Toolbar>
-          </div>
-        }
-        bodyClassName="px-12 pt-10 pb-24"
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-col">
-          {loading ? (
-            <div className="flex flex-col gap-4">
-              <SkeletonBar className="h-8 w-64" />
-              <SkeletonList rows={6} />
+        <Panel
+          title={
+            <WithTooltip label={title} wrapperClassName="min-w-0 shrink">
+              <p className="truncate text-body-2-strong text-text-primary">{title}</p>
+            </WithTooltip>
+          }
+          actions={
+            <div className="flex shrink-0 items-center gap-2">
+              <MembersPill members={members.slice(0, 3)} count={members.length} onClick={() => setMembersOpen(true)} />
+              <Toolbar aria-label="Document actions" surface={false}>
+                <ToolbarButton tooltip={sidePanel ? 'Hide comments' : 'Show comments'} aria-label={sidePanel ? 'Hide comments' : 'Show comments'} pressed={sidePanel} onClick={onToggleSidePanel}>
+                  <IconLayoutSidebarRight size={16} stroke={1.5} />
+                </ToolbarButton>
+                <ToolbarButton tooltip="Copy link" aria-label="Copy link" onClick={copyLink}>
+                  <IconLink size={16} stroke={1.5} />
+                </ToolbarButton>
+              </Toolbar>
             </div>
-          ) : (
-            <>
-              <h1 className="text-h1 text-text-primary">
-                <EditableText value={doc.title} placeholder="Untitled" label="Title" onCommit={(v) => (onRename(v), true)} className="-mx-2" />
-              </h1>
-              <p className="mt-2 text-caption text-text-muted">{`${doc.folder} · edited ${doc.edited} by ${editedBy}`}</p>
-              <DocumentEditor doc={doc} onReady={setEditor} onComment={startComment} onSelectHighlight={selectHighlight} />
-              {doc.content.content?.length === 1 && !doc.content.content[0].content && (
-                <p className="mt-2 text-caption text-text-muted">Type / for headings, lists and links to other apps. [ points at a file, @ names someone.</p>
-              )}
-            </>
-          )}
-        </div>
-      </Panel>
+          }
+          bodyRef={docBody}
+          bodyClassName="px-12 pt-10 pb-24"
+        >
+          <div className="mx-auto flex w-full max-w-3xl flex-col">
+            {loading ? (
+              <DocumentSkeleton />
+            ) : (
+              <>
+                <h1 className="text-h1 text-text-primary">
+                  <EditableText value={doc.title} placeholder="Untitled" label="Title" onCommit={(v) => (onRename(v), true)} className="-mx-2" />
+                </h1>
+                <p className="mt-2 text-caption text-text-muted">
+                  {`${doc.folder} · `}
+                  <WithTooltip inline label={doc.editedAt}>
+                    <span>{`edited ${doc.edited}`}</span>
+                  </WithTooltip>
+                  {` by ${editedBy}`}
+                </p>
+                <DocumentEditor doc={doc} onReady={setEditor} onComment={startComment} onSelectHighlight={selectHighlight} onCopyLink={copyLink} />
+              </>
+            )}
+          </div>
+        </Panel>
       </div>
+
+      {membersOpen && <MembersDialog members={members} count={members.length} onClose={() => setMembersOpen(false)} />}
 
       {/* Option B: the bubble on the words — a thread to read, or a comment to write. */}
       {bubbles && (
@@ -483,20 +505,18 @@ export function DocumentPage({
           contentClassName="flex flex-col gap-3 p-3"
         >
           {draft ? (
-            <Composer placeholder="Comment on these words…" onSend={(text) => send(text)} autoFocus />
+            <Composer placeholder="Comment on these words…" onSend={(body) => send(body)} autoFocus />
           ) : activeThread ? (
             <>
-              {activeThread.comments.map((c) => (
-                <CommentBody key={c.id} by={c.by} when={c.when} text={c.text} />
-              ))}
-              <Composer placeholder="Reply…" onSend={(text) => reply(activeThread.id, text)} />
-              <Divider />
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-caption text-text-muted">{`${activeThread.comments.length} ${activeThread.comments.length === 1 ? 'comment' : 'comments'}`}</span>
-                <Button size="small" variant="resolve" onClick={() => resolve(activeThread.id)}>
-                  Resolve
-                </Button>
+              <div className="flex items-start gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-3">
+                  {activeThread.comments.map((c) => (
+                    <CommentBody key={c.id} by={c.by} when={c.when} at={c.at} body={c.body} />
+                  ))}
+                </div>
+                <ResolveButton onResolve={() => resolve(activeThread.id)} />
               </div>
+              <Composer placeholder="Reply…" onSend={(body) => reply(activeThread.id, body)} />
             </>
           ) : null}
         </Popover>
@@ -506,66 +526,69 @@ export function DocumentPage({
         <>
           <Divider orientation="vertical" />
           <div className="flex w-[380px] flex-none flex-col">
-          <Panel
-            title={
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-body-2-strong text-text-primary">Comments</p>
-                {!loading && open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
-              </div>
-            }
-            bodyClassName="flex flex-col gap-3 p-3"
-            footer={
-              loading ? undefined : (
-                <div className="flex flex-col gap-2 p-3">
-                  {!bubbles && draft && (
-                    <div className="flex items-center gap-2">
-                      <p className="min-w-0 flex-1 truncate text-caption text-text-secondary">{`On “${draft.quote}”`}</p>
-                      <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => setDraft(null)}>
-                        <IconX size={16} stroke={1.5} />
-                      </IconButton>
-                    </div>
-                  )}
-                  <Composer
-                    key={!bubbles && draft ? `${draft.block}:${draft.quote}` : 'document'}
-                    placeholder={!bubbles && draft ? 'Comment on these words…' : 'Comment on this document…'}
-                    // In bubbles, this box is for the whole document only.
-                    onSend={(text) => send(text, bubbles ? null : draft)}
-                    autoFocus={!bubbles && !!draft}
-                  />
+            <Panel
+              title={
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-body-2-strong text-text-primary">Comments</p>
+                  {!loading && open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
                 </div>
-              )
-            }
-          >
-            {loading ? (
-              <SkeletonList rows={4} />
-            ) : open.length === 0 && resolved.length === 0 ? (
-              <EmptyState scope="section" icon={<IconMessage size={20} stroke={1.5} />} message="No comments yet. Select words and press Comment, or write below." />
-            ) : (
-              <>
-                {open.map((t) => (
-                  <ThreadCard
-                    key={t.id}
-                    thread={t}
-                    detached={detached(t)}
-                    active={t.id === active}
-                    onActivate={() => {
-                      setDraft(null)
-                      setActive(t.id === active ? null : t.id)
-                    }}
-                    onResolve={() => resolve(t.id)}
-                    onReply={(text) => reply(t.id, text)}
-                  />
-                ))}
-                {resolved.length > 0 && (
-                  <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} contentClassName="flex flex-col gap-3">
-                    {resolved.map((t) => (
-                      <ThreadCard key={t.id} thread={t} detached={detached(t)} />
-                    ))}
-                  </CollapsibleSection>
-                )}
-              </>
-            )}
-          </Panel>
+              }
+              bodyRef={columnBody}
+              bodyClassName="flex flex-col gap-3 p-3"
+              footer={
+                loading ? undefined : (
+                  <div className="flex flex-col gap-2 p-3">
+                    {!bubbles && draft && (
+                      <div className="flex items-center gap-2">
+                        <WithTooltip label={draft.quote} wrapperClassName="min-w-0 flex-1">
+                          <p className="truncate text-caption text-text-secondary">{`On “${draft.quote}”`}</p>
+                        </WithTooltip>
+                        <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => setDraft(null)}>
+                          <IconX size={16} stroke={1.5} />
+                        </IconButton>
+                      </div>
+                    )}
+                    <Composer
+                      key={!bubbles && draft ? `${draft.block}:${draft.quote}` : 'document'}
+                      placeholder={!bubbles && draft ? 'Comment on these words…' : 'Comment on this document…'}
+                      // In bubbles, this box is for the whole document only.
+                      onSend={(body) => send(body, bubbles ? null : draft)}
+                      autoFocus={!bubbles && !!draft}
+                    />
+                  </div>
+                )
+              }
+            >
+              {loading ? (
+                <ThreadsSkeleton />
+              ) : open.length === 0 && resolved.length === 0 ? (
+                <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
+              ) : (
+                <>
+                  {open.map((t) => (
+                    <ThreadCard
+                      key={t.id}
+                      thread={t}
+                      detached={detached(t)}
+                      active={t.id === active}
+                      onActivate={() => {
+                        setDraft(null)
+                        setActive(t.id === active ? null : t.id)
+                      }}
+                      onResolve={() => resolve(t.id)}
+                      onReply={(body) => reply(t.id, body)}
+                    />
+                  ))}
+                  {resolved.length > 0 && (
+                    <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                      {resolved.map((t) => (
+                        <ThreadCard key={t.id} thread={t} detached={detached(t)} />
+                      ))}
+                    </CollapsibleSection>
+                  )}
+                </>
+              )}
+            </Panel>
           </div>
         </>
       )}
