@@ -60,8 +60,11 @@ function Frame() {
     }
   }, [signedIn])
 
-  const { folders, children, opened, setOpen } = workspace
-  const groups = useMemo(() => groupsOf(folders, { children, opened, setOpen }), [folders, children, opened, setOpen])
+  const { folders, children, opened, setOpen, setFolderOpen } = workspace
+  const groups = useMemo(
+    () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
+    [folders, children, opened, setOpen, setFolderOpen],
+  )
   const open = route.page === 'file' ? findFile(folders, children, route.naddr) : null
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewPages)
@@ -78,8 +81,10 @@ function Frame() {
       navigate(filePath(result.naddr))
       return true
     }
-    // Read the Folder first, so the page is in hand when it opens rather than "not found" for a moment.
+    // Read the Folder first, so the page is in hand when it opens rather than "not found" for a moment,
+    // and open its group, so the new row is there to see.
     await workspace.reloadFolder(folder)
+    setFolderOpen(folder, true)
     navigate(filePath(result.naddr))
     return true
   }
@@ -123,7 +128,7 @@ function Frame() {
               }
               groups={workspace.failed ? [] : groups}
               selected={route.page === 'file' ? route.naddr : undefined}
-              emptyMessage={workspace.failed ? 'Your Folders could not be read.' : 'No Folders yet.'}
+              emptyMessage={workspace.failed ? 'Your Folders could not be read. Reload to try again.' : 'No Folders yet.'}
             />
           </Sidebar>
         }

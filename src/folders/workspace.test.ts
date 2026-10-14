@@ -42,14 +42,14 @@ describe('New page', () => {
   it('says nothing was made, and lists nothing, when the relay refuses the page', async () => {
     answers = [{ ok: false, reason: 'blocked: not a member' }]
     const result = await createPage({ folder: FOLDER, title: 'Friday notes' })
-    expect(result).toEqual({ ok: false, made: false, reason: 'blocked: not a member' })
+    expect(result).toEqual({ ok: false, made: false, reason: 'The page could not be made in that Folder. Try again.' })
     expect(published).toHaveLength(1)
   })
 
   it('says the page was made but is not listed when only the add is refused, so it can be retried', async () => {
     answers = [{ ok: true }, { ok: false, reason: 'rate-limited' }]
     const result = await createPage({ folder: FOLDER, title: 'Friday notes' })
-    expect(result).toMatchObject({ ok: false, made: true, reason: 'rate-limited' })
+    expect(result).toMatchObject({ ok: false, made: true, reason: 'The Folder did not take it. Try again.' })
     if (result.ok || !result.made) throw new Error('unreachable')
     expect(await listPage({ folder: FOLDER, address: result.address })).toEqual({ ok: true })
     expect(tag(published[2], 'a')).toBe(result.address)

@@ -29,7 +29,7 @@ export function fileKey(file: ForeignObject): string {
 }
 
 /** What the tree needs besides the listings: the rows read on opening, and how to ask for them. */
-export type Expansion = Pick<Workspace, 'children' | 'opened' | 'setOpen'>
+export type Expansion = Pick<Workspace, 'children' | 'opened' | 'setOpen' | 'setFolderOpen'>
 
 function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignObject[], expansion: Expansion): NavTreeNode {
   const node: NavTreeNode = {
@@ -52,7 +52,7 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
     onOpenChange: (open) => expansion.setOpen(file, open),
     children: listed ? [...nested, ...listed] : read === null ? null : undefined,
     childrenMessage:
-      read === 'failed' ? 'This could not be read.' : listed?.length === 0 && nested.length === 0 ? 'Nothing in this yet.' : undefined,
+      read === 'failed' ? 'This could not be read. Close it and open it again to retry.' : listed?.length === 0 && nested.length === 0 ? 'Nothing in this yet.' : undefined,
   }
 }
 
@@ -68,8 +68,10 @@ export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion
     return {
       id: folder.id,
       title: folder.name ?? folder.id,
+      open: expansion.opened.has(folder.id),
+      onOpenChange: (open) => expansion.setFolderOpen(folder.id, open),
       nodes: nesting ? nesting.roots.map((f) => nodeOf(f, nesting.childrenOf, expansion)) : failed ? [] : null,
-      message: failed ? 'This could not be read.' : readable?.length === 0 ? 'Nothing in this yet.' : undefined,
+      message: failed ? 'This could not be read. Reload to try again.' : readable?.length === 0 ? 'Nothing in this yet.' : undefined,
     }
   })
 }

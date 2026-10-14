@@ -49,7 +49,7 @@ export function NewPageDialog({
             Cancel
           </Button>
           <Button variant="primary" type="submit" form={formId} disabled={!ready || creating}>
-            {creating ? 'Making…' : 'Make page'}
+            {creating ? 'Creating…' : 'Create'}
           </Button>
         </>
       }

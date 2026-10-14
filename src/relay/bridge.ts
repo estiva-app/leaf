@@ -56,6 +56,8 @@ export async function publish(unsigned: UnsignedEvent): Promise<PublishResult> {
     const signed = await b.signer.sign(unsigned)
     return await b.relay.publish(signed)
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    // Estiva ID's own words name kinds and ceilings; the console keeps them, the person gets what to do.
+    console.warn('[relay] could not sign', error)
+    return { ok: false, reason: 'Leaf could not sign this. Sign in again, then try again.' }
   }
 }

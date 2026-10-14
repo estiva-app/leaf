@@ -12,7 +12,7 @@ const folder = (files: ForeignObject[] | null, failed?: boolean): WorkspaceFolde
   failed,
 })
 
-const none: Expansion = { children: {}, opened: new Set(), setOpen: () => {} }
+const none: Expansion = { children: {}, opened: new Set(), setOpen: () => {}, setFolderOpen: () => {} }
 
 describe('the Folders tree', () => {
   it("draws a page by its title, and leaves out a file the viewer cannot read", () => {
@@ -31,7 +31,7 @@ describe('the Folders tree', () => {
 
   it('says a Folder is empty, could not be read, or is still being read', () => {
     expect(groupsOf([folder([])], none)![0].message).toBe('Nothing in this yet.')
-    expect(groupsOf([folder(null, true)], none)![0].message).toBe('This could not be read.')
+    expect(groupsOf([folder(null, true)], none)![0].message).toBe('This could not be read. Reload to try again.')
     expect(groupsOf([folder(null)], none)![0].nodes).toBeNull()
   })
 

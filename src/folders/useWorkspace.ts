@@ -25,6 +25,8 @@ export interface Workspace {
   opened: ReadonlySet<string>
   /** Open or close `file`'s row; opening reads what it lists under it, once. */
   setOpen(file: ForeignObject, open: boolean): void
+  /** Open or close a Folder's group, by its id — in the same set as the rows. */
+  setFolderOpen(id: string, open: boolean): void
 }
 
 /**
@@ -104,5 +106,15 @@ export function useWorkspace(): Workspace {
     )
   }, [])
 
-  return { folders, failed, reload, reloadFolder, children, opened, setOpen }
+  const setFolderOpen = useCallback((id: string, open: boolean) => {
+    setOpened((now) => {
+      if (now.has(id) === open) return now
+      const next = new Set(now)
+      if (open) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
+  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen }
 }

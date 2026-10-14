@@ -11,7 +11,7 @@ import {
   type FolderSummary,
   type ForeignObject,
 } from '@estiva-app/interop'
-import { buildBareFile, encodeNaddr } from '@estiva-app/protocol'
+import { buildBareFile, encodeNaddr, type PublishResult } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /*
@@ -74,7 +74,7 @@ export async function createPage(args: { folder: string; title: string }): Promi
   if (!pubkey) return { ok: false, made: false, reason: 'Sign in to make a page.' }
   const fileId = crypto.randomUUID()
   const made = await publish(buildBareFile(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder }))
-  if (!made.ok) return { ok: false, made: false, reason: made.reason ?? made.message ?? 'The relay refused the page.' }
+  if (!made.ok) return { ok: false, made: false, reason: plainly(made, 'The page could not be made in that Folder. Try again.') }
   const address = `${KIND_BARE_FILE}:${pubkey}:${fileId}`
   const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey, identifier: fileId, relays: [] })
   const listed = await listPage({ folder: args.folder, address })
@@ -87,7 +87,17 @@ export async function listPage(args: { folder: string; address: string }): Promi
   if (!pubkey) return { ok: false, reason: 'Sign in to add it to the Folder.' }
   for (const event of planPlaceFile(pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: true })) {
     const result = await publish(event)
-    if (!result.ok) return { ok: false, reason: result.reason ?? result.message ?? 'The relay refused to list it.' }
+    if (!result.ok) return { ok: false, reason: plainly(result, 'The Folder did not take it. Try again.') }
   }
   return { ok: true }
+}
+
+/**
+ * What a refused write says to a person. The relay's reason names kinds and
+ * rules, so it goes to the console; a signing failure already arrives plain.
+ */
+function plainly(result: PublishResult, otherwise: string): string {
+  if (result.httpStatus === undefined && result.reason?.startsWith('Leaf could not sign')) return result.reason
+  console.warn('[relay] refused', result.reason ?? result.message)
+  return otherwise
 }
