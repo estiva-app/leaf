@@ -39,19 +39,20 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
     icon: <KindIcon kind={isPage(file) ? 'file' : thingKindOf(file.kind)} />,
     hint: isPage(file) ? undefined : <Chip type="neutral" label={typeOf(file)} />,
   }
-  const nested = nestedUnder(file)
-  if (nested.length) return { ...node, children: nested.map((c) => nodeOf(c, nestedUnder, expansion)) }
-  // A file whose app lists its own children — a project its issues — reads them when the row opens.
-  if (!file.listsChildren) return node
+  const nested = nestedUnder(file).map((c) => nodeOf(c, nestedUnder, expansion))
+  // A file whose app lists its own children — a project its issues — reads them when the row opens,
+  // and draws them after anything filed under it in the Folder.
+  if (!file.listsChildren) return nested.length ? { ...node, children: nested } : node
   const read = expansion.children[file.ref]
-  const listed = Array.isArray(read) ? read.filter((c) => !c.unreachable) : undefined
+  const listed = Array.isArray(read) ? read.filter((c) => !c.unreachable).map((c) => nodeOf(c, () => [], expansion)) : undefined
   return {
     ...node,
     hasChildren: true,
     open: expansion.opened.has(file.ref),
     onOpenChange: (open) => expansion.setOpen(file, open),
-    children: listed?.map((c) => nodeOf(c, () => [], expansion)) ?? (read === null ? null : undefined),
-    childrenMessage: read === 'failed' ? 'This could not be read.' : listed?.length === 0 ? 'Nothing in this yet.' : undefined,
+    children: listed ? [...nested, ...listed] : read === null ? null : undefined,
+    childrenMessage:
+      read === 'failed' ? 'This could not be read.' : listed?.length === 0 && nested.length === 0 ? 'Nothing in this yet.' : undefined,
   }
 }
 

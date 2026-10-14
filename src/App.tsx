@@ -75,9 +75,12 @@ function Frame() {
     if (!result.ok) {
       const folderName = takers.find((f) => f.id === folder)?.name ?? 'its Folder'
       setUnlisted({ naddr: result.naddr, address: result.address, folder, folderName })
+      navigate(filePath(result.naddr))
+      return true
     }
+    // Read the Folder first, so the page is in hand when it opens rather than "not found" for a moment.
+    await workspace.reloadFolder(folder)
     navigate(filePath(result.naddr))
-    await workspace.reload()
     return true
   }
 
@@ -87,8 +90,8 @@ function Frame() {
       showToast({ label: result.reason, type: 'error' })
       return
     }
+    await workspace.reloadFolder(page.folder)
     setUnlisted(null)
-    await workspace.reload()
   }
 
   const main =

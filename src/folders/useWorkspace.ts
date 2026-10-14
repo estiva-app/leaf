@@ -15,8 +15,10 @@ export interface Workspace {
   folders: WorkspaceFolder[] | null
   /** The listing itself could not be read. */
   failed: boolean
-  /** Read everything again — after a new page, say. */
+  /** Read everything again. */
   reload(): Promise<void>
+  /** Read one Folder's files again: after a new page went in it. */
+  reloadFolder(id: string): Promise<void>
   /** What each opened file lists under it, by its `ref`: absent until opened, `null` while read. */
   children: Record<string, ForeignObject[] | null | 'failed'>
   /** The rows open in the tree, by `ref`. Leaf owns them, so opening one is always when its rows are read. */
@@ -34,6 +36,19 @@ export function useWorkspace(): Workspace {
   const [folders, setFolders] = useState<WorkspaceFolder[] | null>(null)
   const [failed, setFailed] = useState(false)
 
+  // Each Folder's latest read, so an older read that lands late never replaces a newer one.
+  const latest = useRef(new Map<string, number>())
+  const readInto = useCallback(async (folder: FolderSummary) => {
+    const turn = (latest.current.get(folder.id) ?? 0) + 1
+    latest.current.set(folder.id, turn)
+    const next: WorkspaceFolder = await readFolder(folder.id).then(
+      (contents) => ({ folder, contents }),
+      () => ({ folder, contents: null, failed: true }),
+    )
+    if (latest.current.get(folder.id) !== turn) return
+    setFolders((now) => now?.map((f) => (f.folder.id === folder.id ? next : f)) ?? null)
+  }, [])
+
   const reload = useCallback(async () => {
     let listing: FolderSummary[]
     try {
@@ -47,16 +62,17 @@ export function useWorkspace(): Workspace {
     setFolders((before) =>
       listing.map((folder) => ({ folder, contents: before?.find((f) => f.folder.id === folder.id)?.contents ?? null })),
     )
-    await Promise.all(
-      listing.map(async (folder) => {
-        const next: WorkspaceFolder = await readFolder(folder.id).then(
-          (contents) => ({ folder, contents }),
-          () => ({ folder, contents: null, failed: true }),
-        )
-        setFolders((now) => now?.map((f) => (f.folder.id === folder.id ? next : f)) ?? null)
-      }),
-    )
-  }, [])
+    await Promise.all(listing.map(readInto))
+  }, [readInto])
+
+  /** Read one Folder again — the one a new page went in — leaving the rest as read. */
+  const reloadFolder = useCallback(
+    async (id: string) => {
+      const folder = folders?.find((f) => f.folder.id === id)?.folder
+      if (folder) await readInto(folder)
+    },
+    [folders, readInto],
+  )
 
   useEffect(() => {
     // The first read; a later one comes from `reload`. Every state it sets lands
@@ -88,5 +104,5 @@ export function useWorkspace(): Workspace {
     )
   }, [])
 
-  return { folders, failed, reload, children, opened, setOpen }
+  return { folders, failed, reload, reloadFolder, children, opened, setOpen }
 }

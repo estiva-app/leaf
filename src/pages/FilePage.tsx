@@ -13,7 +13,8 @@ export function FilePage({ file, loading }: { file: ForeignObject | null; loadin
     return loading ? <SkeletonList rows={3} /> : <EmptyState scope="page" message="This page could not be found, or you cannot read it." />
   }
   if (!isPage(file)) {
-    const opener = file.openUrl
+    // The address comes from the app's manifest: only a web address is opened, never a script.
+    const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
     return (
       <EmptyState
         scope="page"
