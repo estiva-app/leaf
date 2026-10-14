@@ -6,7 +6,7 @@
  *   APP_URL=https://leaf.estiva.app/ RELAY_URL=https://estiva.estiva.app npx tsx scripts/publish-manifest.ts [--dry-run]
  *   npx tsx scripts/publish-manifest.ts --new-key     # once: make .manifest-key and print the address to commit
  *
- * Identity: signs with `.manifest-key` (or `MANIFEST_KEY_FILE`), 64 hex, and
+ * Identity: signs with `~/.config/estiva/leaf-manifest-key` (or `MANIFEST_KEY_FILE`), 64 hex, and
  * refuses unless it is the key of the committed `src/manifest-address.ts`. Any
  * other key would publish a second manifest competing with the live one, and
  * NIP-33 has no way to rank two. The key is gitignored, made once, and is a
@@ -20,12 +20,14 @@ import { authorizationHeaderFor, buildUnsignedAuthEvent, publicKeyFromSecret, si
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { buildManifest, DEFAULT_APP_URL, MANIFEST_D_TAG } from '../src/manifest'
 import { MANIFEST_ADDRESS } from '../src/manifest-address'
 
 const RELAY_URL = (process.env.RELAY_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
 const APP_URL = process.env.APP_URL ?? DEFAULT_APP_URL
-const KEY_FILE = process.env.MANIFEST_KEY_FILE ?? new URL('../.manifest-key', import.meta.url).pathname
+// Outside every checkout, so a fresh worktree never mints a second key: one machine, one file.
+const KEY_FILE = process.env.MANIFEST_KEY_FILE ?? `${homedir()}/.config/estiva/leaf-manifest-key`
 const args = process.argv.slice(2)
 const DRY_RUN = args.includes('--dry-run')
 

@@ -29,7 +29,7 @@ const FOLDER = '39000'
 export function manifestContent() {
   return {
     name: 'Leaf',
-    about: 'Documents in your Folders: write one together, and comment beside the block you mean.',
+    about: 'Documents in your Folders, written together by everyone in the Folder.',
     records: {
       changeKind: CHANGE,
       targetTag: 'a',
