@@ -237,7 +237,7 @@ export function LiveDocument({
           <EditorTableControls editor={editor}>
             <EditorContent editor={editor} className="-mx-2 cursor-text px-2 py-1" data-document="editing" />
           </EditorTableControls>
-          {empty && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Write something…</span>}
+          {empty && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Type / for headings and lists.</span>}
         </EditorBlockHandle>
         <EditorLineCards editor={editor} resolved={references} />
         <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']} />

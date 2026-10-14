@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
 import { LiveDocument } from '../document/LiveDocument'
@@ -44,7 +44,12 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
   const target = useRef(file)
   const commitText = useCallback(async (value: string, contentFormat?: string) => (await saveField(target.current, 'description', value, contentFormat)).ok, [])
-  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${target.current.slots.title?.value ?? 'that document'} were not saved.`, type: 'error' }), [showToast])
+  // The title now, for a toast after the page is gone.
+  const named = useRef(title)
+  useEffect(() => {
+    named.current = title
+  }, [title])
+  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error' }), [showToast])
   async function rename(value: string): Promise<boolean> {
     const next = value.trim()
     if (!next || next === title) return true
@@ -57,7 +62,10 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Panel title={title} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-            <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
+            {/* The page's heading, as Katerina's prototype draws it. */}
+            <h1 className="text-h1 text-text-primary">
+              <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
+            </h1>
             <LiveDocument value={body?.value ?? ''} format={body?.format ?? 'marker'} changedBy={changedBy} onCommit={commitText} onLeftUnsaved={leftUnsaved} />
           </div>
         </Panel>

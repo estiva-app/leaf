@@ -77,7 +77,13 @@ export function ReferenceChip({ uri }: ReferenceViewProps) {
 function ReferenceObject({ file, layout }: { file: ForeignObject; layout: ReferenceCard['layout'] }) {
   const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
   return (
-    <Card href={opener} hover={opener ? 'fill' : 'none'} className="flex items-center gap-2 px-3 py-2" data-reference-card={layout}>
+    // Opened beside Leaf, as "Open in" does: a click on a card never takes the page away.
+    <Card
+      hover={opener ? 'fill' : 'none'}
+      onClick={opener ? () => window.open(opener, '_blank', 'noopener') : undefined}
+      className="flex items-center gap-2 px-3 py-2"
+      data-reference-card={layout}
+    >
       <KindIcon kind={thingKindOf(file.kind)} />
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-body-2-strong text-text-primary">{titleOf(file)}</span>

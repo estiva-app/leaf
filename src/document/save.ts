@@ -1,5 +1,5 @@
 import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
-import { attachmentsInDocument, imetaTag, type PublishResult, type UnsignedEvent } from '@estiva-app/protocol'
+import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type UnsignedEvent } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -33,7 +33,7 @@ export function buildChange(
 ): UnsignedEvent {
   return {
     pubkey,
-    created_at: Math.floor(createdAtMs / 1000),
+    created_at: toNostrSeconds(createdAtMs),
     kind: CHANGE,
     tags: [
       ['a', args.target],

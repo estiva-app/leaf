@@ -34,6 +34,10 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
         })
       }, 250)
     }
+    // The tree read this document when Leaf opened, maybe long ago: read it fresh now, so a save made since is not written over.
+    void readDocument(naddr).then((file) => {
+      if (live && file) setRead((was) => was ?? { file })
+    })
     const watch = client.watchFolders(
       [folder],
       (_folder, event) => {
