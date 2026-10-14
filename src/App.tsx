@@ -15,16 +15,16 @@ import { IconFilePlus, IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { beginSignOut, currentToken, whoAmI } from './auth/estivaId'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
-import { NewPageDialog } from './folders/NewPageDialog'
+import { NewDocumentDialog } from './folders/NewDocumentDialog'
 import { findFile, groupsOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
-import { createPage, listPage, takesNewPages } from './folders/workspace'
+import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { FilePage } from './pages/FilePage'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
 import { filePath, navigate, routeOf, usePathname } from './route'
 
-/** A page that was made but its Folder does not list yet: shown in its place until the listing is retried. */
+/** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
 type Unlisted = { naddr: string; address: string; folder: string; folderName: string }
 
 /** The app, with what the package's parts need around them: tooltips and toasts. */
@@ -67,10 +67,10 @@ function Frame() {
   )
   const open = route.page === 'file' ? findFile(folders, children, route.naddr) : null
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
-  const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewPages)
+  const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
 
   async function make(title: string, folder: string): Promise<boolean> {
-    const result = await createPage({ folder, title })
+    const result = await createDocument({ folder, title })
     if (!result.ok && !result.made) {
       showToast({ label: result.reason, type: 'error' })
       return false
@@ -81,7 +81,7 @@ function Frame() {
       navigate(filePath(result.naddr))
       return true
     }
-    // Read the Folder first, so the page is in hand when it opens rather than "not found" for a moment,
+    // Read the Folder first, so the document is in hand when it opens rather than "not found" for a moment,
     // and open its group, so the new row is there to see.
     await workspace.reloadFolder(folder)
     setFolderOpen(folder, true)
@@ -89,13 +89,13 @@ function Frame() {
     return true
   }
 
-  async function relist(page: Unlisted) {
-    const result = await listPage({ folder: page.folder, address: page.address })
+  async function relist(made: Unlisted) {
+    const result = await listDocument({ folder: made.folder, address: made.address })
     if (!result.ok) {
       showToast({ label: result.reason, type: 'error' })
       return
     }
-    await workspace.reloadFolder(page.folder)
+    await workspace.reloadFolder(made.folder)
     setUnlisted(null)
   }
 
@@ -105,7 +105,7 @@ function Frame() {
     ) : unlisted?.naddr === route.naddr && !open ? (
       <EmptyState
         scope="page"
-        message={`This page was made, but ${unlisted.folderName} does not list it yet.`}
+        message={`This document was made, but ${unlisted.folderName} does not list it yet.`}
         action={{ label: 'Try again', onClick: () => void relist(unlisted) }}
       />
     ) : (
@@ -124,7 +124,7 @@ function Frame() {
             <NavTree
               title="Folders"
               titleActions={
-                takers.length ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New page', onClick: () => setMaking(true) }] : undefined
+                takers.length ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => setMaking(true) }] : undefined
               }
               groups={workspace.failed ? [] : groups}
               selected={route.page === 'file' ? route.naddr : undefined}
@@ -135,7 +135,7 @@ function Frame() {
       >
         {main}
       </AppShell>
-      {making && <NewPageDialog folders={takers} defaultFolder={open?.folder.folder.id} onCreate={make} onClose={() => setMaking(false)} />}
+      {making && <NewDocumentDialog folders={takers} defaultFolder={open?.folder.folder.id} onCreate={make} onClose={() => setMaking(false)} />}
     </AppProvider>
   )
 }

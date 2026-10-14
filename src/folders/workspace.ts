@@ -1,7 +1,6 @@
 import {
   createPeopleCache,
   createProjectionCache,
-  KIND_BARE_FILE,
   listFolders,
   planPlaceFile,
   resolveFolderContents,
@@ -11,7 +10,7 @@ import {
   type FolderSummary,
   type ForeignObject,
 } from '@estiva-app/interop'
-import { buildBareFile, encodeNaddr, type PublishResult } from '@estiva-app/protocol'
+import { buildDocument, encodeNaddr, KIND, type PublishResult } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /*
@@ -45,44 +44,46 @@ export async function readChildren(naddr: string): Promise<ForeignObject[]> {
 }
 
 /**
- * Whether New page may be offered in this Folder: one with relay-signed state
- * (SPEC §3.2). A group without it is a conversation space, not a Folder, and
- * an `add` against it would publish state listing nothing (peek#192).
+ * Whether New document may be offered in this Folder: one with relay-signed
+ * state (SPEC §3.2). A group without it is a conversation space, not a Folder,
+ * and an `add` against it would publish state listing nothing (peek#192).
  */
-export function takesNewPages(folder: Pick<FolderSummary, 'hasState'>): boolean {
+export function takesNewDocuments(folder: Pick<FolderSummary, 'hasState'>): boolean {
   return folder.hasState
 }
 
-export type NewPage =
+export type NewDocument =
   | { ok: true; address: string; naddr: string }
-  /** Nothing was made: the relay refused the page itself. */
+  /** Nothing was made: the relay refused the document itself. */
   | { ok: false; made: false; reason: string }
-  /** The page exists under the Folder's `h`, but the Folder does not list it yet: {@link listPage} again. */
+  /** The document exists under the Folder's `h`, but the Folder does not list it yet: {@link listDocument} again. */
   | { ok: false; made: true; address: string; naddr: string; reason: string }
 
 /**
- * New page — SPEC §3.2's `create-file`, the same pair Peek's New topic writes:
- * a `kind:30840` with the title, the Folder's own `h` and no text, then the
- * Folder's `kind:1852` `add`. A page is a bare file (§6.7); every later change
- * to it is a `1851` carrying this same `h`.
+ * New document — a `kind:30842` with the title, the Folder's own `h` and no
+ * text, then the Folder's `kind:1852` `add` (SPEC §3.3), as the create action in
+ * Leaf's manifest declares. A document is the file type Leaf owns, never a
+ * Peek topic (Miky, 14 October), so this is not §3.2's built-in `create-file`,
+ * which makes a bare file. Every later change to it is a `1851` carrying this
+ * same `h`.
  *
- * The page goes first, so a refused `add` leaves a page that exists and is
+ * The document goes first, so a refused `add` leaves one that exists and is
  * reachable by its address rather than a listing that points at nothing.
  */
-export async function createPage(args: { folder: string; title: string }): Promise<NewPage> {
+export async function createDocument(args: { folder: string; title: string }): Promise<NewDocument> {
   const pubkey = viewerPubkey()
-  if (!pubkey) return { ok: false, made: false, reason: 'Sign in to make a page.' }
+  if (!pubkey) return { ok: false, made: false, reason: 'Sign in to make a document.' }
   const fileId = crypto.randomUUID()
-  const made = await publish(buildBareFile(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder }))
-  if (!made.ok) return { ok: false, made: false, reason: plainly(made, 'The page could not be made in that Folder. Try again.') }
-  const address = `${KIND_BARE_FILE}:${pubkey}:${fileId}`
-  const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey, identifier: fileId, relays: [] })
-  const listed = await listPage({ folder: args.folder, address })
+  const made = await publish(buildDocument(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder }))
+  if (!made.ok) return { ok: false, made: false, reason: plainly(made, 'The document could not be made in that Folder. Try again.') }
+  const address = `${KIND.DOCUMENT}:${pubkey}:${fileId}`
+  const naddr = encodeNaddr({ kind: KIND.DOCUMENT, pubkey, identifier: fileId, relays: [] })
+  const listed = await listDocument({ folder: args.folder, address })
   return listed.ok ? { ok: true, address, naddr } : { ok: false, made: true, address, naddr, reason: listed.reason }
 }
 
-/** Add a page that exists to its Folder's listing: the second half of {@link createPage}, and its retry. */
-export async function listPage(args: { folder: string; address: string }): Promise<{ ok: true } | { ok: false; reason: string }> {
+/** Add a document that exists to its Folder's listing: the second half of {@link createDocument}, and its retry. */
+export async function listDocument(args: { folder: string; address: string }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to add it to the Folder.' }
   for (const event of planPlaceFile(pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: true })) {

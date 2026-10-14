@@ -1,18 +1,19 @@
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { toRenderTree } from '@estiva-app/protocol'
 import { EmptyState, KindIcon, Panel, RichText, SkeletonList, thingKindOf } from '@estiva-app/ui'
-import { isPage, titleOf, typeOf } from '../folders/tree'
+import { isDocument, titleOf, typeOf } from '../folders/tree'
 
 /**
- * One file, opened from the tree. A page shows its title and its text; writing
- * in it comes with LEAF-3. Another app's file says what it is and offers
- * "Open in <its app>" — the only place that app's name appears (PRO-24).
+ * One file, opened from the tree. A document shows its title and its text;
+ * writing in it comes with LEAF-3. Any other file — a Peek topic as much as a
+ * Ship issue — says what it is and offers "Open in <its app>", the only place
+ * that app's name appears (PRO-24), with no editor.
  */
 export function FilePage({ file, loading }: { file: ForeignObject | null; loading: boolean }) {
   if (!file) {
-    return loading ? <SkeletonList rows={3} /> : <EmptyState scope="page" message="This page could not be found, or you cannot read it." />
+    return loading ? <SkeletonList rows={3} /> : <EmptyState scope="page" message="This could not be found, or you cannot read it." />
   }
-  if (!isPage(file)) {
+  if (!isDocument(file)) {
     // The address comes from the app's manifest: only a web address is opened, never a script.
     const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
     return (

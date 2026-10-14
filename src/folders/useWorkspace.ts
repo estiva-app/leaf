@@ -17,7 +17,7 @@ export interface Workspace {
   failed: boolean
   /** Read everything again. */
   reload(): Promise<void>
-  /** Read one Folder's files again: after a new page went in it. */
+  /** Read one Folder's files again: after a new document went in it. */
   reloadFolder(id: string): Promise<void>
   /** What each opened file lists under it, by its `ref`: absent until opened, `null` while read. */
   children: Record<string, ForeignObject[] | null | 'failed'>
@@ -67,7 +67,7 @@ export function useWorkspace(): Workspace {
     await Promise.all(listing.map(readInto))
   }, [readInto])
 
-  /** Read one Folder again — the one a new page went in — leaving the rest as read. */
+  /** Read one Folder again — the one a new document went in — leaving the rest as read. */
   const reloadFolder = useCallback(
     async (id: string) => {
       const folder = folders?.find((f) => f.folder.id === id)?.folder

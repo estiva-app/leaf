@@ -1,15 +1,17 @@
 import { signViaEstivaId } from '@estiva-app/identity'
+import { KIND } from '@estiva-app/protocol'
 import { browserOnlineSource, createLiveClientHolder, type LiveClient } from '@estiva-app/platform'
 import { currentToken } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
 
 /**
- * The event kinds that are Leaf's own: pages (a bare file, SPEC §6.7), the
- * Folder command that lists one, and a change to a page's title or text. Ship
- * reads seven of its own, Peek its own. Each one here is in Leaf's ceiling in
- * the Estiva ID seed too, or its first save is refused at /sign.
+ * The event kinds that are Leaf's own: documents (`kind:30842`, the file type
+ * Leaf owns through its manifest — never a topic's `30840`), the Folder command
+ * that lists one, and a change to a document's title or text. Ship reads seven
+ * of its own, Peek its own. Each one here is in Leaf's ceiling in the Estiva ID
+ * seed too, or its first save is refused at /sign.
  */
-export const KINDS: number[] = [30840, 1852, 1851]
+export const KINDS: number[] = [KIND.DOCUMENT, 1852, 1851]
 
 /**
  * The tab's one relay client. `@estiva-app/platform` hands out a holder and

@@ -1,4 +1,5 @@
-import { KIND_BARE_FILE, nestingOf, type ForeignObject } from '@estiva-app/interop'
+import { nestingOf, type ForeignObject } from '@estiva-app/interop'
+import { KIND } from '@estiva-app/protocol'
 import { Chip, KindIcon, thingKindOf, type NavTreeGroup, type NavTreeNode } from '@estiva-app/ui'
 import { filePath } from '../route'
 import type { Workspace, WorkspaceFolder } from './useWorkspace'
@@ -18,9 +19,13 @@ export function typeOf(file: ForeignObject): string {
   return noun.charAt(0).toUpperCase() + noun.slice(1)
 }
 
-/** A page is Leaf's own file: a bare file (SPEC §6.7), the same object as a Peek topic. */
-export function isPage(file: ForeignObject): boolean {
-  return file.kind === KIND_BARE_FILE
+/**
+ * A document is Leaf's own file: `kind:30842`, the type Leaf owns through its
+ * manifest. A Peek topic (a bare `30840`) is not one — it is drawn like any other
+ * app's file, labelled "Topic" and opened in Peek (Miky, 14 October).
+ */
+export function isDocument(file: ForeignObject): boolean {
+  return file.kind === KIND.DOCUMENT
 }
 
 /** The id the tree selects a file by, and finds it again by. */
@@ -36,8 +41,8 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
     id: fileKey(file),
     label: titleOf(file),
     href: file.naddr ? filePath(file.naddr) : '/',
-    icon: <KindIcon kind={isPage(file) ? 'file' : thingKindOf(file.kind)} />,
-    hint: isPage(file) ? undefined : <Chip type="neutral" label={typeOf(file)} />,
+    icon: <KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />,
+    hint: isDocument(file) ? undefined : <Chip type="neutral" label={typeOf(file)} />,
   }
   const nested = nestedUnder(file).map((c) => nodeOf(c, nestedUnder, expansion))
   // A file whose app lists its own children — a project its issues — reads them when the row opens,

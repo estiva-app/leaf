@@ -3,17 +3,17 @@ import { Button, DialogShell, EmptyState, Field, Form, Select, TextInput } from 
 import { useId, useState } from 'react'
 
 /**
- * New page: a title and the Folder it goes in, as Peek's New topic asks. Only
- * Folders that take a new page are offered (`takesNewPages`). Everyone in the
- * chosen Folder can read the page.
+ * New document: a title and the Folder it goes in, as Peek's New topic asks.
+ * Only Folders that take a new document are offered (`takesNewDocuments`).
+ * Everyone in the chosen Folder can read it.
  */
-export function NewPageDialog({
+export function NewDocumentDialog({
   folders,
   defaultFolder,
   onCreate,
   onClose,
 }: {
-  /** The Folders a page can go in. */
+  /** The Folders a document can go in. */
   folders: FolderSummary[]
   /** Which one starts chosen: the Folder of the file open in the tree, when there is one. */
   defaultFolder?: string
@@ -41,7 +41,7 @@ export function NewPageDialog({
 
   return (
     <DialogShell
-      title="New page"
+      title="New document"
       onClose={onClose}
       footer={
         <>
@@ -55,12 +55,12 @@ export function NewPageDialog({
       }
     >
       {folders.length === 0 ? (
-        <EmptyState scope="section" message="There is no Folder to put a page in yet." />
+        <EmptyState scope="section" message="There is no Folder to put a document in yet." />
       ) : (
         <Form id={formId} busy={creating} onSubmit={create}>
           <p className="text-body-2 text-text-secondary">{`Everyone in ${where?.name ?? 'the Folder'} can read it.`}</p>
           <Field label="Title">
-            <TextInput value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What is it about?" aria-label="Page title" autoFocus />
+            <TextInput value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What is it about?" aria-label="Document title" autoFocus />
           </Field>
           <Field label="Folder">
             <Select
