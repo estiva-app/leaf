@@ -22,10 +22,10 @@
   },
   "dependencies": {
     "@estiva-app/identity": "^0.2.2",
-    "@estiva-app/interop": "^0.32.0",
+    "@estiva-app/interop": "^0.55.0",
     "@estiva-app/platform": "^0.3.1",
-    "@estiva-app/protocol": "^0.23.0",
-    "@estiva-app/ui": "^0.65.0",
+    "@estiva-app/protocol": "^0.32.0",
+    "@estiva-app/ui": "^0.66.0",
     "@tabler/icons-react": "^3.41.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

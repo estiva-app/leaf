@@ -4,12 +4,12 @@ import { currentToken } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
 
 /**
- * The event kinds this app reads. They are the app's own decision, and the one
- * blank a new app fills in: Ship reads seven (projects, issues, changes,
- * messages, comments, deletions and edits), Peek its own. Until there are kinds
- * here the app is connected and reads nothing, which is a correct state.
+ * The event kinds that are Leaf's own: pages (a bare file, SPEC §6.7), the
+ * Folder command that lists one, and a change to a page's title or text. Ship
+ * reads seven of its own, Peek its own. Each one here is in Leaf's ceiling in
+ * the Estiva ID seed too, or its first save is refused at /sign.
  */
-export const KINDS: number[] = []
+export const KINDS: number[] = [30840, 1852, 1851]
 
 /**
  * The tab's one relay client. `@estiva-app/platform` hands out a holder and

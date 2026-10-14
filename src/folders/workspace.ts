@@ -1,0 +1,93 @@
+import {
+  createPeopleCache,
+  createProjectionCache,
+  KIND_BARE_FILE,
+  listFolders,
+  planPlaceFile,
+  resolveFolderContents,
+  resolveForeignObject,
+  topLevelFolders,
+  type FolderContents,
+  type FolderSummary,
+  type ForeignObject,
+} from '@estiva-app/interop'
+import { buildBareFile, encodeNaddr } from '@estiva-app/protocol'
+import { publish, query, viewerPubkey } from '../relay/bridge'
+
+/*
+  Leaf's reads of the workspace: the same interop calls Peek's and Ship's trees
+  make, so a Folder holds the same files in all three. The caches are the
+  manifests and the names, which every Folder's read shares.
+*/
+const manifests = createProjectionCache()
+const people = createPeopleCache()
+
+/**
+ * The Folders the tree shows: every Folder this person can read, as Peek's
+ * Folders view does (Miky, LEAF-2's kickoff) — not only the ones they joined.
+ */
+export async function readFolders(): Promise<FolderSummary[]> {
+  return topLevelFolders(await listFolders(query))
+}
+
+/** Everything in one Folder, whichever app owns it. Throws when it could not be read. */
+export function readFolder(id: string): Promise<FolderContents> {
+  return resolveFolderContents(id, query, people.viaRelay(query), manifests)
+}
+
+/**
+ * What another app's file lists under it — a project's issues — read when its
+ * row opens, as Peek reads them. Empty when its app declares no list.
+ */
+export async function readChildren(naddr: string): Promise<ForeignObject[]> {
+  const file = await resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests)
+  return file?.children ?? []
+}
+
+/**
+ * Whether New page may be offered in this Folder: one with relay-signed state
+ * (SPEC §3.2). A group without it is a conversation space, not a Folder, and
+ * an `add` against it would publish state listing nothing (peek#192).
+ */
+export function takesNewPages(folder: Pick<FolderSummary, 'hasState'>): boolean {
+  return folder.hasState
+}
+
+export type NewPage =
+  | { ok: true; address: string; naddr: string }
+  /** Nothing was made: the relay refused the page itself. */
+  | { ok: false; made: false; reason: string }
+  /** The page exists under the Folder's `h`, but the Folder does not list it yet: {@link listPage} again. */
+  | { ok: false; made: true; address: string; naddr: string; reason: string }
+
+/**
+ * New page — SPEC §3.2's `create-file`, the same pair Peek's New topic writes:
+ * a `kind:30840` with the title, the Folder's own `h` and no text, then the
+ * Folder's `kind:1852` `add`. A page is a bare file (§6.7); every later change
+ * to it is a `1851` carrying this same `h`.
+ *
+ * The page goes first, so a refused `add` leaves a page that exists and is
+ * reachable by its address rather than a listing that points at nothing.
+ */
+export async function createPage(args: { folder: string; title: string }): Promise<NewPage> {
+  const pubkey = viewerPubkey()
+  if (!pubkey) return { ok: false, made: false, reason: 'Sign in to make a page.' }
+  const fileId = crypto.randomUUID()
+  const made = await publish(buildBareFile(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder }))
+  if (!made.ok) return { ok: false, made: false, reason: made.reason ?? made.message ?? 'The relay refused the page.' }
+  const address = `${KIND_BARE_FILE}:${pubkey}:${fileId}`
+  const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey, identifier: fileId, relays: [] })
+  const listed = await listPage({ folder: args.folder, address })
+  return listed.ok ? { ok: true, address, naddr } : { ok: false, made: true, address, naddr, reason: listed.reason }
+}
+
+/** Add a page that exists to its Folder's listing: the second half of {@link createPage}, and its retry. */
+export async function listPage(args: { folder: string; address: string }): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const pubkey = viewerPubkey()
+  if (!pubkey) return { ok: false, reason: 'Sign in to add it to the Folder.' }
+  for (const event of planPlaceFile(pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: true })) {
+    const result = await publish(event)
+    if (!result.ok) return { ok: false, reason: result.reason ?? result.message ?? 'The relay refused to list it.' }
+  }
+  return { ok: true }
+}
