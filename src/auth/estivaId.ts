@@ -28,6 +28,14 @@ export function currentToken(): StoredToken | null {
   return client?.validToken(Date.now() + 60_000) ?? null
 }
 
+/**
+ * Renew the token once, when `/sign` says it expired: the signer's safety net
+ * for a renewal that was late in a background tab. `null` when it failed.
+ */
+export async function renewToken(): Promise<string | null> {
+  return (await client?.refreshAccessToken())?.accessToken ?? null
+}
+
 export function startRenewal(): void {
   client?.scheduleRenewal()
 }

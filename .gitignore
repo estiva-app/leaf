@@ -6,3 +6,5 @@ storybook-static
 *.tsbuildinfo
 .DS_Store
 registry.json
+# The manifest's signing key (scripts/publish-manifest.ts): never committed.
+.manifest-key
