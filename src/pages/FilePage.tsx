@@ -1,11 +1,13 @@
+import { useCallback, useEffect, useRef } from 'react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { toRenderTree } from '@estiva-app/protocol'
-import { EmptyState, KindIcon, Panel, RichText, SkeletonList, thingKindOf } from '@estiva-app/ui'
+import { EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { LiveDocument } from '../document/LiveDocument'
+import { saveField } from '../document/save'
+import { useLiveDocument } from '../document/useLiveDocument'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
 
 /**
- * One file, opened from the tree. A document shows its title and its text;
- * writing in it comes with LEAF-3. Any other file — a Peek topic as much as a
+ * One file, opened from the tree. A document is written in place. Any other file — a Peek topic as much as a
  * Ship issue — says what it is and offers "Open in <its app>", the only place
  * that app's name appears (PRO-24), with no editor.
  */
@@ -25,14 +27,46 @@ export function FilePage({ file, loading }: { file: ForeignObject | null; loadin
       />
     )
   }
+  return <DocumentView key={file.address ?? file.ref} opened={file} />
+}
+
+/**
+ * A document, written in place: its title at the top and its text below,
+ * each saved when you leave it, and someone else's save drawn as it arrives
+ * (LEAF-3). Keyed by the document, so opening another one starts afresh and
+ * the one you left saves on the way out.
+ */
+function DocumentView({ opened }: { opened: ForeignObject }) {
+  const { file, changedBy } = useLiveDocument(opened)
+  const { showToast } = useToast()
+  const title = titleOf(file)
   const body = file.slots[BODY_SLOT]
-  const blocks = body?.value ? toRenderTree(body.value, body.format ?? 'marker') : []
+  // The file as it was opened: a save made on the way out must not reach for state that is gone.
+  const target = useRef(file)
+  const commitText = useCallback(async (value: string, contentFormat?: string) => (await saveField(target.current, 'description', value, contentFormat)).ok, [])
+  // The title now, for a toast after the page is gone.
+  const named = useRef(title)
+  useEffect(() => {
+    named.current = title
+  }, [title])
+  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error' }), [showToast])
+  async function rename(value: string): Promise<boolean> {
+    const next = value.trim()
+    if (!next || next === title) return true
+    const result = await saveField(target.current, 'title', next)
+    if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
+    return result.ok
+  }
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={titleOf(file)} bodyClassName="px-12 pt-10 pb-24">
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
-            {blocks.length ? <RichText blocks={blocks} /> : <EmptyState scope="section" message="Nothing written here yet." />}
+        <Panel title={title} bodyClassName="px-12 pt-10 pb-24">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+            {/* The page's heading, as Katerina's prototype draws it. */}
+            <h1 className="text-h1 text-text-primary">
+              <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
+            </h1>
+            <LiveDocument value={body?.value ?? ''} format={body?.format ?? 'marker'} changedBy={changedBy} onCommit={commitText} onLeftUnsaved={leftUnsaved} />
           </div>
         </Panel>
       </div>

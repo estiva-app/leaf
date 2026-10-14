@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repo": "leaf",
-  "generatedAt": "2026-10-01T09:26:29.055Z",
+  "generatedAt": "2026-10-14T19:24:42.353Z",
   "rules": {
     "estiva/no-raw-element": {
       "errors": 0,
@@ -11,7 +11,7 @@
     "estiva/no-rebuilt-behaviour": {
       "errors": 0,
       "warnings": 0,
-      "escapes": 0
+      "escapes": 1
     },
     "estiva/no-restyled-part": {
       "errors": 0,
