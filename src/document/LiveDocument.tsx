@@ -33,19 +33,10 @@ import {
   isReferenceMenuOpen,
   isSuggestionOpen,
   PastedMarkdown,
-  type BlockTurnInto,
   type SlashSection,
 } from '@estiva-app/ui/editor'
 import { EditorLineCards, ReferenceChip, ReferencesProvider, useEditorReferences } from './references'
 import type { ChangedBy } from './useLiveDocument'
-
-/** The block handle's Turn into, as Katerina's prototype has it. */
-const TURN_INTO: BlockTurnInto[] = [
-  { label: 'Text', run: (editor) => editor.chain().setParagraph().run(), active: (node) => node.type.name === 'paragraph' },
-  { label: 'Heading', run: (editor) => editor.chain().setHeading({ level: 1 }).run(), active: (node) => node.type.name === 'heading' && node.attrs.level === 1 },
-  { label: 'Subheading', run: (editor) => editor.chain().setHeading({ level: 2 }).run(), active: (node) => node.type.name === 'heading' && node.attrs.level === 2 },
-  { label: 'Code', run: (editor) => editor.chain().setCodeBlock().run(), active: (node) => node.type.name === 'codeBlock' },
-]
 
 /** `/`: the package's Format section, then Leaf's own rows under Insert — the heading every app's own section takes, as in Ship. */
 const SLASH_SECTIONS: SlashSection[] = [
@@ -251,7 +242,7 @@ export function LiveDocument({
   return (
     <ReferencesProvider value={references}>
       <div className="flex flex-col gap-1">
-        <EditorBlockHandle editor={editor} turnInto={TURN_INTO}>
+        <EditorBlockHandle editor={editor}>
           <EditorTableControls editor={editor}>
             <EditorContent editor={editor} className="-mx-2 cursor-text px-2 py-1" data-document="editing" />
           </EditorTableControls>
