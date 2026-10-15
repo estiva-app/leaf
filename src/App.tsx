@@ -19,6 +19,7 @@ import { NewDocumentDialog } from './folders/NewDocumentDialog'
 import { findFile, groupsOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
+import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
@@ -45,6 +46,7 @@ function Frame() {
   const relayState = useRelayState()
   const route = routeOf(usePathname())
   const workspace = useWorkspace()
+  const recent = useRecent(workspace.folders, route.page === 'home')
   const { showToast } = useToast()
   const [making, setMaking] = useState(false)
   const [unlisted, setUnlisted] = useState<Unlisted | null>(null)
@@ -101,7 +103,13 @@ function Frame() {
 
   const main =
     route.page === 'home' ? (
-      <HomePage relay={RELAY_URL} state={relayState} name={me.name} />
+      <HomePage
+        relay={RELAY_URL}
+        state={relayState}
+        name={me.name}
+        recent={workspace.failed ? 'failed' : recent}
+        onNew={takers.length ? () => setMaking(true) : undefined}
+      />
     ) : unlisted?.naddr === route.naddr && !open ? (
       <EmptyState
         scope="page"

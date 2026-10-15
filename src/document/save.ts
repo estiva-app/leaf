@@ -48,6 +48,19 @@ export function buildChange(
   }
 }
 
+const saved = new Set<() => void>()
+
+/**
+ * Hear every save the relay accepted. A page saves when you leave it, so Home
+ * opens while that save is still on its way and reads again when it lands.
+ */
+export function onSaved(listener: () => void): () => void {
+  saved.add(listener)
+  return () => {
+    saved.delete(listener)
+  }
+}
+
 /** Save a document's title or text. `ok: false` carries what to tell the person. */
 export async function saveField(
   file: Pick<ForeignObject, 'address' | 'folder'>,
@@ -59,7 +72,10 @@ export async function saveField(
   if (!pubkey) return { ok: false, reason: 'Sign in to save.' }
   if (!file.address || !file.folder) return { ok: false, reason: 'This document cannot be saved from here.' }
   const result: PublishResult = await publish(buildChange(pubkey, Date.now(), { target: file.address, field, value, folder: file.folder, contentFormat }))
-  if (result.ok) return { ok: true }
+  if (result.ok) {
+    for (const listener of saved) listener()
+    return { ok: true }
+  }
   // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] save refused', result)
   return { ok: false, reason: 'Could not save. Your text is still here.' }
