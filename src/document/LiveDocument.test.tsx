@@ -118,3 +118,29 @@ describe('a save the relay refuses', () => {
     await waitFor(() => expect(onLeftUnsaved).toHaveBeenCalledTimes(1))
   })
 })
+
+describe('a table', () => {
+  it('goes in from / → Insert → Table, and the saved text opens with it', async () => {
+    const { onCommit } = mount()
+    const box = await ready()
+    // Through the `/` menu itself: its query text is deleted in the same step as the row runs.
+    type(box, ' /table')
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent?.replace('↩ Enter', ''))).toEqual(['Table'])
+    await act(async () => {
+      box.editor.view.someProp('handleKeyDown', (handle) => handle(box.editor.view, new KeyboardEvent('keydown', { key: 'Enter' })))
+    })
+    act(() => void box.editor.chain().insertContent('Name').run())
+    expect(box.querySelectorAll('tr')).toHaveLength(3)
+    expect(box.querySelectorAll('tr:first-child th')).toHaveLength(3)
+    leave(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    const [value, contentFormat] = onCommit.mock.calls[0]
+    // The saved tag, read back as `contentFormatOf` reads it.
+    expect(contentFormat).toBe('estiva-blocks-1')
+    cleanup()
+    render(<LiveDocument value={value} format="blocks" changedBy={KATERINA} onCommit={vi.fn()} onLeftUnsaved={vi.fn()} />)
+    const reopened = await ready()
+    expect(reopened.querySelectorAll('tr')).toHaveLength(3)
+    expect(reopened.querySelector('th')?.textContent).toBe('Name')
+  })
+})

@@ -26,6 +26,7 @@ import {
   isReferenceMenuOpen,
   isSuggestionOpen,
   type BlockTurnInto,
+  type SlashSection,
 } from '@estiva-app/ui/editor'
 import { EditorLineCards, ReferenceChip, ReferencesProvider, useEditorReferences } from './references'
 import type { ChangedBy } from './useLiveDocument'
@@ -36,6 +37,13 @@ const TURN_INTO: BlockTurnInto[] = [
   { label: 'Heading', run: (editor) => editor.chain().setHeading({ level: 1 }).run(), active: (node) => node.type.name === 'heading' && node.attrs.level === 1 },
   { label: 'Subheading', run: (editor) => editor.chain().setHeading({ level: 2 }).run(), active: (node) => node.type.name === 'heading' && node.attrs.level === 2 },
   { label: 'Code', run: (editor) => editor.chain().setCodeBlock().run(), active: (node) => node.type.name === 'codeBlock' },
+]
+
+/** `/`: the package's Format section, then Leaf's own rows under Insert — the heading every app's own section takes, as in Ship. */
+const SLASH_SECTIONS: SlashSection[] = [
+  formatSection('block'),
+  // Three by three with a header row, as Ship's Insert → Table makes it.
+  { label: 'Insert', commands: [{ key: 'insert-table', row: { label: 'Table' }, run: (editor) => void editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }] },
 ]
 
 /**
@@ -159,7 +167,7 @@ export function LiveDocument({
         ReferenceMenu,
         UnknownBlock,
         AttachmentNode,
-        SlashCommands.configure({ sections: [formatSection('block')] }),
+        SlashCommands.configure({ sections: SLASH_SECTIONS }),
       ],
       // Built once. A value coming back must not rebuild the editor under the caret; see the effect below.
       content: toEditorDocument(documentForEditing(value, format)),
