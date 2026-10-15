@@ -7,7 +7,7 @@ import { rankRecent, recentFilters, type Page, type RecentRow } from './recent'
 
 /** One of Home's rows as it draws: the row, and the name of who changed it last. */
 export interface HomeRow extends RecentRow {
-  /** "You", their profile's name, or `null` while it is read or when they have none. */
+  /** Their profile's name, "Someone" when they have none, or `null` while it is read. */
   byName: string | null
 }
 
@@ -26,6 +26,7 @@ export function pagesOf(folders: WorkspaceFolder[] | null): Page[] | null {
         eventId: f.eventId,
         title: titleOf(f),
         folder: folder.name ?? folder.id,
+        folderId: folder.id,
       })),
   )
 }
@@ -41,7 +42,8 @@ export function useRecent(folders: WorkspaceFolder[] | null, shown: boolean): Re
   const [recent, setRecent] = useState<Recent>(null)
   const [saves, setSaves] = useState(0)
 
-  useEffect(() => onSaved(() => setSaves((n) => n + 1)), [])
+  // Only while Home is shown: elsewhere a save would re-render the whole frame for nothing.
+  useEffect(() => (shown ? onSaved(() => setSaves((n) => n + 1)) : undefined), [shown])
 
   useEffect(() => {
     if (!pages || !shown) return
@@ -52,9 +54,10 @@ export function useRecent(folders: WorkspaceFolder[] | null, shown: boolean): Re
       async (events) => {
         const rows = rankRecent(pages, events, me)
         if (!live) return
-        setRecent(rows.map((r) => ({ ...r, byName: r.by === me ? 'You' : null })))
-        const names = await Promise.all(rows.map((r) => (r.by === me ? 'You' : nameOf(r.by).catch(() => null))))
-        if (live) setRecent(rows.map((r, i) => ({ ...r, byName: names[i] })))
+        setRecent(rows.map((r) => ({ ...r, byName: null })))
+        // Your own rows carry your name too, as Katerina's story has them; no name is "Someone", as the page says it.
+        const names = await Promise.all(rows.map((r) => nameOf(r.by).catch(() => null)))
+        if (live) setRecent(rows.map((r, i) => ({ ...r, byName: names[i] ?? 'Someone' })))
       },
       () => {
         if (live) setRecent('failed')

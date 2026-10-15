@@ -12,7 +12,10 @@ export interface Page {
   /** The page's own event: its `created_at` is when it was made. */
   eventId: string
   title: string
+  /** The Folder's name, as the row says it. */
   folder: string
+  /** The Folder's id: the `h` every change and comment on the page carries. */
+  folderId: string
 }
 
 export interface RecentRow extends Page {
@@ -39,23 +42,33 @@ export function recentFilters(pages: Page[]): Record<string, unknown>[] {
   ]
 }
 
-/** The page an event changes or comments on, when it is one of Home's; `null` for anything else. */
-function pageOf(event: SignedEvent): string | null {
+/**
+ * The page an event changes or comments on, when it is one of `pages`; `null`
+ * for anything else. The tag that names it, not the first of its kind: the
+ * read matches an event by any of its `a`s.
+ */
+function pageOf(event: SignedEvent, pages: ReadonlyMap<string, unknown>): string | null {
+  const naming = (name: string) => event.tags.find((t) => t[0] === name && pages.has(t[1]))?.[1] ?? null
   if (event.kind === CHANGE) {
     // A `1851` also sets `member:`, `archived` or `parent` (SPEC §11.8): only the text and the title are an edit.
     const field = event.tags.find((t) => t[0] === 'field')?.[1]
-    if (field !== 'title' && field !== 'description') return null
-    return event.tags.find((t) => t[0] === 'a')?.[1] ?? null
+    return field === 'title' || field === 'description' ? naming('a') : null
   }
-  if (event.kind === KIND.COMMENT) return event.tags.find((t) => t[0] === 'A')?.[1] ?? null
-  return null
+  return event.kind === KIND.COMMENT ? naming('A') : null
 }
 
-/** The event's own time in ms: its `ts` tag when it has one (to the millisecond), else `created_at`. */
+/**
+ * The event's own time in ms: its `ts` tag when it falls in the second its
+ * `created_at` names (the same moment, to the millisecond), else `created_at`.
+ * A `ts` is the signer's word alone: unbounded, one far in the future would
+ * keep a page on top of everyone's Home.
+ */
 function timeOf(event: SignedEvent): number {
   const ts = Number(event.tags.find((t) => t[0] === 'ts')?.[1])
-  return Number.isFinite(ts) && ts > 0 ? ts : event.created_at * 1000
+  return Number.isFinite(ts) && Math.floor(ts / 1000) === event.created_at ? ts : event.created_at * 1000
 }
+
+const tag = (event: SignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 
 /**
  * Home's rows (Miky, LEAF-6's kickoff): the pages `me` made, edited or
@@ -67,6 +80,7 @@ export function rankRecent(pages: Page[], events: SignedEvent[], me: string | nu
   const rows = new Map<string, RecentRow>()
   const byEvent = new Map<string, RecentRow>()
   const touched = new Set<string>()
+  const titledAt = new Map<string, number>()
   for (const page of pages) {
     const maker = page.address.split(':')[1] ?? ''
     const row = { ...page, at: 0, by: maker }
@@ -76,14 +90,22 @@ export function rankRecent(pages: Page[], events: SignedEvent[], me: string | nu
   }
   for (const event of events) {
     const made = byEvent.get(event.id)
-    const address = made ? made.address : pageOf(event)
+    const address = made ? made.address : pageOf(event, rows)
     const row = address ? rows.get(address) : undefined
     if (!row) continue
+    // A change or comment carrying another Folder's `h` is ignored by every reader (SPEC §6.2), so here too.
+    if (!made && tag(event, 'h') !== row.folderId) continue
     if (event.pubkey === me) touched.add(row.address)
     const at = timeOf(event)
     if (at > row.at) {
       row.at = at
       row.by = event.pubkey
+    }
+    // The newest title: the tree's is the one read when Leaf opened, before a rename made since.
+    const title = event.kind === CHANGE && tag(event, 'field') === 'title' ? tag(event, 'value')?.trim() : undefined
+    if (title && at > (titledAt.get(row.address) ?? 0)) {
+      titledAt.set(row.address, at)
+      row.title = title
     }
   }
   const all = [...rows.values()]

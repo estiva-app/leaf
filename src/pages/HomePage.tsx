@@ -55,7 +55,7 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
       </>
     )
   }
-  if (recent === 'failed') return <EmptyState scope="page" message="Your recent pages could not be read. Reload to try again." />
+  if (recent === 'failed') return <EmptyState scope="page" message="Your recent documents could not be read. Reload to try again." />
   if (recent?.length === 0) {
     return (
       <EmptyState

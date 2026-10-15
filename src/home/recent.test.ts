@@ -7,16 +7,16 @@ const ANA = 'b'.repeat(64)
 const RAVI = 'c'.repeat(64)
 
 function page(n: number, maker = ANA): Page {
-  return { address: `30842:${maker}:p${n}`, naddr: `naddr1p${n}`, eventId: `e${n}`, title: `Page ${n}`, folder: 'QA' }
+  return { address: `30842:${maker}:p${n}`, naddr: `naddr1p${n}`, eventId: `e${n}`, title: `Page ${n}`, folder: 'QA', folderId: 'f1' }
 }
 function made(p: Page, at: number): SignedEvent {
-  return { id: p.eventId, pubkey: p.address.split(':')[1], kind: 30842, created_at: at, tags: [], content: '', sig: '' }
+  return { id: p.eventId, pubkey: p.address.split(':')[1], kind: 30842, created_at: at, tags: [['h', 'f1']], content: '', sig: '' }
 }
-function save(p: Page, by: string, at: number, field = 'description'): SignedEvent {
-  return { id: `s${at}`, pubkey: by, kind: 1851, created_at: at, tags: [['a', p.address], ['field', field], ['value', 'x']], content: '', sig: '' }
+function save(p: Page, by: string, at: number, field = 'description', value = 'x', h = 'f1'): SignedEvent {
+  return { id: `s${at}`, pubkey: by, kind: 1851, created_at: at, tags: [['a', p.address], ['field', field], ['value', value], ['h', h]], content: '', sig: '' }
 }
 function comment(p: Page, by: string, at: number, tag: 'A' | 'a' = 'A'): SignedEvent {
-  return { id: `c${at}`, pubkey: by, kind: 1111, created_at: at, tags: [[tag, p.address]], content: 'hi', sig: '' }
+  return { id: `c${at}`, pubkey: by, kind: 1111, created_at: at, tags: [[tag, p.address], ['h', 'f1']], content: 'hi', sig: '' }
 }
 
 describe("Home's rows", () => {
@@ -62,6 +62,32 @@ describe("Home's rows", () => {
   it('ignores the saves of a page that is no longer in a Folder', () => {
     const gone = page(9)
     expect(rankRecent([page(1)], [made(page(1), 10), save(gone, ME, 99)], ME).map((r) => r.title)).toEqual(['Page 1'])
+  })
+
+  it('names a page by its newest title, not the one the tree read when Leaf opened', () => {
+    const one = page(1)
+    const rows = rankRecent([one], [made(one, 10), save(one, ME, 20, 'title', 'Plan'), save(one, ANA, 15, 'title', 'Older')], ME)
+    expect(rows[0].title).toBe('Plan')
+  })
+
+  it("ignores a change carrying another Folder's h, as every reader does", () => {
+    const one = page(1)
+    const rows = rankRecent([one], [made(one, 10), save(one, RAVI, 90, 'title', 'Hijack', 'f2')], ME)
+    expect(rows.map((r) => [r.title, r.by, r.at])).toEqual([['Page 1', ANA, 10_000]])
+  })
+
+  it('credits a change to the page its a names, not to its first a', () => {
+    const one = page(1)
+    const both = { ...save(one, ME, 40), tags: [['a', '30842:x:elsewhere'], ...save(one, ME, 40).tags] }
+    expect(rankRecent([one], [made(one, 10), both], ME).map((r) => [r.by, r.at])).toEqual([[ME, 40_000]])
+  })
+
+  it('takes a ts only within the second its created_at names', () => {
+    const one = page(1)
+    const early = { ...save(one, ME, 20), tags: [...save(one, ME, 20).tags, ['ts', '20250']] }
+    const future = { ...save(one, ANA, 30), tags: [...save(one, ANA, 30).tags, ['ts', '9999999999999']] }
+    expect(rankRecent([one], [made(one, 10), early], ME)[0].at).toBe(20_250)
+    expect(rankRecent([one], [made(one, 10), future], ME)[0].at).toBe(30_000)
   })
 
   it(`shows at most ${HOME_ROWS}`, () => {

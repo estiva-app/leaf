@@ -33,6 +33,7 @@ const row = (n: number, title: string, folder: string, byName: string, ago: numb
   address: `30842:${'a'.repeat(64)}:p${n}`,
   naddr: `naddr1p${n}`,
   eventId: `e${n}`,
+  folderId: folder.toLowerCase(),
   title,
   folder,
   at: NOW - ago,
@@ -50,7 +51,7 @@ export const Recent: Story = {
       row(1, 'Launch plan', 'Launch', 'Ana Duarte', 2 * 60_000),
       row(2, 'Checklist', 'Launch', 'Ravi Mehta', 26 * 3_600_000),
       row(3, 'Type scale notes', 'Design', 'Mia Chen', 3 * 86_400_000),
-      row(4, 'Interview guide', 'Design', 'You', 8 * 86_400_000),
+      row(4, 'Interview guide', 'Design', 'Sam Porter', 8 * 86_400_000),
     ],
   },
 }
