@@ -10,6 +10,8 @@ import { BLOCK_DOCUMENT_FORMAT, KIND, type NostrTag, type UnsignedEvent } from '
 
   Published by `scripts/publish-manifest.ts` with Leaf's own manifest key —
   never through Estiva ID's /sign, whose ceiling for Leaf holds no 31990.
+
+  why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-is-its-own-type-of-file.md
 */
 
 /** The manifest's `d`: one per app, so a republish replaces it. */
@@ -46,6 +48,7 @@ export function manifestContent() {
         slots: {
           title: { tag: 'title', fold: 'title' },
           // A document's text is its `description` field, seeded from `content` (SPEC §6.10).
+          // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-text-is-a-readable-snapshot.md
           body: { fold: 'description', field: 'content' },
           // A document may sit under a file of any kind, named by its own `a` (Miky, 14 October).
           list: { children: { kind: KIND.DOCUMENT, via: 'a', limit: 200, movedBy: 'parent', anyParent: true } },
