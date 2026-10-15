@@ -3,7 +3,14 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { TextSelection } from '@tiptap/pm/state'
-import { documentForEditing, publishableFromEditor, toEditorDocument, type ContentFormat, type EditorDocument } from '@estiva-app/protocol'
+import {
+  descriptionTextToBlockDocument,
+  documentForEditing,
+  publishableFromEditor,
+  toEditorDocument,
+  type ContentFormat,
+  type EditorDocument,
+} from '@estiva-app/protocol'
 import { Button, FieldLine, richTextClassName } from '@estiva-app/ui'
 import {
   AttachmentNode,
@@ -25,6 +32,7 @@ import {
   isChecklistTick,
   isReferenceMenuOpen,
   isSuggestionOpen,
+  PastedMarkdown,
   type BlockTurnInto,
   type SlashSection,
 } from '@estiva-app/ui/editor'
@@ -168,6 +176,8 @@ export function LiveDocument({
         UnknownBlock,
         AttachmentNode,
         SlashCommands.configure({ sections: SLASH_SECTIONS }),
+        // Markdown pasted as plain text lands as the blocks it spells, tables included, read as the agent reads a description (LEAF-10).
+        PastedMarkdown.configure({ read: (text) => toEditorDocument(descriptionTextToBlockDocument(text)) }),
       ],
       // Built once. A value coming back must not rebuild the editor under the caret; see the effect below.
       content: toEditorDocument(documentForEditing(value, format)),
