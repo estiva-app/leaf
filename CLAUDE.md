@@ -82,5 +82,3 @@ reviewer checks every new test in a PR against them (PEE-50, UNI-4).
   contract.
 - **A test says what it guards**: its name states the behaviour and the case, so
   a red run reads as a real bug.
-
-<!-- plant: why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/folders-are-labels.md and https://github.com/estiva-app/estiva-docs/blob/main/decisions/no-such-record.md -->
