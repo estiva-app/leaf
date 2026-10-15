@@ -25,6 +25,8 @@ export async function nameOf(pubkey: string): Promise<string | null> {
  * `content-format`, `ts` and an `imeta` for each file the body places. The `h`
  * is always the document's own Folder: a change carrying another is accepted
  * by the relay and ignored by every reader, so it would look saved and not be.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-text-is-a-readable-snapshot.md
  */
 export function buildChange(
   pubkey: string,
