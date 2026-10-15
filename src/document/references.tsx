@@ -87,6 +87,10 @@ function ReferenceObject({ file, layout }: { file: ForeignObject; layout: Refere
       <KindIcon kind={thingKindOf(file.kind)} />
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-body-2-strong text-text-primary">{titleOf(file)}</span>
+        {/* Its summary, on the card that has room for it (SPEC §6.12); a row stays one line. */}
+        {layout === 'detailed' && file.slots.subtitle && (
+          <span className="line-clamp-2 text-body-2 text-text-secondary">{file.slots.subtitle.value}</span>
+        )}
         {layout === 'detailed' && <span className="truncate text-body-2 text-text-secondary">{typeOf(file)}</span>}
       </span>
     </Card>
