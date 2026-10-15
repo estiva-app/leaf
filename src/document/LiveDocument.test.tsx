@@ -4,7 +4,7 @@ import type { Editor } from '@tiptap/react'
 
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null }))
 
-import { LiveDocument, SLASH_SECTIONS } from './LiveDocument'
+import { LiveDocument } from './LiveDocument'
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text nodes, and ProseMirror calls them on every change. */
 beforeAll(() => {
@@ -123,9 +123,12 @@ describe('a table', () => {
   it('goes in from / → Insert → Table, and the saved text opens with it', async () => {
     const { onCommit } = mount()
     const box = await ready()
-    enter(box)
-    const row = SLASH_SECTIONS.find((s) => s.label === 'Insert')?.commands.find((c) => c.row.label === 'Table')
-    act(() => void row?.run(box.editor))
+    // Through the `/` menu itself: its query text is deleted in the same step as the row runs.
+    type(box, ' /table')
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent?.replace('↩ Enter', ''))).toEqual(['Table'])
+    await act(async () => {
+      box.editor.view.someProp('handleKeyDown', (handle) => handle(box.editor.view, new KeyboardEvent('keydown', { key: 'Enter' })))
+    })
     act(() => void box.editor.chain().insertContent('Name').run())
     expect(box.querySelectorAll('tr')).toHaveLength(3)
     expect(box.querySelectorAll('tr:first-child th')).toHaveLength(3)

@@ -40,7 +40,7 @@ const TURN_INTO: BlockTurnInto[] = [
 ]
 
 /** `/`: the package's Format section, then Leaf's own rows under Insert — the heading every app's own section takes, as in Ship. */
-export const SLASH_SECTIONS: SlashSection[] = [
+const SLASH_SECTIONS: SlashSection[] = [
   formatSection('block'),
   // Three by three with a header row, as Ship's Insert → Table makes it.
   { label: 'Insert', commands: [{ key: 'insert-table', row: { label: 'Table' }, run: (editor) => void editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }] },
