@@ -4,7 +4,7 @@ import type { Editor } from '@tiptap/react'
 
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null }))
 
-import { LiveDocument } from './LiveDocument'
+import { LiveDocument, SLASH_SECTIONS } from './LiveDocument'
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text nodes, and ProseMirror calls them on every change. */
 beforeAll(() => {
@@ -116,5 +116,28 @@ describe('a save the relay refuses', () => {
     type(box, ' unsaved')
     unmount()
     await waitFor(() => expect(onLeftUnsaved).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('a table', () => {
+  it('goes in from / → Insert → Table, and the saved text opens with it', async () => {
+    const { onCommit } = mount()
+    const box = await ready()
+    enter(box)
+    const row = SLASH_SECTIONS.find((s) => s.label === 'Insert')?.commands.find((c) => c.row.label === 'Table')
+    act(() => void row?.run(box.editor))
+    act(() => void box.editor.chain().insertContent('Name').run())
+    expect(box.querySelectorAll('tr')).toHaveLength(3)
+    expect(box.querySelectorAll('tr:first-child th')).toHaveLength(3)
+    leave(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    const [value, contentFormat] = onCommit.mock.calls[0]
+    // The saved tag, read back as `contentFormatOf` reads it.
+    expect(contentFormat).toBe('estiva-blocks-1')
+    cleanup()
+    render(<LiveDocument value={value} format="blocks" changedBy={KATERINA} onCommit={vi.fn()} onLeftUnsaved={vi.fn()} />)
+    const reopened = await ready()
+    expect(reopened.querySelectorAll('tr')).toHaveLength(3)
+    expect(reopened.querySelector('th')?.textContent).toBe('Name')
   })
 })
