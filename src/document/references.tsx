@@ -89,7 +89,7 @@ function ReferenceObject({ file, layout }: { file: ForeignObject; layout: Refere
         <span className="truncate text-body-2-strong text-text-primary">{titleOf(file)}</span>
         {/* Its summary, on the card that has room for it (SPEC §6.12); a row stays one line. */}
         {layout === 'detailed' && file.slots.subtitle && (
-          <span className="line-clamp-2 text-body-2 text-text-secondary">{file.slots.subtitle.value}</span>
+          <span className="line-clamp-2 break-words text-body-2 text-text-secondary">{file.slots.subtitle.value}</span>
         )}
         {layout === 'detailed' && <span className="truncate text-body-2 text-text-secondary">{typeOf(file)}</span>}
       </span>
