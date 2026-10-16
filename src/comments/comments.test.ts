@@ -72,21 +72,29 @@ describe('a comment from the column', () => {
 })
 
 describe("a document's threads", () => {
-  it('groups replies under their comment, keeps the block, reads the last resolution, and ignores a comment from another Folder', async () => {
+  it('groups replies under their comment, keeps the block, reads the last resolution, and keeps a comment filed in another Folder', async () => {
     const onBlock = comment([['block', 'b1']], 'On the paragraph')
     const whole = comment([], 'On the page')
-    const stray = comment([['block', 'b1']], 'Signed into another Folder', 'another-folder')
+    // Reads go by anchor, never bounded by Folder (record a-thread-belongs-to-what-it-is-about).
+    const elsewhere = comment([], 'Filed in another Folder', 'another-folder')
     const reply = event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', onBlock.id], ['k', '1111'], ['h', FOLDER]], 'Cut it', ME)
     const resolvedThenReopened = [
       event(9101, [['h', FOLDER], ['e', whole.id], ['t', 'resolution'], ['action', 'resolved']]),
       event(9101, [['h', FOLDER], ['e', onBlock.id], ['t', 'resolution'], ['action', 'resolved']]),
       event(9101, [['h', FOLDER], ['e', onBlock.id], ['t', 'resolution'], ['action', 'reopened']]),
     ]
-    relay.events = [onBlock, whole, stray, reply, ...resolvedThenReopened]
+    relay.events = [onBlock, whole, elsewhere, reply, ...resolvedThenReopened]
     const threads = await readThreads(DOC)
     expect(threads.map((t) => [t.root.body, t.blocks, t.replies.map((r) => r.body), t.resolved])).toEqual([
       ['On the paragraph', ['b1'], ['Cut it'], false],
       ['On the page', undefined, [], true],
+      ['Filed in another Folder', undefined, [], false],
     ])
+  })
+
+  it("resolves a thread filed in another Folder in that Folder, its comment's own", async () => {
+    const elsewhere = comment([], 'x', 'another-folder')
+    await setResolved(DOC, { id: elsewhere.id, root: { id: elsewhere.id, by: AUTHOR, at: 0, body: 'x', event: elsewhere }, replies: [], resolved: false }, true)
+    expect(sent().tags).toContainEqual(['h', 'another-folder'])
   })
 })

@@ -39,15 +39,16 @@ const item = (event: SignedEvent): CommentItem => ({ id: event.id, by: event.pub
 /**
  * Every thread on a document, oldest first: its comments (`1111` naming it by
  * `A`, roots and replies alike), grouped by NIP-22, and each root's
- * resolutions (`9101`), read as Peek reads them. A comment carrying another
- * Folder's `h` is ignored, as every reader ignores a change that does (SPEC
- * §6.2). A reply whose root is gone has no card: there is no top-level
- * comment to draw it under.
+ * resolutions (`9101`), read as Peek reads them. Whatever Folder a comment
+ * was filed in, it is this document's: reads go by anchor and are never
+ * bounded by Folder. A reply whose root is gone has no card: there is no
+ * top-level comment to draw it under.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-thread-belongs-to-what-it-is-about.md
  */
 export async function readThreads(doc: Commented): Promise<Thread[]> {
   const events = await query([{ kinds: [KIND_COMMENT], '#A': [doc.address], limit: 500 }])
-  const inFolder = events.filter((e) => e.kind === KIND_COMMENT && e.tags.some((t) => t[0] === 'h' && t[1] === doc.folder))
-  const { roots, replies } = groupThreads(inFolder)
+  const { roots, replies } = groupThreads(events.filter((e) => e.kind === KIND_COMMENT))
   const on = roots.filter((e) => isCommentOn(e, doc.address))
   const decorations = on.length ? await decorationsOf(on.map((e) => ({ id: e.id, at: e.created_at })), query) : null
   return on.map((root) => {
@@ -92,11 +93,15 @@ export function postReply(doc: Commented, thread: Thread, body: string): Promise
   )
 }
 
-/** Resolve or reopen a thread: the same `kind:9101` Peek writes, so both apps read the same state (Miky, LEAF-5 kickoff). */
+/**
+ * Resolve or reopen a thread: the same `kind:9101` Peek writes, so both apps read the same state (Miky, LEAF-5 kickoff).
+ * It goes in the Folder its comment was filed in, which may not be the document's.
+ */
 export function setResolved(doc: Commented, thread: Thread, resolved: boolean): Promise<WriteResult> {
   const pubkey = viewerPubkey()
+  const folder = thread.root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
   return send(
-    pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: doc.folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened' }) : null,
+    pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened' }) : null,
     resolved ? 'Could not resolve it. Try again.' : 'Could not reopen it. Try again.',
   )
 }
