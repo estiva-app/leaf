@@ -60,12 +60,21 @@ export function manifestContent() {
         id: 'add-document',
         label: 'New document',
         description:
-          'Start a document in a Folder: a title, and nothing else yet. Everyone who can read the Folder can read ' +
-          'and change it, and the Folder lists it straight away. Write its text afterwards with describe.',
+          'Start a document in a Folder: a title and, if you like, a one- or two-sentence summary. Everyone who ' +
+          'can read the Folder can read and change it, and the Folder lists it straight away. Write its text ' +
+          'afterwards with describe.',
         effect: 'writes',
         appliesTo: FOLDER,
         emits: { kind: KIND.DOCUMENT, placement: 'h', listed: true },
-        input: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
+        input: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            // The root's `summary` tag, the seed `summarize` folds over (SPEC §6.12). Plain text, so no `format`.
+            summary: { type: 'string' },
+          },
+          required: ['title'],
+        },
       },
       {
         id: 'comment',
@@ -95,6 +104,24 @@ export function manifestContent() {
         appliesTo: [DOCUMENT],
         emits: { kind: CHANGE, field: 'description' },
         input: { type: 'string', format: BLOCK_DOCUMENT_FORMAT },
+      },
+      /*
+        The one-line summary under the title (SPEC §6.11, §6.12, §7.3): a
+        `kind:1851` on `summary`. Its input declares no `format` — a summary is
+        plain text, never a document — and a consumer finds it by `emits.field`,
+        not by id. An empty value clears it; the root's seed does not come back.
+        why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-summary-is-its-own-field.md
+      */
+      {
+        id: 'summarize',
+        label: 'Edit summary',
+        description:
+          "Set the one- or two-sentence summary shown under this document's title, in lists and on cards, about " +
+          '240 characters of plain text; an empty value clears it. A change, so anyone in its Folder may.',
+        effect: 'writes',
+        appliesTo: [DOCUMENT],
+        emits: { kind: CHANGE, field: 'summary' },
+        input: { type: 'string' },
       },
       {
         id: 'move',
