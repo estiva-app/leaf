@@ -7,7 +7,7 @@ import { Card, Chip, CollapsibleSection, EmptyState, FieldLine, IconButton, Pane
 import { ComposeBox, ComposeKeys, COMPOSE_EDITOR_CLASSES, commentElement, commentPlace, quoteText, setCommentAnchors, type CommentAnchor, type CommentPlace } from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
 import { exactly, whenOf } from '../home/recent'
-import { postComment, postReply, setResolved, type Commented, type CommentItem, type Thread, type WriteResult } from './comments'
+import { postComment, postReply, setResolved, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult } from './comments'
 import { useThreads } from './useThreads'
 
 /**
@@ -227,9 +227,9 @@ export interface CommentsColumnProps {
   editor: Editor | null
   /** The document's scrolling body, to bring a chosen comment's blocks into view. */
   docBody: RefObject<HTMLDivElement | null>
-  /** The block a comment is being written on, from its handle; `null` for the whole document. */
-  draft: string | null
-  onDraft: (blockId: string | null) => void
+  /** What a comment is being written on — a block from its handle, or the selection from the strip; `null` for the whole document. */
+  draft: Anchor | null
+  onDraft: (anchor: Anchor | null) => void
 }
 
 /** The comments column of a Leaf document. */
@@ -287,11 +287,11 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     }
   }, [editor, onDraft])
 
-  // Draw every open comment on its blocks, and the draft's block while it is written.
+  // Draw every open comment on its blocks, and what the draft is on while it is written.
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
     const anchors = addressable ? all.flatMap((t) => (t.resolved ? [] : [anchorOf(t)].filter((a): a is CommentAnchor => !!a))) : []
-    if (draft) anchors.push({ id: DRAFT, blocks: [draft] })
+    if (draft) anchors.push({ id: DRAFT, ...draft })
     setCommentAnchors(editor, anchors, draft ? DRAFT : active)
   }, [editor, all, draft, active, addressable])
 
@@ -338,8 +338,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     reread()
   }
 
-  const draftPlace = editor && draft ? commentPlace(editor, { id: DRAFT, blocks: [draft] }) : null
-  const draftLine = draftPlace ? wholeBlocksLine(editor, draftPlace) : ''
+  const draftPlace = editor && draft ? commentPlace(editor, { id: DRAFT, ...draft }) : null
+  const draftLine = draft?.quote ? `On “${quoteText(draft.quote)}”` : draftPlace ? wholeBlocksLine(editor, draftPlace) : ''
 
   const card = (t: Thread) => (
     <ThreadCard
@@ -382,7 +382,12 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
               </IconButton>
             </div>
           )}
-          <Composer key={draft ?? 'document'} placeholder={draft ? 'Comment on this block…' : 'Comment on this document…'} onSend={send} autoFocus={!!draft} />
+          <Composer
+            key={draft ? JSON.stringify(draft) : 'document'}
+            placeholder={draft ? (draft.quote ? 'Comment on these words…' : 'Comment on these blocks…') : 'Comment on this document…'}
+            onSend={send}
+            autoFocus={!!draft}
+          />
         </div>
       }
     >
@@ -393,7 +398,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
           <SkeletonList rows={2} />
         )
       ) : all.length === 0 ? (
-        <EmptyState scope="section" message="No comments yet. Choose Comment in a block's menu, or write below." />
+        <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
       ) : (
         <>
           {open.map(card)}

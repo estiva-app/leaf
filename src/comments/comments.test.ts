@@ -32,7 +32,7 @@ const comment = (tags: string[][], content: string, h = FOLDER) =>
 
 describe('a comment from the column', () => {
   it("on a block is a 1111 on the document, naming the block and carrying the document's Folder as h", async () => {
-    await postComment(DOC, 'Too long?', '8373a025427f')
+    await postComment(DOC, 'Too long?', { blocks: ['8373a025427f'] })
     const e = sent()
     expect(e.kind).toBe(1111)
     expect(e.content).toBe('Too long?')
@@ -67,7 +67,7 @@ describe('a comment from the column', () => {
 
   it('gives plain words when the relay refuses, for the box to say beside your text', async () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 1111 not allowed' })
-    expect(await postComment(DOC, 'x', 'b1')).toEqual({ ok: false, reason: 'Could not send your comment. Your text is still here.' })
+    expect(await postComment(DOC, 'x', { blocks: ['b1'] })).toEqual({ ok: false, reason: 'Could not send your comment. Your text is still here.' })
   })
 })
 

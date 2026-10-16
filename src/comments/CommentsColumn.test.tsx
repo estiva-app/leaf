@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type BlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 
 const ME = 'a'.repeat(64)
@@ -30,12 +30,13 @@ vi.mock('../relay/bridge', () => ({
 import { FilePage } from '../pages/FilePage'
 import { LiveDocument } from '../document/LiveDocument'
 import { CommentsColumn } from './CommentsColumn'
+import type { Anchor } from './comments'
 import { useRef, useState } from 'react'
 
 /** The page's two halves, with a block's Comment already chosen: what the handle's row does (jsdom has no layout to hover). */
 function Drafting({ block }: { block: string }) {
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [draft, setDraft] = useState<string | null>(block)
+  const [draft, setDraft] = useState<Anchor | null>({ blocks: [block] })
   const body = useRef<HTMLDivElement | null>(null)
   return (
     <ToastProvider>
@@ -73,7 +74,8 @@ const comment = (tags: string[][], content: string): SignedEvent => {
   return { id: n.toString(16).padStart(64, '0'), pubkey: AUTHOR, created_at: 1_760_000_000 + n, kind: 1111, tags: tagged, content, sig: '' }
 }
 
-const file = { ref: 'r', kind: 30842, eventId: 'e', widget: 'card', meta: [], actions: [], viaRecommendation: false, address: ADDRESS, folder: FOLDER, slots: { title: { value: 'Plan' }, [BODY_SLOT]: { value: serializeBlockDocument(BODY), format: 'blocks' } } } as unknown as ForeignObject
+const fileWith = (body: BlockDocument) =>
+  ({ ref: 'r', kind: 30842, eventId: 'e', widget: 'card', meta: [], actions: [], viaRecommendation: false, address: ADDRESS, folder: FOLDER, slots: { title: { value: 'Plan' }, [BODY_SLOT]: { value: serializeBlockDocument(body), format: 'blocks' } } }) as unknown as ForeignObject
 
 type EditorBox = HTMLElement & { editor: Editor }
 const page = () => screen.getByRole('textbox', { name: 'Document' }) as EditorBox
@@ -81,11 +83,11 @@ const box = (name: string) => screen.getByRole('textbox', { name }) as EditorBox
 const write = (name: string, text: string) => act(() => void box(name).editor.chain().focus().insertContent(text).run())
 const sendWithEnter = (name: string) => act(() => void fireEvent.keyDown(box(name), { key: 'Enter' }))
 
-async function open(events: SignedEvent[]) {
+async function open(events: SignedEvent[], body = BODY) {
   relay.events = events
   render(
     <ToastProvider>
-      <FilePage file={file} loading={false} />
+      <FilePage file={fileWith(body)} loading={false} />
     </ToastProvider>,
   )
   await waitFor(() => expect(page().editor.isInitialized).toBe(true))
@@ -131,8 +133,8 @@ describe('the comments column', () => {
     relay.events = []
     render(<Drafting block={PARAGRAPH} />)
     await waitFor(() => expect(screen.getByText('On the paragraph')).toBeTruthy())
-    write('Comment on this block…', 'Too long?')
-    sendWithEnter('Comment on this block…')
+    write('Comment on these blocks…', 'Too long?')
+    sendWithEnter('Comment on these blocks…')
     await waitFor(() => expect(publish).toHaveBeenCalled())
     const e = publish.mock.calls[0][0]
     expect(e.kind).toBe(1111)
@@ -179,5 +181,79 @@ describe('the comments column', () => {
     await waitFor(() => expect(screen.getByText('Resolved')).toBeTruthy())
     expect(publish.mock.calls[0][0].kind).toBe(9101)
     expect(publish.mock.calls[0][0].tags).toContainEqual(['e', onParagraph.id])
+  })
+})
+
+describe('a comment on a selection (LEAF-7)', () => {
+  const PAGE = descriptionTextToBlockDocument('# Plan\n\nQA-2 wrote this paragraph.\n\nKaterina owns the press notes.')
+  const [, FIRST, SECOND] = blockIds(PAGE)
+
+  /** The document position of `text`'s first character, and of the one after its last. */
+  function rangeOf(editor: Editor, text: string): { from: number; to: number } {
+    let found: { from: number; to: number } | null = null
+    editor.state.doc.descendants((node, pos) => {
+      const at = !found && node.isText ? (node.text ?? '').indexOf(text) : -1
+      if (at !== -1) found = { from: pos + at, to: pos + at + text.length }
+      return !found
+    })
+    if (!found) throw new Error(`"${text}" is not on the page`)
+    return found
+  }
+
+  /** Select from the start of `first` to the end of `last` and press Comment in the strip, as a person does. */
+  async function commentOnSelection(first: string, last = first) {
+    const editor = page().editor
+    // jsdom has no layout: the strip needs the view focused and somewhere to stand.
+    vi.spyOn(editor.view, 'hasFocus').mockReturnValue(true)
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 10, bottom: 20, left: 10, right: 20 })
+    act(() => void editor.commands.setTextSelection({ from: rangeOf(editor, first).from, to: rangeOf(editor, last).to }))
+    await act(async () => void (await vi.advanceTimersByTimeAsync(400)))
+    const button = await screen.findByRole('button', { name: 'Comment' })
+    act(() => {
+      fireEvent.mouseDown(button)
+      fireEvent.click(button)
+    })
+  }
+
+  afterEach(() => vi.useRealTimers())
+
+  it('sends a few selected words as a comment on their paragraph quoting exactly them, and says so over the box', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await open([], PAGE)
+    await commentOnSelection('wrote this')
+    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On “wrote this”'))
+    write('Comment on these words…', 'Which draft?')
+    sendWithEnter('Comment on these words…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.kind).toBe(1111)
+    expect(e.tags).toContainEqual(['block', FIRST])
+    expect(e.tags).toContainEqual(['quote', 'wrote this'])
+    expect(e.tags.filter((t) => t[0] === 'block')).toHaveLength(1)
+  })
+
+  it('sends a passage across two paragraphs as both, quoting the words where it starts and where it ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await open([], PAGE)
+    await commentOnSelection('this paragraph.', 'Katerina owns')
+    write('Comment on these words…', 'Say who')
+    sendWithEnter('Comment on these words…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.tags).toContainEqual(['block', FIRST, SECOND])
+    expect(e.tags).toContainEqual(['quote', 'this paragraph.', 'Katerina owns'])
+  })
+
+  it('sends two whole selected paragraphs as a comment on both, with no words', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await open([], PAGE)
+    await commentOnSelection('QA-2 wrote this paragraph.', 'Katerina owns the press notes.')
+    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On 2 paragraphs'))
+    write('Comment on these blocks…', 'Merge these?')
+    sendWithEnter('Comment on these blocks…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.tags).toContainEqual(['block', FIRST, SECOND])
+    expect(e.tags.some((t) => t[0] === 'quote')).toBe(false)
   })
 })

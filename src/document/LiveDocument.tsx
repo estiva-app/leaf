@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
-import { IconMessage } from '@tabler/icons-react'
+import { IconMessage, IconMessagePlus } from '@tabler/icons-react'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { TextSelection } from '@tiptap/pm/state'
@@ -30,12 +30,14 @@ import {
   SelectionToolbar,
   SlashCommands,
   UnknownBlock,
+  anchorOfSelection,
   blockDropCursor,
   formatSection,
   isChecklistTick,
   isReferenceMenuOpen,
   isSuggestionOpen,
   PastedMarkdown,
+  type SelectionAnchor,
   type SlashSection,
 } from '@estiva-app/ui/editor'
 import { EditorLineCards, ReferenceChip, ReferencesProvider, useEditorReferences } from './references'
@@ -85,8 +87,8 @@ export function LiveDocument({
   onLeftUnsaved: () => void
   /** The editor, once it is there: the comments column draws its highlights in it and finds its blocks. */
   onEditor?: (editor: Editor | null) => void
-  /** Comment, from a block's handle: start a comment on that block. */
-  onCommentOn?: (blockId: string) => void
+  /** Comment, from a block's handle or the selection's strip: start a comment on that block, or on what is selected. */
+  onCommentOn?: (anchor: SelectionAnchor) => void
 }) {
   const [failed, setFailed] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -273,7 +275,7 @@ export function LiveDocument({
           editor={editor}
           actions={(block) =>
             onCommentOn && block.id ? (
-              <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCommentOn(block.id!)} />
+              <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCommentOn({ blocks: [block.id!] })} />
             ) : null
           }
         >
@@ -283,7 +285,27 @@ export function LiveDocument({
           {empty && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Type / for headings and lists.</span>}
         </EditorBlockHandle>
         <EditorLineCards editor={editor} resolved={references} />
-        <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']} />
+        <SelectionToolbar
+          editor={editor}
+          marks={['bold', 'italic', 'underline', 'code']}
+          actions={
+            onCommentOn
+              ? [
+                  {
+                    label: 'Comment',
+                    icon: <IconMessagePlus size={16} stroke={1.5} />,
+                    run: (ed) => {
+                      const anchor = anchorOfSelection(ed)
+                      if (!anchor) return
+                      // The draft's highlight keeps what is selected marked; the selection itself can go.
+                      ed.commands.setTextSelection(ed.state.selection.to)
+                      onCommentOn(anchor)
+                    },
+                  },
+                ]
+              : []
+          }
+        />
         <ReferenceMenuView editor={editor} />
         {waiting && (
           <FieldLine tone="helper">
