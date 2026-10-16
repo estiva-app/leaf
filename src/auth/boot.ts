@@ -11,6 +11,7 @@ import {
   stashShellReason,
   takeShellReason,
 } from './estivaId'
+import { ownPath } from '../route'
 
 export type BootResult = { kind: 'app' } | { kind: 'shell'; state: ShellState } | { kind: 'leaving' }
 
@@ -36,8 +37,11 @@ export async function bootAuth(): Promise<BootResult> {
       return { kind: 'app' }
     case 'complete_callback':
       try {
-        await completeSignIn()
+        const { returnTo } = await completeSignIn()
         clearQuery()
+        // Back where sign-in began: a page's link, or New document in a Folder another app linked to.
+        const back = ownPath(returnTo)
+        if (back) window.history.replaceState({}, '', back)
         startRenewal()
         return { kind: 'app' }
       } catch (cause) {
