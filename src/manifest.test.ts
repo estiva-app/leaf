@@ -56,4 +56,12 @@ describe("Leaf's manifest: a document's summary (SPEC §6.12)", () => {
     expect(tag(root, 'summary')).toBe('What launch means.')
     expect(tag(root, 'h')).toBe(FOLDER)
   })
+
+  it('New document with a title and no summary is made, with no `summary` tag', () => {
+    const built = build({ kind: 39000, address: FOLDER, objectAuthor: RELAY, folder: FOLDER, actionId: 'add-document', value: { title: 'Launch notes' }, newId: 'doc-3', folderHasState: true })
+    expect(built).toBeInstanceOf(Array)
+    const root = (built as Exclude<typeof built, string>).find((e) => e.kind === KIND.DOCUMENT)!
+    expect(tag(root, 'title')).toBe('Launch notes')
+    expect(root.tags.some((t) => t[0] === 'summary')).toBe(false)
+  })
 })
