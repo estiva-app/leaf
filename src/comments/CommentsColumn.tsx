@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from 'react'
 import { useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { IconArrowBackUp, IconCircleCheck, IconX } from '@tabler/icons-react'
@@ -58,19 +58,20 @@ function wholeBlocksLine(editor: Editor | null, place: CommentPlace): string {
   return `On ${types.length} ${types.every((t) => t === types[0]) ? blockNoun(types[0], true) : 'blocks'}`
 }
 
-/** The names of the people in the column, from their profiles. */
+/** The names of the people in the column, from their profiles: each one as it comes, kept once found. */
 function useNames(pubkeys: readonly string[]): Record<string, string> {
   const [names, setNames] = useState<Record<string, string>>({})
+  const asked = useRef(new Set<string>())
   const key = [...new Set(pubkeys)].sort().join(',')
   useEffect(() => {
-    let live = true
-    const wanted = key ? key.split(',') : []
-    void Promise.all(wanted.map(async (pk) => [pk, await nameOf(pk).catch(() => null)] as const)).then((found) => {
-      if (!live) return
-      setNames(Object.fromEntries(found.flatMap(([pk, name]) => (name ? [[pk, name]] : []))))
-    })
-    return () => {
-      live = false
+    for (const pk of key ? key.split(',') : []) {
+      if (asked.current.has(pk)) continue
+      asked.current.add(pk)
+      void nameOf(pk)
+        .catch(() => null)
+        .then((name) => {
+          if (name) setNames((was) => ({ ...was, [pk]: name }))
+        })
     }
   }, [key])
   return names
@@ -118,7 +119,7 @@ type Where = CommentPlace | { state: 'unaddressable' } | null
 /** What a thread is about, in one line — the one place its states differ on a card. */
 function AnchorLine({ thread, where, editor, names }: { thread: Thread; where: Where; editor: Editor | null; names: Record<string, string> }) {
   if (!thread.blocks || !where) return <p className="text-caption text-text-muted">On the whole document</p>
-  if (where.state === 'unaddressable') return <p data-anchor-state="unaddressable" className="text-caption italic text-text-muted">On a part of this document, which has no parts</p>
+  if (where.state === 'unaddressable') return <p data-anchor-state="unaddressable" className="text-caption italic text-text-muted">On a part of this document Leaf cannot show</p>
   const quoted = thread.quote ? `“${quoteText(thread.quote)}”` : null
   const by = names[thread.root.by] ?? 'Someone'
   if (where.state === 'reworded' || (where.state === 'detached' && quoted)) {
@@ -392,7 +393,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
           <SkeletonList rows={2} />
         )
       ) : all.length === 0 ? (
-        <EmptyState scope="section" message="No comments yet. Use Comment on a block's handle, or write below." />
+        <EmptyState scope="section" message="No comments yet. Choose Comment in a block's menu, or write below." />
       ) : (
         <>
           {open.map(card)}

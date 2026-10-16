@@ -11,6 +11,16 @@ const relay = vi.hoisted(() => ({ events: [] as SignedEvent[] }))
 const matches = (e: SignedEvent, f: Record<string, unknown>) =>
   (!f.kinds || (f.kinds as number[]).includes(e.kind)) &&
   Object.entries(f).every(([k, v]) => !k.startsWith('#') || e.tags.some((t) => t[0] === k.slice(1) && (v as string[]).includes(t[1])))
+/* The tab's one connection: every Folder watch's listener, so a test can deliver an event as it arrives live. */
+const live = vi.hoisted(() => ({ listeners: [] as ((folder: string, event?: SignedEvent) => void)[] }))
+vi.mock('../relay/client', () => ({
+  relayClient: () => ({
+    watchFolders: (_folders: string[], listener: (folder: string, event?: SignedEvent) => void) => {
+      live.listeners.push(listener)
+      return { stop: () => void live.listeners.splice(live.listeners.indexOf(listener), 1) }
+    },
+  }),
+}))
 vi.mock('../relay/bridge', () => ({
   query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((e) => filters.some((f) => matches(e, f)))),
   publish,
@@ -18,6 +28,22 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 import { FilePage } from '../pages/FilePage'
+import { LiveDocument } from '../document/LiveDocument'
+import { CommentsColumn } from './CommentsColumn'
+import { useRef, useState } from 'react'
+
+/** The page's two halves, with a block's Comment already chosen: what the handle's row does (jsdom has no layout to hover). */
+function Drafting({ block }: { block: string }) {
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const [draft, setDraft] = useState<string | null>(block)
+  const body = useRef<HTMLDivElement | null>(null)
+  return (
+    <ToastProvider>
+      <LiveDocument value={serializeBlockDocument(BODY)} format="blocks" changedBy={null} onCommit={async () => true} onLeftUnsaved={() => {}} onEditor={setEditor} onCommentOn={setDraft} />
+      <CommentsColumn doc={{ address: ADDRESS, folder: FOLDER }} addressable editor={editor} docBody={body} draft={draft} onDraft={setDraft} />
+    </ToastProvider>
+  )
+}
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text nodes, and ProseMirror calls them on every change. */
 beforeAll(() => {
@@ -101,6 +127,19 @@ describe('the comments column', () => {
     expect(e.tags.some((t) => t[0] === 'block')).toBe(false)
   })
 
+  it("sends a comment begun from a block's Comment as a comment on that block, then goes back to the whole document", async () => {
+    relay.events = []
+    render(<Drafting block={PARAGRAPH} />)
+    await waitFor(() => expect(screen.getByText('On the paragraph')).toBeTruthy())
+    write('Comment on this block…', 'Too long?')
+    sendWithEnter('Comment on this block…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.kind).toBe(1111)
+    expect(e.tags).toContainEqual(['block', PARAGRAPH])
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Comment on this document…' })).toBeTruthy())
+  })
+
   it('puts your text back and says so when the relay refuses it', async () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
     await open([])
@@ -109,6 +148,22 @@ describe('the comments column', () => {
     sendWithEnter('Comment on this document…')
     await waitFor(() => expect(screen.getByText('Could not send your comment. Your text is still here.')).toBeTruthy())
     expect(box('Comment on this document…').editor.getText()).toBe('Refused words')
+  })
+
+  it('moves a thread under Resolved without a reload when someone else resolves it', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    const theirs: SignedEvent = { id: 'e'.repeat(64), pubkey: AUTHOR, created_at: 1_760_000_200, kind: 9101, tags: [['h', FOLDER], ['e', onParagraph.id], ['t', 'resolution'], ['action', 'resolved']], content: '', sig: '' }
+    relay.events = [onParagraph, theirs]
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => live.listeners.forEach((l) => l(FOLDER, theirs)))
+      await act(() => vi.advanceTimersByTimeAsync(300))
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => expect(document.querySelector('[data-thread-id][data-resolved]')).not.toBeNull())
   })
 
   it('moves a thread under Resolved with the 9101 resolution', async () => {

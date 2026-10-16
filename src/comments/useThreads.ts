@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { KIND_COMMENT } from '@estiva-app/conversation'
+import { viewerPubkey } from '../relay/bridge'
 import { relayClient } from '../relay/client'
 import { COMMENT_KINDS, readThreads, type Commented, type Thread } from './comments'
 
@@ -13,9 +15,10 @@ export interface ThreadsState {
 }
 
 /**
- * A document's threads, kept current: someone else's comment, reply or
- * resolution arrives on the tab's one connection (its Folder, kinds `1111` and
- * `9101`), and the threads are read again, so it shows without a reload.
+ * A document's threads, kept current: someone else's comment or reply on it,
+ * or a resolution of one of its threads, arrives on the tab's one connection
+ * (its Folder, kinds `1111` and `9101`), and the threads are read again, so it
+ * shows without a reload. Other files' comments in the Folder are passed by.
  */
 export function useThreads(doc: Partial<Commented>): ThreadsState {
   const { address, folder } = doc
@@ -45,14 +48,29 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
     }
   }, [address, folder, tick])
 
+  // The threads' ids, for the watch: a resolution names a thread only by its comment's id.
+  const ids = useRef(new Set<string>())
+  useEffect(() => {
+    ids.current = new Set(threads?.map((t) => t.id) ?? [])
+  }, [threads])
+
   useEffect(() => {
     const client = relayClient()
-    if (!client || !folder) return
+    if (!client || !address || !folder) return
     let timer: ReturnType<typeof setTimeout> | undefined
+    const me = viewerPubkey()
     const watch = client.watchFolders(
       [folder],
       (_folder, event) => {
         if (!event || !COMMENT_KINDS.includes(event.kind)) return
+        // Your own write is read again as it is accepted; its echo here would read it twice.
+        if (event.pubkey === me) return
+        // The Folder carries every file's comments: only this document's, or a resolution of one of its threads.
+        const ours =
+          event.kind === KIND_COMMENT
+            ? event.tags.some((t) => t[0] === 'A' && t[1] === address)
+            : event.tags.some((t) => t[0] === 'e' && ids.current.has(t[1]))
+        if (!ours) return
         // A burst — a reply and its resolution — is one read.
         clearTimeout(timer)
         timer = setTimeout(reread, 250)
@@ -64,7 +82,7 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
       clearTimeout(timer)
       watch.stop()
     }
-  }, [folder, reread])
+  }, [address, folder, reread])
 
   return { threads, failed, readAt, reread }
 }

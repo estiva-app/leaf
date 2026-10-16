@@ -52,6 +52,9 @@ describe('a comment from the column', () => {
     expect(e.kind).toBe(1111)
     expect(e.tags).toEqual(expect.arrayContaining([['A', ADDRESS], ['e', root.id], ['h', FOLDER]]))
     expect(e.tags.some((t) => t[0] === 'block' || t[0] === 'a')).toBe(false)
+    // The comment's author is the one told, not the replier.
+    expect(e.tags).toContainEqual(['p', AUTHOR])
+    expect(e.tags.some((t) => t[0] === 'p' && t[1] === ME)).toBe(false)
   })
 
   it('resolves a thread with the 9101 Peek writes, in the document\'s Folder', async () => {
