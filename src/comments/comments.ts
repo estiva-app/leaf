@@ -1,5 +1,5 @@
 import { buildComment, buildReply, decorationsOf, groupThreads, isCommentOn, KIND_ASSERTION, KIND_COMMENT } from '@estiva-app/conversation'
-import { blockRunOf, buildResolution, quoteOf, type Quote, type SignedEvent } from '@estiva-app/protocol'
+import { blockRunOf, blockRunTag, buildResolution, quoteOf, quoteTag, type Quote, type SignedEvent } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A document as its comments name it: its address, its Folder (the `h` every comment carries) and its author. */
@@ -75,11 +75,18 @@ async function send(unsigned: Parameters<typeof publish>[0] | null, refused: str
   return { ok: false, reason: refused }
 }
 
-/** A comment on the document — on one block when `blockId` is given (SPEC §13.6), else on the whole of it. */
-export function postComment(doc: Commented, body: string, blockId?: string): Promise<WriteResult> {
+/** Where a comment is: a run of blocks, and the words where the selection starts and ends unless it covers them whole (SPEC §13.6). */
+export interface Anchor {
+  blocks: string[]
+  quote?: Quote
+}
+
+/** A comment on the document — on a selection or on whole blocks when `anchor` is given (SPEC §13.6), else on the whole of it. */
+export function postComment(doc: Commented, body: string, anchor?: Anchor): Promise<WriteResult> {
   const pubkey = viewerPubkey()
+  const tags = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
   return send(
-    pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body, ...(blockId ? { blockId } : {}) }) : null,
+    pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body, tags }) : null,
     'Could not send your comment. Your text is still here.',
   )
 }

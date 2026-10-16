@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { Divider, EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
 import { CommentsColumn } from '../comments/CommentsColumn'
+import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { saveField } from '../document/save'
 import { useLiveDocument } from '../document/useLiveDocument'
@@ -61,7 +62,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   }
   // The comments column (LEAF-5): it draws in the editor, and a block's handle starts a comment in it.
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [draft, setDraft] = useState<string | null>(null)
+  const [draft, setDraft] = useState<Anchor | null>(null)
   const docBody = useRef<HTMLDivElement | null>(null)
   // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
   const addressable = !body?.value || body.format === 'blocks'
