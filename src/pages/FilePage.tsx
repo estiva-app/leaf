@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { Divider, EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { CommentsColumn } from '../comments/CommentsColumn'
 import { LiveDocument } from '../document/LiveDocument'
 import { saveField } from '../document/save'
 import { useLiveDocument } from '../document/useLiveDocument'
@@ -57,18 +59,36 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
     if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
     return result.ok
   }
+  // The comments column (LEAF-5): it draws in the editor, and a block's handle starts a comment in it.
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const [draft, setDraft] = useState<string | null>(null)
+  const docBody = useRef<HTMLDivElement | null>(null)
+  // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
+  const addressable = !body?.value || body.format === 'blocks'
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={title} bodyClassName="px-12 pt-10 pb-24">
+        <Panel title={title} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {/* The page's heading, as Katerina's prototype draws it. */}
             <h1 className="text-h1 text-text-primary">
               <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
             </h1>
-            <LiveDocument value={body?.value ?? ''} format={body?.format ?? 'marker'} changedBy={changedBy} onCommit={commitText} onLeftUnsaved={leftUnsaved} />
+            <LiveDocument
+              value={body?.value ?? ''}
+              format={body?.format ?? 'marker'}
+              changedBy={changedBy}
+              onCommit={commitText}
+              onLeftUnsaved={leftUnsaved}
+              onEditor={setEditor}
+              onCommentOn={addressable ? setDraft : undefined}
+            />
           </div>
         </Panel>
+      </div>
+      <Divider orientation="vertical" />
+      <div className="flex w-96 flex-none flex-col">
+        <CommentsColumn doc={{ address: file.address, folder: file.folder }} addressable={addressable} editor={editor} docBody={docBody} draft={draft} onDraft={setDraft} />
       </div>
     </div>
   )

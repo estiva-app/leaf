@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
+import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
+import { IconMessage } from '@tabler/icons-react'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { TextSelection } from '@tiptap/pm/state'
@@ -11,13 +12,14 @@ import {
   type ContentFormat,
   type EditorDocument,
 } from '@estiva-app/protocol'
-import { Button, FieldLine, richTextClassName } from '@estiva-app/ui'
+import { Button, FieldLine, MenuItem, richTextClassName } from '@estiva-app/ui'
 import {
   AttachmentNode,
   BlockId,
   Callout,
   Checklist,
   CodeBlockColours,
+  CommentHighlights,
   EditorBlockHandle,
   EditorTableControls,
   ReferenceCards,
@@ -70,6 +72,8 @@ export function LiveDocument({
   changedBy,
   onCommit,
   onLeftUnsaved,
+  onEditor,
+  onCommentOn,
 }: {
   value: string
   format: ContentFormat
@@ -77,6 +81,10 @@ export function LiveDocument({
   changedBy: ChangedBy | null
   onCommit: (value: string, contentFormat?: string) => Promise<boolean>
   onLeftUnsaved: () => void
+  /** The editor, once it is there: the comments column draws its highlights in it and finds its blocks. */
+  onEditor?: (editor: Editor | null) => void
+  /** Comment, from a block's handle: start a comment on that block. */
+  onCommentOn?: (blockId: string) => void
 }) {
   const [failed, setFailed] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -169,6 +177,8 @@ export function LiveDocument({
         SlashCommands.configure({ sections: SLASH_SECTIONS }),
         // Markdown pasted as plain text lands as the blocks it spells, tables included, read as the agent reads a description (LEAF-10).
         PastedMarkdown.configure({ read: (text) => toEditorDocument(descriptionTextToBlockDocument(text)) }),
+        // Where each comment is, drawn as a decoration, so a save never carries it (LEAF-5).
+        CommentHighlights,
       ],
       // Built once. A value coming back must not rebuild the editor under the caret; see the effect below.
       content: toEditorDocument(documentForEditing(value, format)),
@@ -236,13 +246,25 @@ export function LiveDocument({
     [],
   )
 
+  useEffect(() => {
+    onEditor?.(editor)
+    return () => onEditor?.(null)
+  }, [editor, onEditor])
+
   const references = useEditorReferences(editor)
   const who = changedBy?.name ?? 'Someone'
 
   return (
     <ReferencesProvider value={references}>
       <div className="flex flex-col gap-1">
-        <EditorBlockHandle editor={editor}>
+        <EditorBlockHandle
+          editor={editor}
+          actions={(block) =>
+            onCommentOn && block.id ? (
+              <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCommentOn(block.id!)} />
+            ) : null
+          }
+        >
           <EditorTableControls editor={editor}>
             <EditorContent editor={editor} className="-mx-2 cursor-text px-2 py-1" data-document="editing" />
           </EditorTableControls>
