@@ -244,6 +244,21 @@ describe('a comment on a selection (LEAF-7)', () => {
     expect(e.tags).toContainEqual(['quote', 'this paragraph.', 'Katerina owns'])
   })
 
+  it('keeps what you were writing when you choose other words to comment on, and sends it on those', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await open([], PAGE)
+    await commentOnSelection('wrote this')
+    write('Comment on these words…', 'Half a thought')
+    await commentOnSelection('Katerina owns')
+    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On “Katerina owns”'))
+    sendWithEnter('Comment on these words…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.content).toContain('Half a thought')
+    expect(e.tags).toContainEqual(['block', SECOND])
+    expect(e.tags).toContainEqual(['quote', 'Katerina owns'])
+  })
+
   it('sends two whole selected paragraphs as a comment on both, with no words', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     await open([], PAGE)

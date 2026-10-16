@@ -80,20 +80,25 @@ function useNames(pubkeys: readonly string[]): Record<string, string> {
 /**
  * The box a comment or a reply is written in: the package's ComposeBox. It
  * empties as you send; a refused send puts your text back and says so (record
- * a-refused-action-is-undone-and-your-text-comes-back).
+ * a-refused-action-is-undone-and-your-text-comes-back). `focusOn` takes the
+ * focus each time it changes to something new, keeping what is written: a
+ * comment started on other words keeps its text.
  */
-function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onSend: (text: string) => Promise<WriteResult>; autoFocus?: boolean }) {
+function Composer({ placeholder, onSend, focusOn }: { placeholder: string; onSend: (text: string) => Promise<WriteResult>; focusOn?: string | null }) {
   const [refused, setRefused] = useState<string | null>(null)
   const editor = useEditor({
     extensions: [StarterKit.configure({ link: false }), ComposeKeys],
     editorProps: { attributes: { class: COMPOSE_EDITOR_CLASSES, 'aria-label': placeholder } },
   })
-  // A frame late: the block menu gives the focus back to the text as it closes, after this box mounts.
   useEffect(() => {
-    if (!autoFocus || !editor) return
+    if (editor && !editor.isDestroyed) editor.setOptions({ editorProps: { attributes: { class: COMPOSE_EDITOR_CLASSES, 'aria-label': placeholder } } })
+  }, [editor, placeholder])
+  // A frame late: the block menu gives the focus back to the text as it closes, after this box asks for it.
+  useEffect(() => {
+    if (!focusOn || !editor) return
     const frame = requestAnimationFrame(() => editor.commands.focus())
     return () => cancelAnimationFrame(frame)
-  }, [autoFocus, editor])
+  }, [focusOn, editor])
   const send = (ed: Editor) => {
     const text = ed.getText({ blockSeparator: '\n' }).trim()
     if (!text) return false
@@ -383,10 +388,9 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
             </div>
           )}
           <Composer
-            key={draft ? JSON.stringify(draft) : 'document'}
             placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
             onSend={send}
-            autoFocus={!!draft}
+            focusOn={draft ? JSON.stringify(draft) : null}
           />
         </div>
       }
