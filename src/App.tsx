@@ -19,6 +19,7 @@ import { NewDocumentDialog } from './folders/NewDocumentDialog'
 import { findFile, groupsOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
+import { useReferencePage } from './document/referencePicker'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { HomePage } from './pages/HomePage'
@@ -68,6 +69,8 @@ function Frame() {
     [folders, children, opened, setOpen, setFolderOpen],
   )
   const open = route.page === 'file' ? findFile(folders, children, route.naddr) : null
+  // `[` on the open page offers its Folder's files, as the tree read them.
+  useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
 

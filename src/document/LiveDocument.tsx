@@ -26,6 +26,7 @@ import {
   ReferenceMenu,
   ReferenceMenuView,
   ReferenceNode,
+  ReferenceTrigger,
   SelectionToolbar,
   SlashCommands,
   UnknownBlock,
@@ -38,6 +39,7 @@ import {
   type SlashSection,
 } from '@estiva-app/ui/editor'
 import { EditorLineCards, ReferenceChip, ReferencesProvider, useEditorReferences } from './references'
+import { REFERENCE_COPY, referenceSections, subscribeReferences } from './referencePicker'
 import type { ChangedBy } from './useLiveDocument'
 
 /** `/`: the package's Format section, then Leaf's own rows under Insert — the heading every app's own section takes, as in Ship. */
@@ -168,6 +170,16 @@ export function LiveDocument({
         Checklist,
         Callout,
         ReferenceNode.configure({ view: ReferenceChip }),
+        // `[` offers this Folder's files, then what the relay finds by title, and inserts the same chip (SUM-7).
+        ReferenceTrigger.configure({
+          items: () => [],
+          sections: referenceSections,
+          subscribe: subscribeReferences,
+          nodeName: 'reference',
+          ariaLabel: REFERENCE_COPY.ariaLabel,
+          sectionLabel: REFERENCE_COPY.files,
+          icon: null,
+        }),
         // The card a chip asks for, after its line (SPEC §13.3); drawn by `EditorLineCards` below.
         ReferenceCards,
         // A click on a chip offers Open and its card: None, Compact or Detailed (Miky, 14 October).
