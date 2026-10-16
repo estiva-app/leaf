@@ -69,12 +69,17 @@ const file = (d: string, title: string, more: Partial<ReferenceCandidate> = {}):
   ...more,
 })
 
-/** A Leaf page open in a Folder, as App wires it: the page publishes its Folder's files as `[`'s first tier. */
-function Page({ onCommit }: { onCommit: (value: string, contentFormat?: string) => Promise<boolean> }) {
-  useReferencePage({ address: HERE, folder: FOLDER })
-  return <LiveDocument value="" format="blocks" changedBy={null} onCommit={onCommit} onLeftUnsaved={vi.fn()} />
+type Commit = (value: string, contentFormat?: string) => Promise<boolean>
+
+/**
+ * A Leaf page open in a Folder, as App wires it: the page publishes its
+ * Folder's files as `[`'s first tier. Each test's Folder is its own listing,
+ * as each read of a Folder is.
+ */
+function Page({ onCommit = vi.fn<Commit>(async () => true), address = HERE, folder }: { onCommit?: Commit; address?: string; folder: ForeignObject[] }) {
+  useReferencePage({ address, folder })
+  return <LiveDocument key={address} value="" format="blocks" changedBy={null} onCommit={onCommit} onLeftUnsaved={vi.fn()} />
 }
-const FOLDER: ForeignObject[] = []
 
 describe('[ on a Leaf page', () => {
   it("offers the Folder's files, each with its summary as the second line, and an issue's ref and project beside the title", async () => {
@@ -82,7 +87,7 @@ describe('[ on a Leaf page', () => {
       file('ledger', 'Quokka ledger', { caption: 'SUM-9 · Finance', summary: 'Match the quokka ledger to the bank' }),
       file('plain', 'Quokka plain', { caption: 'SUM-10 · Finance' }),
     ]
-    render(<Page onCommit={vi.fn(async () => true)} />)
+    render(<Page folder={[]} />)
     const box = await ready()
     type(box, '[quok')
     await waitFor(async () => expect(await options()).toHaveLength(2))
@@ -97,15 +102,28 @@ describe('[ on a Leaf page', () => {
 
   it('never offers the page you are writing in', async () => {
     rows.folder = [file('other', 'Quokka other'), { ...file('here', 'Quokka here', { type: 'document', kind: 30842 }), id: HERE }]
-    render(<Page onCommit={vi.fn(async () => true)} />)
+    render(<Page folder={[]} />)
     const box = await ready()
     type(box, '[quok')
     await waitFor(async () => expect(await options()).toEqual([expect.stringContaining('Quokka other')]))
   })
 
+  it("still offers the Folder's files after you open another page in the same Folder", async () => {
+    const OTHER = '30842:' + 'a'.repeat(64) + ':other'
+    rows.folder = [file('ledger', 'Quokka ledger'), { ...file('other', 'Quokka other page', { type: 'document', kind: 30842 }), id: OTHER }]
+    // The tree's listing: one array for every page in the Folder.
+    const folder: ForeignObject[] = []
+    const view = render(<Page folder={folder} />)
+    await ready()
+    view.rerender(<Page folder={folder} address={OTHER} />)
+    const box = await ready()
+    type(box, '[quok')
+    await waitFor(async () => expect(await options()).toEqual([expect.stringContaining('Quokka ledger')]))
+  })
+
   it('finds a file outside the Folder by its title once you type', async () => {
     rows.search = [file('far', 'Wombat roadmap', { tier: 2, summary: 'Where the wombats go next' })]
-    render(<Page onCommit={vi.fn(async () => true)} />)
+    render(<Page folder={[]} />)
     const box = await ready()
     type(box, '[wombat')
     await waitFor(async () => expect((await options()).join()).toContain('Where the wombats go next'))
@@ -113,8 +131,8 @@ describe('[ on a Leaf page', () => {
 
   it('a pick saves the file as a nostr: reference in the page', async () => {
     rows.folder = [file('ledger', 'Quokka ledger', { summary: 'Match the quokka ledger to the bank' })]
-    const onCommit = vi.fn(async () => true)
-    render(<Page onCommit={onCommit} />)
+    const onCommit = vi.fn<Commit>(async () => true)
+    render(<Page onCommit={onCommit} folder={[]} />)
     const box = await ready()
     type(box, '[quok')
     await screen.findByRole('option')

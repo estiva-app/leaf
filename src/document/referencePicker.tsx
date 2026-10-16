@@ -15,10 +15,11 @@
  */
 import { useEffect } from 'react'
 import { FILE_TIER, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
-import { createProjectionCache, fileCandidates, searchFileReferences, type ForeignObject } from '@estiva-app/interop'
+import { fileCandidates, searchFileReferences, type ForeignObject } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
 import { KindIcon, thingKindOf } from '@estiva-app/ui'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
+import { manifests } from '../folders/workspace'
 import { query } from '../relay/bridge'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
@@ -26,7 +27,18 @@ type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections
 /** The list's name and its one heading. */
 export const REFERENCE_COPY = { ariaLabel: 'Files', files: 'Files' }
 
-const manifests = createProjectionCache()
+// A Folder's rows, built once per listing the tree read: every page in it offers the same ones.
+const BUILT = new WeakMap<readonly ForeignObject[], Promise<ReferenceCandidate[]>>()
+function folderRows(folder: readonly ForeignObject[]): Promise<ReferenceCandidate[]> {
+  let rows = BUILT.get(folder)
+  if (!rows) {
+    rows = fileCandidates(folder, FILE_TIER.folder, query, { cache: manifests })
+    // A refused read is tried again on the next page, not remembered.
+    rows.catch(() => BUILT.delete(folder))
+    BUILT.set(folder, rows)
+  }
+  return rows
+}
 
 let folderFiles: ReferenceCandidate[] = []
 let openFile: string | null = null
@@ -83,11 +95,15 @@ export function useReferencePage({ address, folder }: { address: string | undefi
     }
   }, [address])
 
-  // A refresh of the same Folder keeps its rows until the new answer lands; leaving the page takes them back.
+  /*
+    A refresh of the same Folder keeps its rows until the new answer lands;
+    leaving the page takes them back, so another page — even in the same Folder,
+    whose listing is the same array — puts them back here.
+  */
   useEffect(() => {
     if (!folder) return
     let live = true
-    fileCandidates(folder, FILE_TIER.folder, query, { cache: manifests })
+    folderRows(folder)
       .then((rows) => {
         if (!live) return
         folderFiles = rows
@@ -97,7 +113,7 @@ export function useReferencePage({ address, folder }: { address: string | undefi
     return () => {
       live = false
     }
-  }, [folder])
+  }, [folder, address])
   useEffect(
     () => () => {
       folderFiles = []

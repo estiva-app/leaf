@@ -18,7 +18,7 @@ import { publish, query, viewerPubkey } from '../relay/bridge'
   make, so a Folder holds the same files in all three. The caches are the
   manifests and the names, which every Folder's read shares.
 */
-const manifests = createProjectionCache()
+export const manifests = createProjectionCache()
 const people = createPeopleCache()
 
 /**
