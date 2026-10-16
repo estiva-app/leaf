@@ -384,7 +384,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
           )}
           <Composer
             key={draft ? JSON.stringify(draft) : 'document'}
-            placeholder={draft ? (draft.quote ? 'Comment on these words…' : 'Comment on these blocks…') : 'Comment on this document…'}
+            placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
             onSend={send}
             autoFocus={!!draft}
           />

@@ -133,8 +133,8 @@ describe('the comments column', () => {
     relay.events = []
     render(<Drafting block={PARAGRAPH} />)
     await waitFor(() => expect(screen.getByText('On the paragraph')).toBeTruthy())
-    write('Comment on these blocks…', 'Too long?')
-    sendWithEnter('Comment on these blocks…')
+    write('Comment on this block…', 'Too long?')
+    sendWithEnter('Comment on this block…')
     await waitFor(() => expect(publish).toHaveBeenCalled())
     const e = publish.mock.calls[0][0]
     expect(e.kind).toBe(1111)
