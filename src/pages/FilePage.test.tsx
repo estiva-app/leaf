@@ -1,5 +1,5 @@
 import type { ForeignObject } from '@estiva-app/interop'
-import type { PublishResult, UnsignedEvent } from '@estiva-app/protocol'
+import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
@@ -9,10 +9,11 @@ const ME = 'a'.repeat(64)
 const FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
 const published: UnsignedEvent[] = []
 let answers: PublishResult[] = []
+let changes: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
-  query: async () => [],
+  query: async (filters: { kinds?: number[] }[]) => (filters[0]?.kinds?.[0] === 1851 ? changes : []),
   publish: async (event: UnsignedEvent) => {
     published.push(event)
     return answers.shift() ?? { ok: true }
@@ -69,6 +70,7 @@ afterEach(() => {
   cleanup()
   published.length = 0
   answers = []
+  changes = []
 })
 
 describe("a page's summary, under its title", () => {
@@ -108,6 +110,17 @@ describe("a page's summary, under its title", () => {
     leave(box)
     await waitFor(() => expect(published).toHaveLength(1))
     expect(published[0].tags.find((t) => t[0] === 'value')).toEqual(['value', ''])
+  })
+
+  it('edits the whole of a summary longer than the card’s cut, never the cut text with its "…"', async () => {
+    const long = `${'A sentence about the Friday call. '.repeat(10)}End.`
+    const change = (value: string, ts: number, h = FOLDER): SignedEvent =>
+      ({ id: `c${ts}`, pubkey: ME, kind: 1851, created_at: Math.floor(ts / 1000), tags: [['a', ADDRESS], ['field', 'summary'], ['value', value], ['h', h], ['ts', String(ts)]], content: '', sig: '' }) as SignedEvent
+    changes = [change('Older.', 1_000_000), change(long, 2_000_000), change('Another Folder.', 3_000_000, 'elsewhere')]
+    render(<ToastProvider><FilePage file={doc(`${long.slice(0, 280).trimEnd()}…`)} loading={false} /></ToastProvider>)
+    // The editor is drawn again once it may be edited: look it up each time.
+    await waitFor(async () => expect((await summaryBox()).editor.getText()).toBe(long))
+    expect((await summaryBox()).editor.isEditable).toBe(true)
   })
 
   it('keeps your text and says it was not saved when the relay refuses it', async () => {

@@ -1,5 +1,5 @@
 import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
-import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type UnsignedEvent } from '@estiva-app/protocol'
+import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -11,6 +11,32 @@ const people = createPeopleCache()
 /** One document, read again on its own: what the page shows after a change to it arrives. */
 export function readDocument(naddr: string): Promise<ForeignObject | null> {
   return resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests)
+}
+
+/**
+ * A page's whole summary, for its editor: interop's `subtitle` stops at 280
+ * characters with an "…", and saving that back would cut the summary short.
+ * The `summary` field folded as SPEC §6.12 says — the newest change in the
+ * page's own Folder by `ts`, then `created_at`, then id, else the root's seed —
+ * read only when the slot was cut. `null` when it cannot be read.
+ */
+export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder' | 'eventId'>): Promise<string | null> {
+  if (!file.address || !file.folder) return null
+  try {
+    const [changes, roots] = await Promise.all([query([{ kinds: [CHANGE], '#a': [file.address] }]), query([{ ids: [file.eventId] }])])
+    const value = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
+    const order = (e: SignedEvent) => [Number(value(e, 'ts') ?? e.created_at * 1000), e.created_at, e.id] as const
+    const newest = changes
+      .filter((e) => value(e, 'field') === 'summary' && value(e, 'h') === file.folder && value(e, 'value') !== undefined)
+      .sort((a, b) => {
+        const [x, y] = [order(a), order(b)]
+        return x[0] - y[0] || x[1] - y[1] || (x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0)
+      })
+      .at(-1)
+    return (newest ? value(newest, 'value') : roots[0] && value(roots[0], 'summary')) ?? ''
+  } catch {
+    return null
+  }
 }
 
 /** A person's name for "<name> saved a newer version", from their profile; `null` when they have none. */

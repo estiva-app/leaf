@@ -7,7 +7,7 @@ import { CommentsColumn } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
-import { saveField } from '../document/save'
+import { readSummary, saveField } from '../document/save'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
 
@@ -62,8 +62,23 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
     if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
     return result.ok
   }
-  // The summary: the folded `summary` field, which interop draws as `subtitle` (SPEC §6.12, §7.2).
-  const summary = file.slots.subtitle?.value ?? ''
+  // The summary: the folded `summary` field, which interop draws as `subtitle` (SPEC §6.12, §7.2). A slot cut at
+  // 280 with an "…" is read whole before it can be edited, so a save never writes the cut text back.
+  const slot = file.slots.subtitle?.value ?? ''
+  const cut = slot.endsWith('…')
+  const [whole, setWhole] = useState<{ from: string; value: string } | null>(null)
+  useEffect(() => {
+    if (!cut) return
+    let live = true
+    void readSummary(target.current).then((value) => {
+      if (live && value !== null) setWhole({ from: slot, value })
+    })
+    return () => {
+      live = false
+    }
+  }, [cut, slot])
+  const wholeNow = cut && whole?.from === slot ? whole.value : null
+  const summary = wholeNow ?? slot
   async function summarize(value: string): Promise<true | string> {
     const result = await saveField(target.current, 'summary', value)
     return result.ok ? true : 'Try again; your text is still here.'
@@ -93,7 +108,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               <h1 className="text-h1 text-text-primary">
                 <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
               </h1>
-              <PageSummary value={summary} onCommit={summarize} onEnter={toText} />
+              <PageSummary value={summary} onCommit={summarize} onEnter={toText} readOnly={cut && wholeNow === null} />
             </div>
             <LiveDocument
               value={body?.value ?? ''}

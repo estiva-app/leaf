@@ -26,6 +26,7 @@ export function PageSummary({
   value,
   onCommit,
   onEnter,
+  readOnly,
 }: {
   /** The summary the relay holds; empty when there is none. */
   value: string
@@ -33,6 +34,8 @@ export function PageSummary({
   onCommit: (value: string) => Promise<true | string>
   /** Enter, after the save has started: the caret goes into the page's text. */
   onEnter?: () => void
+  /** Text only, in the same place: while a summary longer than the card's cut is read whole. */
+  readOnly?: boolean
 }) {
   // The text being written, for the count; null when you are not in it.
   const [typing, setTyping] = useState<string | null>(null)
@@ -69,6 +72,7 @@ export function PageSummary({
         value={value}
         onCommit={commit}
         onEnter={onEnter}
+        readOnly={readOnly}
         onText={(text) => {
           // Changing the refused text is a new attempt: the old reason goes.
           if (text !== null) written.current = summaryText(text)
