@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type Ref } from 'react'
 import { FieldLine } from '@estiva-app/ui'
-import { InlineText } from '@estiva-app/ui/editor'
+import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { SummaryCount } from './SummaryCount'
 import { summaryText } from './summary'
 
@@ -27,6 +27,7 @@ export function PageSummary({
   onCommit,
   onEnter,
   readOnly,
+  ref,
 }: {
   /** The summary the relay holds; empty when there is none. */
   value: string
@@ -36,6 +37,8 @@ export function PageSummary({
   onEnter?: () => void
   /** Text only, in the same place: while a summary longer than the card's cut is read whole. */
   readOnly?: boolean
+  /** Where Enter in the title puts the caret. */
+  ref?: Ref<InlineTextHandle>
 }) {
   // The text being written, for the count; null when you are not in it.
   const [typing, setTyping] = useState<string | null>(null)
@@ -65,6 +68,7 @@ export function PageSummary({
   return (
     <div className="flex flex-col gap-1">
       <InlineText
+        ref={ref}
         variant="summary"
         clearable
         label="Summary"

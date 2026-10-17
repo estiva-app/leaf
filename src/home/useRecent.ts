@@ -29,7 +29,8 @@ export function pagesOf(folders: WorkspaceFolder[] | null): Page[] | null {
         // Interop's default `subtitle` is the folded summary (SPEC §6.12, §7.2); empty is none.
         summary: summaryText(f.slots.subtitle?.value ?? '') || undefined,
         folder: folder.name ?? folder.id,
-        folderId: folder.id,
+        // The Folder the page's root names, not the one that lists it: only a change there counts (SPEC §6.2, §6.12).
+        folderId: f.folder ?? folder.id,
       })),
   )
 }

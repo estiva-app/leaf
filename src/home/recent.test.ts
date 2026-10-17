@@ -69,8 +69,11 @@ describe("Home's rows", () => {
 
   it('shows no summary once the newest change clears it, even over the one the page was listed with', () => {
     const listed = { ...page(1), summary: 'From the tree' }
-    const rows = rankRecent([listed], [made(listed, 10), save(listed, ME, 20, 'summary', '  ')], ME)
-    expect(rows[0].summary).toBeUndefined()
+    // An empty value is what clearing sends; only spaces reads the same.
+    for (const cleared of ['', '  ']) {
+      const rows = rankRecent([listed], [made(listed, 10), save(listed, ME, 20, 'summary', cleared)], ME)
+      expect(rows[0].summary).toBeUndefined()
+    }
   })
 
   it("shows the Folders' latest pages to someone who touched none", () => {

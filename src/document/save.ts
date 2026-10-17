@@ -25,7 +25,12 @@ export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder'
   try {
     const [changes, roots] = await Promise.all([query([{ kinds: [CHANGE], '#a': [file.address] }]), query([{ ids: [file.eventId] }])])
     const value = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
-    const order = (e: SignedEvent) => [Number(value(e, 'ts') ?? e.created_at * 1000), e.created_at, e.id] as const
+    // A `ts` counts only when it agrees with `created_at` to the second, as the manifest's ordering says; a forged one is ignored.
+    const at = (e: SignedEvent) => {
+      const ts = Number(value(e, 'ts'))
+      return Number.isFinite(ts) && Math.floor(ts / 1000) === e.created_at ? ts : e.created_at * 1000
+    }
+    const order = (e: SignedEvent) => [at(e), e.created_at, e.id] as const
     const newest = changes
       .filter((e) => value(e, 'field') === 'summary' && value(e, 'h') === file.folder && value(e, 'value') !== undefined)
       .sort((a, b) => {

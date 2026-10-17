@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { Divider, EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { Divider, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
@@ -48,6 +49,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const body = file.slots[BODY_SLOT]
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
   const target = useRef(file)
+  const summaryEditor = useRef<InlineTextHandle>(null)
   const commitText = useCallback(async (value: string, contentFormat?: string) => (await saveField(target.current, 'description', value, contentFormat)).ok, [])
   // The title now, for a toast after the page is gone.
   const named = useRef(title)
@@ -106,9 +108,10 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
             {/* The page's heading, as Katerina's prototype draws it, and its summary 4px under it (the short-summary story's LeafFilePage). */}
             <div className="flex flex-col gap-1">
               <h1 className="text-h1 text-text-primary">
-                <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
+                {/* In place, as Ship's title (ui InlineText, ship#306), at Leaf's own heading size; Enter goes on into the summary. */}
+                <InlineText variant="title" className="text-h1" value={title} placeholder="Untitled" label="Title" onCommit={rename} onEnter={() => summaryEditor.current?.focus('start')} />
               </h1>
-              <PageSummary value={summary} onCommit={summarize} onEnter={toText} readOnly={cut && wholeNow === null} />
+              <PageSummary ref={summaryEditor} value={summary} onCommit={summarize} onEnter={toText} readOnly={cut && wholeNow === null} />
             </div>
             <LiveDocument
               value={body?.value ?? ''}
