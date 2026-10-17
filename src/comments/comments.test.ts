@@ -68,7 +68,7 @@ describe('a comment from the column', () => {
 
   it('gives plain words when the relay refuses, for the box to say after "Not sent:"', async () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 1111 not allowed' })
-    expect(await postComment(DOC, { text: 'x' }, { blocks: ['b1'] })).toEqual({ ok: false, reason: 'the relay did not take it' })
+    expect(await postComment(DOC, { text: 'x' }, { blocks: ['b1'] })).toEqual({ ok: false, reason: 'it did not go through' })
   })
 })
 

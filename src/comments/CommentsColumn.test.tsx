@@ -232,7 +232,7 @@ describe('the comments column', () => {
     await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
     write('Comment on this document…', 'Refused words')
     sendWithEnter('Comment on this document…')
-    await waitFor(() => expect(screen.getByText('Not sent: the relay did not take it. Your text is back in the box.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Not sent: it did not go through. Your text is back in the box.')).toBeTruthy())
     expect(box('Comment on this document…').editor.getText()).toBe('Refused words')
   })
 

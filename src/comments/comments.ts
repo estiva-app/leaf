@@ -117,7 +117,7 @@ export function earnedTags(written: Written, own: { address: string; event?: str
 }
 
 // The comment box says these after "Not sent:", and then that the text is back in the box.
-const NOT_SENT = 'the relay did not take it'
+const NOT_SENT = 'it did not go through'
 const SIGNED_OUT = 'you are signed out'
 
 /** A comment on the document — on a selection or on whole blocks when `anchor` is given (SPEC §13.6), else on the whole of it. */

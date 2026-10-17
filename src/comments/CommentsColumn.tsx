@@ -130,6 +130,7 @@ function Box({
   people,
   onSend,
   autoFocus,
+  onSent,
 }: {
   /** Said in the empty box, and its accessible name. */
   placeholder: string
@@ -138,6 +139,8 @@ function Box({
   people: BoxPeople
   onSend: (written: Written) => Promise<WriteResult>
   autoFocus?: boolean
+  /** Called once the box has let go of an accepted send. */
+  onSent?: () => void
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => composerDraft(draftStore(), draftKey, { personLabel: knownName }), [draftKey])
@@ -158,6 +161,7 @@ function Box({
       draft={draft}
       send={send}
       autoFocus={autoFocus}
+      onSent={onSent ? () => onSent() : undefined}
     />
   )
 }
@@ -374,7 +378,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const page = useMemo(() => all.flatMap((t) => [t.root, ...t.replies]), [all])
   const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])
   // The files the comments name, read once per tab as the page's own chips are.
-  const references = useReferences(useMemo(() => page.flatMap((c) => findNostrUris(c.body)), [page]))
+  const references = useReferences(useMemo(() => page.flatMap((c) => findNostrUris(c.body).filter((uri) => /^nostr:naddr1/i.test(uri))), [page]))
 
   const places = useMemo(() => {
     const map = new Map<string, Where>()
@@ -433,18 +437,15 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const commented = useMemo(() => (address && folder ? { address, folder } : null), [address, folder])
   const send = useCallback(
     async (written: Written): Promise<WriteResult> => {
-      if (!commented) return { ok: false, reason: 'this page cannot take comments from here' }
+      if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
       const result = await postComment(commented, written, draft ?? undefined)
-      if (result.ok) {
-        onDraft(null)
-        reread()
-      }
+      if (result.ok) reread()
       return result
     },
-    [commented, draft, onDraft, reread],
+    [commented, draft, reread],
   )
   const reply = async (thread: Thread, written: Written): Promise<WriteResult> => {
-    if (!commented) return { ok: false, reason: 'this page cannot take comments from here' }
+    if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
     const result = await postReply(commented, thread, written)
     if (result.ok) reread()
     return result
@@ -515,6 +516,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
               scope={pageScope}
               people={people}
               onSend={send}
+              // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
+              onSent={() => onDraft(null)}
               autoFocus={!!draft}
             />
           </div>
