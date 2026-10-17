@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
 import { IconArrowBackUp, IconCircleCheck, IconMessage, IconX } from '@tabler/icons-react'
 import { composerDraft, composerText, createDraftStore, draftKeys, type DraftStore } from '@estiva-app/conversation'
@@ -18,7 +18,8 @@ import {
 } from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
 import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
-import { ReferenceChip, ReferencesProvider, useReferences } from '../document/references'
+import { CarriedCards, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
+import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
 import { exactly, whenOf } from '../home/recent'
 import { postComment, postReply, setResolved, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { knownName, useMentionPeople } from './people'
@@ -198,6 +199,10 @@ function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentIt
   const blocks = useMemo(() => toRenderTree(comment.body, contentFormatOf(comment.event)), [comment])
   const urgent = useMemo(() => comment.event.tags.filter((t) => t[0] === 'urgent' && t[1]).map((t) => t[1]), [comment])
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
+  // Where each line draws, as Peek draws a message (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+  const placed = useMemo(() => placeComment(blocks, comment.event), [blocks, comment])
+  const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
+  const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />
   return (
     <div data-comment-id={comment.id} className="flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
@@ -208,8 +213,40 @@ function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentIt
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
         </WithTooltip>
       </div>
-      <RichText blocks={blocks} size="small" renderReference={(uri) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />} />
+      <RichText
+        blocks={placed.blocks}
+        size="small"
+        renderReference={(uri, run) => {
+          const line = placed.rowRuns.get(run)
+          return line ? row(line) : reference(uri)
+        }}
+        renderBlock={(block) => {
+          const line = block.type === ROW_BLOCK ? placed.rowOf(block) : undefined
+          return line ? row(line) : undefined
+        }}
+      />
+      <CarriedCards cards={placed.cards} />
     </div>
+  )
+}
+
+/**
+ * A comment's line that is only a link to a file or a message, as its row
+ * (SPEC §13.2): a file as the page's compact card, one of this page's comments
+ * as its author and opening words. Anything else keeps the chip it would draw
+ * in a sentence, rather than a row with nothing in it.
+ */
+function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; fallback: ReactNode }) {
+  if (line.unreadable) return fallback
+  if (/^nostr:naddr1/i.test(line.reference)) return <ReferenceRow uri={line.reference} />
+  const id = /^nostr:nevent1/i.test(line.reference) ? eventIdOf(line.reference) : null
+  const quoted = id ? page.find((c) => c.id === id) : undefined
+  if (!quoted) return fallback
+  return (
+    <Card className="flex items-center gap-2 px-3 py-2" data-comment-row={quoted.id}>
+      <IconMessage size={16} stroke={1.5} />
+      <span className="truncate text-body-2 text-text-secondary">{`${nameOf(quoted.by) ?? 'Someone'}: ${snippetOf(quoted.body, nameOf)}`}</span>
+    </Card>
   )
 }
 

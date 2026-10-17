@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { blockIds, descriptionTextToBlockDocument, encodeNpub, serializeBlockDocument, type BlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { blockIds, descriptionTextToBlockDocument, encodeNaddr, encodeNevent, encodeNpub, serializeBlockDocument, type BlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 
 const ME = 'a'.repeat(64)
@@ -26,6 +26,20 @@ vi.mock('../relay/bridge', () => ({
   publish,
   viewerPubkey: () => ME,
 }))
+
+/* Files another app owns, by reference: interop's projection of one needs its app's manifest, which is interop's own contract and tested there. */
+const files = vi.hoisted(() => ({ known: {} as Record<string, unknown> }))
+vi.mock('@estiva-app/interop', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@estiva-app/interop')>()
+  return {
+    ...real,
+    resolveForeignObjects: async (uris: string[], ...rest: unknown[]) => {
+      const others = uris.filter((uri) => !(uri in files.known))
+      const found = others.length ? await (real.resolveForeignObjects as (...a: unknown[]) => Promise<Record<string, unknown>>)(others, ...rest) : {}
+      return { ...found, ...Object.fromEntries(uris.filter((uri) => uri in files.known).map((uri) => [uri, files.known[uri]])) }
+    },
+  }
+})
 
 import { FilePage } from '../pages/FilePage'
 import { LiveDocument } from '../document/LiveDocument'
@@ -265,6 +279,61 @@ describe('the comments column', () => {
     await waitFor(() => expect(screen.getByText('Resolved')).toBeTruthy())
     expect(publish.mock.calls[0][0].kind).toBe(9101)
     expect(publish.mock.calls[0][0].tags).toContainEqual(['e', onParagraph.id])
+  })
+
+  describe('a link alone on its line (SPEC §13.2, as Peek draws a message)', () => {
+    const ISSUE_ADDRESS = `30851:${QA2}:login`
+    const ISSUE = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'login', relays: [] })}`
+    const OTHER = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'export', relays: [] })}`
+    const issue = (title: string, address: string) =>
+      ({ ref: 'r', kind: 30851, eventId: 'e', widget: 'card', noun: 'issue', meta: [], actions: [], viaRecommendation: false, address, slots: { title: { value: title }, subtitle: { value: `${title}, in short.` } } }) as unknown as ForeignObject
+    beforeAll(() => {
+      files.known[ISSUE] = issue('Fix the login', ISSUE_ADDRESS)
+      files.known[OTHER] = issue('Export to PDF', `30851:${QA2}:export`)
+    })
+
+    it('draws a file alone on its line as its row, and the same file in a sentence as its chip', async () => {
+      await open([comment([], `See\n${ISSUE}\nand ${OTHER} too`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const row = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>('[data-reference-card="compact"]')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(within(row).getByText('Fix the login')).toBeTruthy()
+      expect(row.closest('p')).toBeNull()
+      // In a sentence the other file stays the chip it was written as, with no row.
+      await waitFor(() => expect(within(card).getByText('Export to PDF')).toBeTruthy())
+      expect(within(card).getByText('Export to PDF').closest('[data-reference-card]')).toBeNull()
+      expect(card.textContent).toContain('See')
+    })
+
+    it("draws the card another app's writer carried under the text, and nothing for its file's line, which the card stands for", async () => {
+      await open([comment([['embed', ISSUE_ADDRESS, 'detailed']], `See\n${ISSUE}`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const carried = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>('[data-reference-card="detailed"]')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(within(carried).getByText('Fix the login, in short.')).toBeTruthy()
+      expect(within(card).getAllByText('Fix the login')).toHaveLength(1)
+      expect(card.querySelector('[data-reference-card="compact"]')).toBeNull()
+    })
+
+    it("draws another of this page's comments alone on its line as its row: its author and opening words", async () => {
+      const first = comment([], 'The export drops the tables.')
+      const second = comment([['q', first.id]], `Same as\nnostr:${encodeNevent({ id: first.id, relays: [] })}`)
+      await open([profile(AUTHOR, 'QA-1'), first, second])
+      const card = await waitFor(() => document.querySelector<HTMLElement>(`[data-comment-id="${second.id}"]`)!)
+      const row = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>(`[data-comment-row="${first.id}"]`)
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(row.textContent).toContain('The export drops the tables.')
+      expect(row.closest('p')).toBeNull()
+    })
   })
 })
 

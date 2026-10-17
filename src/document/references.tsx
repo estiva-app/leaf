@@ -112,6 +112,23 @@ export function LineCards({ cards, resolved }: { cards: readonly ReferenceCard[]
   )
 }
 
+/**
+ * A file alone on a comment's line, drawn as its row in place (SPEC §13.2):
+ * the page's compact card, a placeholder while it is read, and its chip when
+ * it cannot be read, so the link never goes blank.
+ */
+export function ReferenceRow({ uri }: { uri: string }) {
+  const file = useContext(References)[uri]
+  if (file === undefined) return <SkeletonBar className="h-10 w-full" />
+  if (file === null || file.unreachable) return <ReferenceChip uri={uri} />
+  return <ReferenceObject file={file} layout="compact" />
+}
+
+/** The cards a comment's writer carried (SPEC §13.6.2), under its text, read from the page's references. */
+export function CarriedCards({ cards }: { cards: readonly ReferenceCard[] }) {
+  return <LineCards cards={cards} resolved={useContext(References)} />
+}
+
 /** Every reference in the editor's document, so each chip and card has its file read. */
 export function useEditorReferences(editor: Editor | null): Resolved {
   const key = useEditorState({
