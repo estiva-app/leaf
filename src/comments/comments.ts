@@ -105,7 +105,7 @@ async function send(unsigned: Parameters<typeof publish>[0] | null, refused: str
   const result = await publish(unsigned)
   if (result.ok) return { ok: true }
   // The relay's reason names kinds and rules: the console keeps it.
-  console.warn('[relay] comment refused', result)
+  console.warn('[relay] write refused', unsigned.kind, result)
   return { ok: false, reason: refused }
 }
 

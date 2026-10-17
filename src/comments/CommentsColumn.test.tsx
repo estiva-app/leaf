@@ -501,6 +501,30 @@ describe('reactions on a comment (COMM-4)', () => {
     expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('writes nothing more while the read after an accepted reaction is still out', async () => {
+    const root = comment([], 'Too long?')
+    await open([root])
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    const { query } = await import('../relay/bridge')
+    const real = vi.mocked(query).getMockImplementation()!
+    // The relay accepts the reaction; the column's read after it does not answer yet.
+    vi.mocked(query).mockImplementation(() => new Promise(() => {}))
+    try {
+      const pick = () => {
+        act(() => void fireEvent.click(screen.getByRole('button', { name: 'Add a reaction' })))
+        act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
+      }
+      pick()
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      pick()
+      await act(async () => {})
+      expect(publish).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
   it('takes your own reaction back with a kind:5 naming that reaction, and the pill goes', async () => {
     const root = comment([], 'Too long?')
     const mine = reaction(root.id, '👍', ME, '8'.repeat(64))

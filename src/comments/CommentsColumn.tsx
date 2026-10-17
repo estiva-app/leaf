@@ -246,17 +246,19 @@ function CommentLine({
 }) {
   const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
   const [refused, setRefused] = useState<string | null>(null)
+  // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
   const pending = useRef(false)
+  useEffect(() => {
+    pending.current = false
+  }, [comment])
   const toggle = async (emoji: string) => {
-    // One write at a time: a second click before the relay answers would write the same reaction twice.
     if (!onReact || pending.current) return
     pending.current = true
     setRefused(null)
-    try {
-      const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine)
-      if (!result.ok) setRefused(result.reason)
-    } finally {
+    const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine).catch(() => ({ ok: false, reason: 'it did not go through' }) as const)
+    if (!result.ok) {
       pending.current = false
+      setRefused(result.reason)
     }
   }
   const blocks = useMemo(() => toRenderTree(comment.body, contentFormatOf(comment.event)), [comment])
