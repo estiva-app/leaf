@@ -100,10 +100,11 @@ export async function listDocument(args: { folder: string; address: string }): P
 
 /**
  * What a refused write says to a person. The relay's reason names kinds and
- * rules, so it goes to the console; a signing failure already arrives plain.
+ * rules, so it goes to the console; one with no HTTP status is Leaf's own
+ * sentence (`bridge.publish`: signing, or the workspace out of reach), already plain.
  */
 function plainly(result: PublishResult, otherwise: string): string {
-  if (result.httpStatus === undefined && result.reason?.startsWith('Leaf could not sign')) return result.reason
+  if (result.httpStatus === undefined && result.reason) return result.reason
   console.warn('[relay] refused', result.reason ?? result.message)
   return otherwise
 }

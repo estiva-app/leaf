@@ -126,6 +126,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
             </div>
             <LiveDocument
               value={body?.value ?? ''}
+              holdKey={opened.address ? `document:${opened.address}` : undefined}
               format={body?.format ?? 'marker'}
               changedBy={changedBy}
               onCommit={commitText}

@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { AuthShell } from './auth/AuthShell'
 import { bootAuth, enterFromShell } from './auth/boot'
+import { followOtherTabs } from './auth/estivaId'
+import { SessionGate } from './auth/SessionGate'
 
 // Settle who this load belongs to first, then render: the app itself is imported
 // only once sign-in is settled, so nothing in it evaluates as the wrong person.
@@ -19,9 +21,13 @@ void (async () => {
     return
   }
   const { App } = await import('./App')
+  followOtherTabs()
+  // A sign-in that ends from here on draws the passkey screen in the page's place (AUT-5).
   root.render(
     <StrictMode>
-      <App />
+      <SessionGate>
+        <App />
+      </SessionGate>
     </StrictMode>,
   )
 })()
