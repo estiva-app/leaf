@@ -25,7 +25,8 @@ describe('ownPath, the place sign-in returns to', () => {
 })
 
 describe('the New document link', () => {
-  it('names the Folder it was written for, whatever the id holds', () => {
+  it('is the link the app tests open, and names the Folder it was written for, whatever the id holds', () => {
+    expect(newDocumentPath('a78e60b1')).toBe('/new?folder=a78e60b1')
     const url = new URL(newDocumentPath('a78e60b1 &x=1'), 'https://leaf.example')
     expect(newDocumentFolderOf(url.pathname, url.search)).toBe('a78e60b1 &x=1')
   })

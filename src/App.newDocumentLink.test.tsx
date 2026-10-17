@@ -45,7 +45,8 @@ vi.mock('./folders/workspace', async () => {
 })
 
 const { App } = await import('./App')
-const { newDocumentPath } = await import('./route')
+/** The link as another app would write it; `route.test.ts` checks `newDocumentPath` writes the same. */
+const newDocumentPath = (folder: string) => `/new?folder=${encodeURIComponent(folder)}`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 const REFUSAL = 'You can’t add a document to that Folder.'
 
