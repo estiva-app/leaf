@@ -53,7 +53,8 @@ function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type
  * draws only while the body still names its file (`cardsIn`).
  */
 export function placeComment(blocks: readonly RenderBlock[], event: { tags: readonly (readonly string[])[] }): PlacedComment {
-  const embeds = embedsOf(event)
+  // A file's card only: Leaf reads files, not another app's messages, so a message's line keeps its row instead of a card that never loads.
+  const embeds = embedsOf(event).filter((embed) => embed.value.includes(':'))
   const carried = embeds.length ? cardsIn(embeds, blocks) : []
   const written = new Map<string, string>()
   for (const reference of carried.length ? referencesIn(blocks) : []) {

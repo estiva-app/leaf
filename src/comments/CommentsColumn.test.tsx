@@ -287,9 +287,12 @@ describe('the comments column', () => {
     const OTHER = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'export', relays: [] })}`
     const issue = (title: string, address: string) =>
       ({ ref: 'r', kind: 30851, eventId: 'e', widget: 'card', noun: 'issue', meta: [], actions: [], viaRecommendation: false, address, slots: { title: { value: title }, subtitle: { value: `${title}, in short.` } } }) as unknown as ForeignObject
+    const GONE_ADDRESS = `30851:${QA2}:deleted`
+    const GONE = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'deleted', relays: [] })}`
     beforeAll(() => {
       files.known[ISSUE] = issue('Fix the login', ISSUE_ADDRESS)
       files.known[OTHER] = issue('Export to PDF', `30851:${QA2}:export`)
+      files.known[GONE] = null
     })
 
     it('draws a file alone on its line as its row, and the same file in a sentence as its chip', async () => {
@@ -319,6 +322,28 @@ describe('the comments column', () => {
       expect(within(carried).getByText('Fix the login, in short.')).toBeTruthy()
       expect(within(card).getAllByText('Fix the login')).toHaveLength(1)
       expect(card.querySelector('[data-reference-card="compact"]')).toBeNull()
+    })
+
+    it('draws a bullet that is only a link as its row, and keeps the bullet', async () => {
+      await open([comment([], `Read these:\n\n- ${ISSUE}\n- and ${OTHER} later`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const row = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>('[data-reference-card="compact"]')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(within(row).getByText('Fix the login')).toBeTruthy()
+      expect(row.closest('li')).toBeTruthy()
+      // The second bullet is a sentence: its file stays a chip.
+      await waitFor(() => expect(within(card).getByText('Export to PDF')).toBeTruthy())
+      expect(card.querySelectorAll('[data-reference-card]')).toHaveLength(1)
+    })
+
+    it('says a carried card\'s file is not available, rather than drop the link, when it cannot be read', async () => {
+      await open([comment([['embed', GONE_ADDRESS, 'detailed']], `See\n${GONE}`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      await waitFor(() => expect(within(card).getByText(/not available/)).toBeTruthy())
+      expect(card.querySelector('[data-reference-unavailable]')).toBeTruthy()
     })
 
     it("draws another of this page's comments alone on its line as its row: its author and opening words", async () => {
