@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type BlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { blockIds, descriptionTextToBlockDocument, encodeNaddr, encodeNevent, encodeNpub, serializeBlockDocument, type BlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 
 const ME = 'a'.repeat(64)
@@ -26,6 +26,20 @@ vi.mock('../relay/bridge', () => ({
   publish,
   viewerPubkey: () => ME,
 }))
+
+/* Files another app owns, by reference: interop's projection of one needs its app's manifest, which is interop's own contract and tested there. */
+const files = vi.hoisted(() => ({ known: {} as Record<string, unknown> }))
+vi.mock('@estiva-app/interop', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@estiva-app/interop')>()
+  return {
+    ...real,
+    resolveForeignObjects: async (uris: string[], ...rest: unknown[]) => {
+      const others = uris.filter((uri) => !(uri in files.known))
+      const found = others.length ? await (real.resolveForeignObjects as (...a: unknown[]) => Promise<Record<string, unknown>>)(others, ...rest) : {}
+      return { ...found, ...Object.fromEntries(uris.filter((uri) => uri in files.known).map((uri) => [uri, files.known[uri]])) }
+    },
+  }
+})
 
 import { FilePage } from '../pages/FilePage'
 import { LiveDocument } from '../document/LiveDocument'
@@ -59,6 +73,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup()
   publish.mockClear()
+  // A box keeps what is written as a draft; each test starts with none.
+  localStorage.clear()
 })
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
@@ -73,6 +89,11 @@ const comment = (tags: string[][], content: string): SignedEvent => {
   const tagged = [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['a', ADDRESS], ['k', '30842'], ['p', AUTHOR], ...tags, ['h', FOLDER]]
   return { id: n.toString(16).padStart(64, '0'), pubkey: AUTHOR, created_at: 1_760_000_000 + n, kind: 1111, tags: tagged, content, sig: '' }
 }
+
+const QA2 = 'c'.repeat(64)
+// The relay's roster (NIP-43) and a profile: who `@` offers.
+const roster: SignedEvent = { id: 'f'.repeat(64), pubkey: 'd'.repeat(64), created_at: 1_760_000_000, kind: 13534, tags: [['member', ME], ['member', QA2]], content: '', sig: '' }
+const profile = (pubkey: string, name: string): SignedEvent => ({ id: `${pubkey.slice(0, 63)}1`, pubkey, created_at: 1_760_000_000, kind: 0, tags: [], content: JSON.stringify({ name }), sig: '' })
 
 const fileWith = (body: BlockDocument) =>
   ({ ref: 'r', kind: 30842, eventId: 'e', widget: 'card', meta: [], actions: [], viaRecommendation: false, address: ADDRESS, folder: FOLDER, slots: { title: { value: 'Plan' }, [BODY_SLOT]: { value: serializeBlockDocument(body), format: 'blocks' } } }) as unknown as ForeignObject
@@ -142,13 +163,90 @@ describe('the comments column', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Comment on this document…' })).toBeTruthy())
   })
 
+  it('sends an @ pick, a bold word and its tags, and the card draws the person as a chip and the word bold', async () => {
+    await open([roster, profile(QA2, 'QA-2')])
+    await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
+    write('Comment on this document…', 'Ask @QA')
+    const option = await screen.findByRole('option', { name: /QA-2/ })
+    expect(option).toBeTruthy()
+    sendWithEnter('Comment on this document…') // With the list open, Enter picks the row.
+    await waitFor(() => expect(screen.queryByRole('option')).toBeNull())
+    write('Comment on this document…', 'about <strong>this</strong>')
+    // The Enter that picked a row is not a send for the next 100 ms (ui's suggestionPopup); a person types on well after it.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(Date.now() + 1000)
+      sendWithEnter('Comment on this document…')
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.content).toBe(`Ask nostr:${encodeNpub(QA2)} about **this**`)
+    expect(e.tags).toContainEqual(['p', QA2])
+
+    // The relay now holds it: the card reads it back.
+    relay.events = [roster, profile(QA2, 'QA-2'), { ...comment(e.tags.filter((t) => t[0] === 'p' && t[1] === QA2), e.content) }]
+    cleanup()
+    await open(relay.events)
+    const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+    await waitFor(() => expect(within(card).getByText('@QA-2')).toBeTruthy())
+    expect(card.querySelector('strong')?.textContent).toBe('this')
+  })
+
+  it("offers a thread's own comment first under Messages in its reply box, and the pick goes out as a q", async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    const elsewhere = comment([], 'About the page')
+    await open([roster, profile(AUTHOR, 'QA-1'), onParagraph, elsewhere])
+    await waitFor(() => expect(document.querySelectorAll('[data-thread-id]')).toHaveLength(2))
+    act(() => void page().editor.emit('commentSelect', { id: onParagraph.id }))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    write('Reply…', '[')
+    const list = await screen.findByRole('listbox')
+    const rows = within(list).getAllByRole('option').map((o) => o.textContent ?? '')
+    expect(rows[0]).toContain('Too long?')
+    expect(rows[1]).toContain('About the page')
+    act(() => void fireEvent.keyDown(box('Reply…'), { key: 'ArrowDown' }))
+    sendWithEnter('Reply…')
+    await waitFor(() => expect(screen.queryByRole('option')).toBeNull())
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(Date.now() + 1000)
+      sendWithEnter('Reply…')
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.tags).toContainEqual(['e', onParagraph.id])
+    expect(e.tags).toContainEqual(['q', elsewhere.id])
+    expect(e.content).toMatch(/^nostr:nevent1/)
+  })
+
+  it("offers Ship's / rows in the box: Mention, Urgent and Reference, and no File", async () => {
+    await open([])
+    write('Comment on this document…', '/')
+    await screen.findAllByRole('option')
+    const rows = screen.getAllByRole('option').map((o) => o.textContent ?? '')
+    for (const row of ['Mention', 'Urgent', 'Reference']) expect(rows.some((r) => r.includes(row))).toBe(true)
+    expect(rows.some((r) => /^File/.test(r))).toBe(false)
+  })
+
+  it('sends with Ctrl+Enter as with Enter', async () => {
+    await open([])
+    write('Comment on this document…', 'Sent with the chord')
+    act(() => void fireEvent.keyDown(box('Comment on this document…'), { key: 'Enter', ctrlKey: true }))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    expect(publish.mock.calls[0][0].content).toBe('Sent with the chord')
+  })
+
   it('puts your text back and says so when the relay refuses it', async () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
     await open([])
     await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
     write('Comment on this document…', 'Refused words')
     sendWithEnter('Comment on this document…')
-    await waitFor(() => expect(screen.getByText('Could not send your comment. Your text is still here.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Not sent: it did not go through. Your text is back in the box.')).toBeTruthy())
     expect(box('Comment on this document…').editor.getText()).toBe('Refused words')
   })
 
@@ -181,6 +279,86 @@ describe('the comments column', () => {
     await waitFor(() => expect(screen.getByText('Resolved')).toBeTruthy())
     expect(publish.mock.calls[0][0].kind).toBe(9101)
     expect(publish.mock.calls[0][0].tags).toContainEqual(['e', onParagraph.id])
+  })
+
+  describe('a link alone on its line (SPEC §13.2, as Peek draws a message)', () => {
+    const ISSUE_ADDRESS = `30851:${QA2}:login`
+    const ISSUE = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'login', relays: [] })}`
+    const OTHER = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'export', relays: [] })}`
+    const issue = (title: string, address: string) =>
+      ({ ref: 'r', kind: 30851, eventId: 'e', widget: 'card', noun: 'issue', meta: [], actions: [], viaRecommendation: false, address, slots: { title: { value: title }, subtitle: { value: `${title}, in short.` } } }) as unknown as ForeignObject
+    const GONE_ADDRESS = `30851:${QA2}:deleted`
+    const GONE = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'deleted', relays: [] })}`
+    beforeAll(() => {
+      files.known[ISSUE] = issue('Fix the login', ISSUE_ADDRESS)
+      files.known[OTHER] = issue('Export to PDF', `30851:${QA2}:export`)
+      files.known[GONE] = null
+    })
+
+    it('draws a file alone on its line as its row, and the same file in a sentence as its chip', async () => {
+      await open([comment([], `See\n${ISSUE}\nand ${OTHER} too`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const row = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>('[data-reference-card="compact"]')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(within(row).getByText('Fix the login')).toBeTruthy()
+      expect(row.closest('p')).toBeNull()
+      // In a sentence the other file stays the chip it was written as, with no row.
+      await waitFor(() => expect(within(card).getByText('Export to PDF')).toBeTruthy())
+      expect(within(card).getByText('Export to PDF').closest('[data-reference-card]')).toBeNull()
+      expect(card.textContent).toContain('See')
+    })
+
+    it("draws the card another app's writer carried under the text, and nothing for its file's line, which the card stands for", async () => {
+      await open([comment([['embed', ISSUE_ADDRESS, 'detailed']], `See\n${ISSUE}`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const carried = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>('[data-reference-card="detailed"]')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(within(carried).getByText('Fix the login, in short.')).toBeTruthy()
+      expect(within(card).getAllByText('Fix the login')).toHaveLength(1)
+      expect(card.querySelector('[data-reference-card="compact"]')).toBeNull()
+    })
+
+    it('draws a bullet that is only a link as its row, and keeps the bullet', async () => {
+      await open([comment([], `Read these:\n\n- ${ISSUE}\n- and ${OTHER} later`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const row = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>('[data-reference-card="compact"]')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(within(row).getByText('Fix the login')).toBeTruthy()
+      expect(row.closest('li')).toBeTruthy()
+      // The second bullet is a sentence: its file stays a chip.
+      await waitFor(() => expect(within(card).getByText('Export to PDF')).toBeTruthy())
+      expect(card.querySelectorAll('[data-reference-card]')).toHaveLength(1)
+    })
+
+    it('says a carried card\'s file is not available, rather than drop the link, when it cannot be read', async () => {
+      await open([comment([['embed', GONE_ADDRESS, 'detailed']], `See\n${GONE}`)])
+      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      await waitFor(() => expect(within(card).getByText(/not available/)).toBeTruthy())
+      expect(card.querySelector('[data-reference-unavailable]')).toBeTruthy()
+    })
+
+    it("draws another of this page's comments alone on its line as its row: its author and opening words", async () => {
+      const first = comment([], 'The export drops the tables.')
+      const second = comment([['q', first.id]], `Same as\nnostr:${encodeNevent({ id: first.id, relays: [] })}`)
+      await open([profile(AUTHOR, 'QA-1'), first, second])
+      const card = await waitFor(() => document.querySelector<HTMLElement>(`[data-comment-id="${second.id}"]`)!)
+      const row = await waitFor(() => {
+        const found = card.querySelector<HTMLElement>(`[data-comment-row="${first.id}"]`)
+        expect(found).toBeTruthy()
+        return found!
+      })
+      expect(row.textContent).toContain('The export drops the tables.')
+      expect(row.closest('p')).toBeNull()
+    })
   })
 })
 

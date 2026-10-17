@@ -1,13 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from 'react'
-import { useEditor, type Editor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import { IconArrowBackUp, IconCircleCheck, IconX } from '@tabler/icons-react'
-import { contentFormatOf, toRenderTree } from '@estiva-app/protocol'
-import { Card, Chip, CollapsibleSection, EmptyState, FieldLine, IconButton, Panel, Person, RichText, SkeletonList, WithTooltip, useToast } from '@estiva-app/ui'
-import { ComposeBox, ComposeKeys, COMPOSE_EDITOR_CLASSES, commentElement, commentPlace, quoteText, setCommentAnchors, type CommentAnchor, type CommentPlace } from '@estiva-app/ui/editor'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
+import type { Editor, JSONContent } from '@tiptap/react'
+import { IconArrowBackUp, IconCircleCheck, IconMessage, IconX } from '@tabler/icons-react'
+import { composerDraft, composerText, createDraftStore, draftKeys, type DraftStore } from '@estiva-app/conversation'
+import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument } from '@estiva-app/protocol'
+import { Card, Chip, CollapsibleSection, EmptyState, IconButton, InlineChip, Panel, Person, RichText, SkeletonList, WithTooltip, useToast } from '@estiva-app/ui'
+import {
+  CommentBox,
+  commentBoxRows,
+  commentElement,
+  commentPlace,
+  quoteText,
+  setCommentAnchors,
+  type CommentAnchor,
+  type CommentPlace,
+  type MentionPerson,
+  type SendAnswer,
+} from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
+import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
+import { CarriedCards, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
+import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
 import { exactly, whenOf } from '../home/recent'
-import { postComment, postReply, setResolved, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult } from './comments'
+import { postComment, postReply, setResolved, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
+import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
 
 /**
@@ -77,44 +92,78 @@ function useNames(pubkeys: readonly string[]): Record<string, string> {
   return names
 }
 
+// Ship's `/` Insert rows (Miky, 16 October), after the shared Format section; File comes with attaching a file.
+const INSERT = [commentBoxRows.mention, commentBoxRows.urgent, commentBoxRows.reference]
+
+// One store for every box in the tab; a browser that refuses storage keeps no drafts.
+let drafts: DraftStore | null = null
+function draftStore(): DraftStore {
+  if (!drafts) {
+    try {
+      drafts = createDraftStore(window.localStorage)
+    } catch {
+      drafts = createDraftStore(undefined)
+    }
+  }
+  return drafts
+}
+
+/** What a box needs from the column: who `@` offers, and whom a key names. */
+interface BoxPeople {
+  people: readonly MentionPerson[]
+  nameOf: (pubkey: string) => string | undefined
+}
+
 /**
- * The box a comment or a reply is written in: the package's ComposeBox. It
- * empties as you send; a refused send puts your text back and says so (record
- * a-refused-action-is-undone-and-your-text-comes-back). `focusOn` takes the
- * focus each time it changes to something new, keeping what is written: a
- * comment started on other words keeps its text.
+ * The box a comment or a reply is written in: the package's CommentBox, with
+ * `@` and `!@` for the workspace's people, `[` for this page's comments and its
+ * Folder's files, and Ship's `/` rows. It holds the words until the relay
+ * answers, and a refusal puts them back and says so (record
+ * a-refused-action-is-undone-and-your-text-comes-back). What is written is kept
+ * as a draft under `draftKey`; give the box a React `key` per destination.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
  */
-function Composer({ placeholder, onSend, focusOn }: { placeholder: string; onSend: (text: string) => Promise<WriteResult>; focusOn?: string | null }) {
-  const [refused, setRefused] = useState<string | null>(null)
-  const editor = useEditor({
-    extensions: [StarterKit.configure({ link: false }), ComposeKeys],
-    editorProps: { attributes: { class: COMPOSE_EDITOR_CLASSES, 'aria-label': placeholder } },
-  })
-  useEffect(() => {
-    if (editor && !editor.isDestroyed) editor.setOptions({ editorProps: { attributes: { class: COMPOSE_EDITOR_CLASSES, 'aria-label': placeholder } } })
-  }, [editor, placeholder])
-  // A frame late: the block menu gives the focus back to the text as it closes, after this box asks for it.
-  useEffect(() => {
-    if (!focusOn || !editor) return
-    const frame = requestAnimationFrame(() => editor.commands.focus())
-    return () => cancelAnimationFrame(frame)
-  }, [focusOn, editor])
-  const send = (ed: Editor) => {
-    const text = ed.getText({ blockSeparator: '\n' }).trim()
-    if (!text) return false
-    const json = ed.getJSON()
-    setRefused(null)
-    void onSend(text).then((result) => {
-      if (result.ok || ed.isDestroyed) return
-      if (ed.isEmpty) ed.commands.setContent(json)
-      setRefused(result.reason)
-    })
+function Box({
+  placeholder,
+  draftKey,
+  scope,
+  people,
+  onSend,
+  autoFocus,
+  onSent,
+}: {
+  /** Said in the empty box, and its accessible name. */
+  placeholder: string
+  draftKey: string
+  scope: { here: readonly ReferableComment[]; rest: readonly ReferableComment[] }
+  people: BoxPeople
+  onSend: (written: Written) => Promise<WriteResult>
+  autoFocus?: boolean
+  /** Called once the box has let go of an accepted send. */
+  onSent?: () => void
+}) {
+  // Names from the latest read of the people, when the draft opens: they may land after the box does.
+  const draft = useMemo(() => composerDraft(draftStore(), draftKey, { personLabel: knownName }), [draftKey])
+  const send = async (body: JSONContent): Promise<SendAnswer> => {
+    const written = composerText(body as EditorDocument)
+    const result = await onSend(written)
+    return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
   return (
-    <div className="flex flex-col gap-1">
-      <ComposeBox editor={editor} placeholder={<span>{placeholder}</span>} onSend={send} />
-      {refused && <FieldLine tone="error">{refused}</FieldLine>}
-    </div>
+    <CommentBox
+      label={placeholder}
+      placeholder={<span>{placeholder}</span>}
+      people={people.people}
+      references={(typed) => commentReferenceSections(scope, typed, people.nameOf)}
+      referencesChanged={subscribeReferences}
+      referenceView={ReferenceChip}
+      insert={INSERT}
+      draft={draft}
+      send={send}
+      autoFocus={autoFocus}
+      onSent={onSent ? () => onSent() : undefined}
+    />
   )
 }
 
@@ -146,8 +195,14 @@ function AnchorLine({ thread, where, editor, names }: { thread: Thread; where: W
 }
 
 /** One comment or reply in a card: who, when, and the text. */
-function CommentLine({ comment, names, now }: { comment: CommentItem; names: Record<string, string>; now: number }) {
+function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentItem; names: Record<string, string>; now: number; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[] }) {
   const blocks = useMemo(() => toRenderTree(comment.body, contentFormatOf(comment.event)), [comment])
+  const urgent = useMemo(() => comment.event.tags.filter((t) => t[0] === 'urgent' && t[1]).map((t) => t[1]), [comment])
+  const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
+  // Where each line draws, as Peek draws a message (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+  const placed = useMemo(() => placeComment(blocks, comment.event), [blocks, comment])
+  const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
+  const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />
   return (
     <div data-comment-id={comment.id} className="flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
@@ -158,9 +213,100 @@ function CommentLine({ comment, names, now }: { comment: CommentItem; names: Rec
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
         </WithTooltip>
       </div>
-      <RichText blocks={blocks} size="small" />
+      <RichText
+        blocks={placed.blocks}
+        size="small"
+        renderReference={(uri, run) => {
+          const line = placed.rowRuns.get(run)
+          return line ? row(line) : reference(uri)
+        }}
+        renderBlock={(block) => {
+          const line = block.type === ROW_BLOCK ? placed.rowOf(block) : undefined
+          return line ? row(line) : undefined
+        }}
+      />
+      <CarriedCards cards={placed.cards} />
     </div>
   )
+}
+
+/**
+ * A comment's line that is only a link to a file or a message, as its row
+ * (SPEC §13.2): a file as the page's compact card, one of this page's comments
+ * as its author and opening words. Anything else keeps the chip it would draw
+ * in a sentence, rather than a row with nothing in it.
+ */
+function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; fallback: ReactNode }) {
+  if (line.unreadable) return fallback
+  if (/^nostr:naddr1/i.test(line.reference)) return <ReferenceRow uri={line.reference} />
+  const id = /^nostr:nevent1/i.test(line.reference) ? eventIdOf(line.reference) : null
+  const quoted = id ? page.find((c) => c.id === id) : undefined
+  if (!quoted) return fallback
+  return (
+    <Card className="flex items-center gap-2 px-3 py-2" data-comment-row={quoted.id}>
+      <IconMessage size={16} stroke={1.5} />
+      <span className="truncate text-body-2 text-text-secondary">{`${nameOf(quoted.by) ?? 'Someone'}: ${snippetOf(quoted.body, nameOf)}`}</span>
+    </Card>
+  )
+}
+
+/**
+ * What a comment's `nostr:` reference draws as, as Peek and Ship draw it: a
+ * person as `@Name` (urgent when the comment's `urgent` tags name them, SPEC
+ * §13.1), one of this page's comments as its author and opening words, and a
+ * file as the page's own chip. Anything else, or anyone without a name, is its
+ * address, quiet.
+ */
+function BodyReference({ uri, urgent, nameOf, page }: { uri: string; urgent: readonly string[]; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[] }) {
+  if (/^nostr:npub1/i.test(uri)) {
+    const pubkey = pubkeyOf(uri)
+    const name = pubkey ? nameOf(pubkey) : undefined
+    if (pubkey && name) {
+      return (
+        <InlineChip tone={urgent.includes(pubkey) ? 'urgent' : 'person'} data-mention={pubkey}>
+          {`@${name}`}
+        </InlineChip>
+      )
+    }
+  } else if (/^nostr:nevent1/i.test(uri)) {
+    const id = eventIdOf(uri)
+    const quoted = id ? page.find((c) => c.id === id) : undefined
+    if (quoted) {
+      const words = `${nameOf(quoted.by) ?? 'Someone'}: ${snippetOf(quoted.body, nameOf)}`
+      return (
+        <WithTooltip inline label={words}>
+          <InlineChip tone="neutral" icon={<IconMessage size={14} stroke={1.5} />} className="max-w-full">
+            <span className="truncate">{words}</span>
+          </InlineChip>
+        </WithTooltip>
+      )
+    }
+  } else {
+    return <ReferenceChip uri={uri} />
+  }
+  return (
+    <WithTooltip inline label={uri}>
+      <InlineChip tone="quiet">{`${uri.replace(/^nostr:/, '').slice(0, 12)}…`}</InlineChip>
+    </WithTooltip>
+  )
+}
+
+/** The key a `nostr:npub…` names, or `null`. */
+function pubkeyOf(uri: string): string | null {
+  try {
+    return decodeNpub(uri)
+  } catch {
+    return null
+  }
+}
+
+/** The event id a `nostr:nevent…` names (what `[` writes for a message), or `null`. */
+function eventIdOf(uri: string): string | null {
+  try {
+    return decodeNevent(uri.replace(/^nostr:/i, '')).id
+  } catch {
+    return null
+  }
 }
 
 /** A thread as a card in the column. Clicking it finds its place in the text; open, it takes a reply. */
@@ -174,6 +320,8 @@ function ThreadCard({
   onActivate,
   onResolve,
   onReply,
+  people,
+  page,
 }: {
   thread: Thread
   where: Where
@@ -183,8 +331,13 @@ function ThreadCard({
   active: boolean
   onActivate: () => void
   onResolve: (resolved: boolean) => void
-  onReply: (text: string) => Promise<WriteResult>
+  onReply: (written: Written) => Promise<WriteResult>
+  people: BoxPeople
+  /** Every comment on the page, for what `[` offers after this thread's own and for drawing one a comment references. */
+  page: readonly CommentItem[]
 }) {
+  const own = useMemo(() => [thread.root, ...thread.replies], [thread])
+  const scope = useMemo(() => ({ here: own, rest: page.filter((c) => !own.includes(c)) }), [own, page])
   const click = (e: MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button, a, [role="button"], [data-interactive], [contenteditable="true"]')) return
     onActivate()
@@ -205,10 +358,10 @@ function ThreadCard({
           </IconButton>
         )}
       </div>
-      {[thread.root, ...thread.replies].map((c) => (
-        <CommentLine key={c.id} comment={c} names={names} now={now} />
+      {own.map((c) => (
+        <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} />
       ))}
-      {active && !thread.resolved && <Composer placeholder="Reply…" onSend={onReply} />}
+      {active && !thread.resolved && <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} />}
     </Card>
   )
 }
@@ -258,6 +411,11 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
 
   const all = useMemo(() => threads ?? [], [threads])
   const names = useNames(all.flatMap((t) => [t.root.by, ...t.replies.map((r) => r.by)]))
+  const people = useMentionPeople()
+  const page = useMemo(() => all.flatMap((t) => [t.root, ...t.replies]), [all])
+  const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])
+  // The files the comments name, read once per tab as the page's own chips are.
+  const references = useReferences(useMemo(() => page.flatMap((c) => findNostrUris(c.body).filter((uri) => /^nostr:naddr1/i.test(uri))), [page]))
 
   const places = useMemo(() => {
     const map = new Map<string, Where>()
@@ -315,20 +473,17 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const { address, folder } = doc
   const commented = useMemo(() => (address && folder ? { address, folder } : null), [address, folder])
   const send = useCallback(
-    async (text: string): Promise<WriteResult> => {
-      if (!commented) return { ok: false, reason: 'This document cannot take comments from here.' }
-      const result = await postComment(commented, text, draft ?? undefined)
-      if (result.ok) {
-        onDraft(null)
-        reread()
-      }
+    async (written: Written): Promise<WriteResult> => {
+      if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
+      const result = await postComment(commented, written, draft ?? undefined)
+      if (result.ok) reread()
       return result
     },
-    [commented, draft, onDraft, reread],
+    [commented, draft, reread],
   )
-  const reply = async (thread: Thread, text: string): Promise<WriteResult> => {
-    if (!commented) return { ok: false, reason: 'This document cannot take comments from here.' }
-    const result = await postReply(commented, thread, text)
+  const reply = async (thread: Thread, written: Written): Promise<WriteResult> => {
+    if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
+    const result = await postReply(commented, thread, written)
     if (result.ok) reread()
     return result
   }
@@ -361,63 +516,74 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
         setActive(t.id === active ? null : t.id)
       }}
       onResolve={(next) => void resolve(t, next)}
-      onReply={(text) => reply(t, text)}
+      onReply={(written) => reply(t, written)}
+      people={people}
+      page={page}
     />
   )
 
   return (
-    <Panel
-      title={
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-body-2-strong text-text-primary">Comments</p>
-          {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
-        </div>
-      }
-      bodyRef={setColumnBody}
-      bodyClassName="flex flex-col gap-3 p-3"
-      footer={
-        <div className="flex flex-col gap-2 p-3">
-          {draft && (
-            <div className="flex items-center gap-2">
-              <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
-                <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
-              </WithTooltip>
-              <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
-                <IconX size={16} stroke={1.5} />
-              </IconButton>
-            </div>
-          )}
-          <Composer
-            placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
-            onSend={send}
-            focusOn={draft ? JSON.stringify(draft) : null}
-          />
-        </div>
-      }
-    >
-      {threads === null ? (
-        failed ? (
-          <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+    <ReferencesProvider value={references}>
+      <Panel
+        title={
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-body-2-strong text-text-primary">Comments</p>
+            {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
+          </div>
+        }
+        bodyRef={setColumnBody}
+        bodyClassName="flex flex-col gap-3 p-3"
+        footer={
+          <div className="flex flex-col gap-2 p-3">
+            {draft && (
+              <div className="flex items-center gap-2">
+                <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
+                  <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
+                </WithTooltip>
+                <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
+                  <IconX size={16} stroke={1.5} />
+                </IconButton>
+              </div>
+            )}
+            {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
+            <Box
+              key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
+              placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
+              draftKey={draftKeys.object(address ?? '')}
+              scope={pageScope}
+              people={people}
+              onSend={send}
+              // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
+              onSent={() => onDraft(null)}
+              autoFocus={!!draft}
+            />
+          </div>
+        }
+      >
+        {threads === null ? (
+          failed ? (
+            <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+          ) : (
+            <SkeletonList rows={2} />
+          )
+        ) : all.length === 0 ? (
+          <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
         ) : (
-          <SkeletonList rows={2} />
-        )
-      ) : all.length === 0 ? (
-        <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
-      ) : (
-        <>
-          {open.map(card)}
-          {deleted.length > 0 && (
-            <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-              {deleted.map(card)}
-            </CollapsibleSection>
-          )}
-          {resolved.length > 0 && (
-            <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-              {resolved.map(card)}
-            </CollapsibleSection>
-          )}
-        </>
-      )}
-    </Panel>
+          <>
+            {open.map(card)}
+            {deleted.length > 0 && (
+              <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                {deleted.map(card)}
+              </CollapsibleSection>
+            )}
+            {resolved.length > 0 && (
+              <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                {resolved.map(card)}
+              </CollapsibleSection>
+            )}
+          </>
+        )}
+      </Panel>
+    </ReferencesProvider>
   )
 }

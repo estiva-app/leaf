@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useReducer } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { createPeopleCache, createProjectionCache, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
-import { Card, InlineChip, KindIcon, SkeletonBar, WithTooltip, thingKindOf } from '@estiva-app/ui'
+import { Card, InlineChip, KindIcon, LinkUnavailable, SkeletonBar, WithTooltip, thingKindOf } from '@estiva-app/ui'
 import { useReferenceCards, type ReferenceCard, type ReferenceViewProps } from '@estiva-app/ui/editor'
 import { query } from '../relay/bridge'
 import { titleOf, typeOf } from '../folders/tree'
@@ -13,31 +13,38 @@ export type Resolved = Record<string, ForeignObject | null | undefined>
 const manifests = createProjectionCache()
 const people = createPeopleCache()
 const known: Resolved = {}
+/** A failed read is asked again this many times, after 5, 10 and 20 seconds. */
+const RETRIES = 3
+const RETRY_MS = 5000
 
 /** The files a page's references name, read once per tab and shared by every chip and card. */
 export function useReferences(uris: readonly string[]): Resolved {
   const key = [...new Set(uris)].sort().join('\n')
   const [, landed] = useReducer((n: number) => n + 1, 0)
+  const [attempt, retry] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
     const missing = key ? key.split('\n').filter((uri) => !(uri in known)) : []
     if (missing.length === 0) return
     let live = true
+    let again: ReturnType<typeof setTimeout> | undefined
     for (const uri of missing) known[uri] = undefined
     void resolveForeignObjects(missing, query, people.viaRelay(query), manifests)
       .then((found) => {
         for (const uri of missing) known[uri] = found[uri] ?? null
       })
       .catch(() => {
-        // Read again next time something asks, rather than say "cannot be read" for a dropped connection.
+        // Read again rather than say "cannot be read" for a dropped connection: a row or a card waits on it, not only a chip.
         for (const uri of missing) delete known[uri]
+        if (live && attempt < RETRIES) again = setTimeout(retry, RETRY_MS * 2 ** attempt)
       })
       .finally(() => {
         if (live) landed()
       })
     return () => {
       live = false
+      clearTimeout(again)
     }
-  }, [key])
+  }, [key, attempt])
   // A new object on every draw, so a chip reading it through context draws again when a read lands.
   return Object.fromEntries((key ? key.split('\n') : []).map((uri) => [uri, known[uri]]))
 }
@@ -110,6 +117,47 @@ export function LineCards({ cards, resolved }: { cards: readonly ReferenceCard[]
       })}
     </div>
   )
+}
+
+/**
+ * A file alone on a comment's line, drawn as its row in place (SPEC §13.2):
+ * the page's compact card, a placeholder while it is read, and its chip when
+ * it cannot be read, so the link never goes blank.
+ */
+export function ReferenceRow({ uri }: { uri: string }) {
+  return <PlacedObject uri={uri} layout="compact" />
+}
+
+/**
+ * The cards a comment's writer carried (SPEC §13.6.2), under its text, read
+ * from the page's references. Its line drew nothing, since the card stands
+ * for it, so one that cannot be read still says so rather than vanish, as
+ * Peek's card under a message does.
+ */
+export function CarriedCards({ cards }: { cards: readonly ReferenceCard[] }) {
+  if (cards.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-col gap-2" data-line-cards={cards.length}>
+      {cards.map((card, i) => (
+        <PlacedObject key={`${card.uri}-${i}`} uri={card.uri} layout={card.layout} />
+      ))}
+    </div>
+  )
+}
+
+/** A file a comment draws in a row or a card of its own: a placeholder while it is read, "not available" when it cannot be. */
+function PlacedObject({ uri, layout }: { uri: string; layout: ReferenceCard['layout'] }) {
+  const file = useContext(References)[uri]
+  if (file === undefined) return <SkeletonBar className="h-10 w-full" />
+  if (file === null || file.unreachable) {
+    const noun = file?.noun ?? 'File'
+    return (
+      <span data-reference-unavailable>
+        <LinkUnavailable kind={file ? thingKindOf(file.kind) : 'file'} noun={noun.charAt(0).toUpperCase() + noun.slice(1)} />
+      </span>
+    )
+  }
+  return <ReferenceObject file={file} layout={layout} />
 }
 
 /** Every reference in the editor's document, so each chip and card has its file read. */

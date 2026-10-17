@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { fileReference, messageReference } from '@estiva-app/conversation'
+import { encodeNpub, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 
 const ME = 'a'.repeat(64)
 const publish = vi.hoisted(() => vi.fn<(event: UnsignedEvent) => Promise<{ ok: boolean; reason?: string }>>(async () => ({ ok: true })))
@@ -32,7 +33,7 @@ const comment = (tags: string[][], content: string, h = FOLDER) =>
 
 describe('a comment from the column', () => {
   it("on a block is a 1111 on the document, naming the block and carrying the document's Folder as h", async () => {
-    await postComment(DOC, 'Too long?', { blocks: ['8373a025427f'] })
+    await postComment(DOC, { text: 'Too long?' }, { blocks: ['8373a025427f'] })
     const e = sent()
     expect(e.kind).toBe(1111)
     expect(e.content).toBe('Too long?')
@@ -40,14 +41,14 @@ describe('a comment from the column', () => {
   })
 
   it('on the whole document names no block', async () => {
-    await postComment(DOC, 'Looks good')
+    await postComment(DOC, { text: 'Looks good' })
     expect(sent().tags.some((t) => t[0] === 'block')).toBe(false)
   })
 
   it("is a reply naming the thread's comment, with no block of its own and no lowercase a (SPEC §13.6, §6.4)", async () => {
     const root = comment([['block', '8373a025427f']], 'Too long?')
     const thread: Thread = { id: root.id, blocks: ['8373a025427f'], root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root }, replies: [], resolved: false }
-    await postReply(DOC, thread, 'Cut it')
+    await postReply(DOC, thread, { text: 'Cut it' })
     const e = sent()
     expect(e.kind).toBe(1111)
     expect(e.tags).toEqual(expect.arrayContaining([['A', ADDRESS], ['e', root.id], ['h', FOLDER]]))
@@ -65,9 +66,39 @@ describe('a comment from the column', () => {
     expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', root.id], ['action', 'resolved']]))
   })
 
-  it('gives plain words when the relay refuses, for the box to say beside your text', async () => {
+  it('gives plain words when the relay refuses, for the box to say after "Not sent:"', async () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 1111 not allowed' })
-    expect(await postComment(DOC, 'x', { blocks: ['b1'] })).toEqual({ ok: false, reason: 'Could not send your comment. Your text is still here.' })
+    expect(await postComment(DOC, { text: 'x' }, { blocks: ['b1'] })).toEqual({ ok: false, reason: 'it did not go through' })
+  })
+})
+
+describe('what a comment names', () => {
+  const QA2 = 'c'.repeat(64)
+  const ISSUE = `30851:${'d'.repeat(64)}:issue-1`
+  const OTHER = 'e'.repeat(64)
+
+  it('tags the person it mentions, the urgent one beside them, the issue it references and the message it quotes (SPEC §13.1)', async () => {
+    const text = `Ask nostr:${encodeNpub(QA2)} about ${fileReference(ISSUE)}, as ${messageReference(OTHER, 1111)} said **today**`
+    await postComment(DOC, { text, urgent: [QA2] }, { blocks: ['b1'] })
+    const e = sent()
+    expect(e.content).toBe(text)
+    expect(e.tags).toEqual(expect.arrayContaining([['p', QA2], ['urgent', QA2], ['a', ISSUE], ['q', OTHER], ['block', 'b1']]))
+  })
+
+  it('makes nobody urgent the box did not pick urgently', async () => {
+    await postComment(DOC, { text: `Hi nostr:${encodeNpub(QA2)}` })
+    expect(sent().tags).toContainEqual(['p', QA2])
+    expect(sent().tags.some((t) => t[0] === 'urgent')).toBe(false)
+  })
+
+  it('in a reply, names the person and the file, but quotes neither the comment it answers nor the page by a second a', async () => {
+    const root = comment([], 'Too long?')
+    const thread: Thread = { id: root.id, root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root }, replies: [], resolved: false }
+    await postReply(DOC, thread, { text: `nostr:${encodeNpub(QA2)} see ${fileReference(ISSUE)}, ${messageReference(root.id, 1111)} and ${fileReference(ADDRESS)}` })
+    const e = sent()
+    expect(e.tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE]]))
+    expect(e.tags.some((t) => t[0] === 'q' && t[1] === root.id)).toBe(false)
+    expect(e.tags.some((t) => t[0] === 'a' && t[1] === ADDRESS)).toBe(false)
   })
 })
 
