@@ -79,8 +79,11 @@ function Frame() {
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
-  // Once the Folders are read: the linked one, if a document can go in it here.
-  const settled = workspace.folders !== null || workspace.failed
+  /*
+    Once the Folders are read: the linked one, if a document can go in it here. A read that failed refuses
+    nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
+  */
+  const settled = workspace.folders !== null && !workspace.failed
   const handoffFolder = handoff && settled ? takers.find((f) => f.id === handoff) : undefined
   const refused = !!handoff && settled && !handoffFolder
 
@@ -102,6 +105,8 @@ function Frame() {
   }
 
   async function make(title: string, folder: string): Promise<boolean> {
+    // Made from a link: the document's page takes the link's place, so Back does not offer New document again.
+    const go = handoff ? replace : navigate
     const result = await createDocument({ folder, title })
     if (!result.ok && !result.made) {
       showToast({ label: result.reason, type: 'error' })
@@ -110,14 +115,14 @@ function Frame() {
     if (!result.ok) {
       const folderName = takers.find((f) => f.id === folder)?.name ?? 'its Folder'
       setUnlisted({ naddr: result.naddr, address: result.address, folder, folderName })
-      navigate(filePath(result.naddr))
+      go(filePath(result.naddr))
       return true
     }
     // Read the Folder first, so the document is in hand when it opens rather than "not found" for a moment,
     // and open its group, so the new row is there to see.
     await workspace.reloadFolder(folder)
     setFolderOpen(folder, true)
-    navigate(filePath(result.naddr))
+    go(filePath(result.naddr))
     return true
   }
 

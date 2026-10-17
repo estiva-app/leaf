@@ -61,6 +61,11 @@ export function takeShellReason() {
   return client?.takeShellReason() ?? null
 }
 
+/** Where the sign-in in the air began, as `beginSignIn` stored it. Single-use. */
+export function takeReturnTo(): string | null {
+  return client?.takeReturnTo() ?? null
+}
+
 export function callbackParams(): { code?: string; error?: string } | null {
   const params = new URLSearchParams(window.location.search)
   const code = params.get('code') ?? undefined

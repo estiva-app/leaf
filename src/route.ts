@@ -23,6 +23,10 @@ export function filePath(naddr: string): string {
  * channel uuid). What another app links to when it offers Leaf's New
  * document: Leaf writes the document, signing its own `kind:30842`, and the
  * app that offered it signs nothing (Miky, 2026-10-16).
+ *
+ * Not yet a published contract: how a manifest advertises an app's "New …"
+ * and how its link names the Folder is still Miky's open question, and
+ * nothing links here until it is answered. Change it freely until then.
  */
 export function newDocumentPath(folder: string): string {
   return `/new?folder=${encodeURIComponent(folder)}`
@@ -38,10 +42,13 @@ export function newDocumentFolderOf(pathname: string, search: string): string | 
 /**
  * A path Leaf may land on after sign-in: its own, never another origin's. The
  * stored `returnTo` is written from this tab's location, so anything else is
- * not one Leaf wrote.
+ * not one Leaf wrote. A control character is refused too: the URL parser
+ * drops a tab or a newline, so `/\t/x` would read as `//x`.
  */
 export function ownPath(returnTo: string | null | undefined): string | null {
-  return returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') && !returnTo.includes('\\') ? returnTo : null
+  if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//') || returnTo.includes('\\')) return null
+  for (const char of returnTo) if (char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f) return null
+  return returnTo
 }
 
 const listeners = new Set<() => void>()
