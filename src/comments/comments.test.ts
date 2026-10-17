@@ -47,7 +47,7 @@ describe('a comment from the column', () => {
 
   it("is a reply naming the thread's comment, with no block of its own and no lowercase a (SPEC §13.6, §6.4)", async () => {
     const root = comment([['block', '8373a025427f']], 'Too long?')
-    const thread: Thread = { id: root.id, blocks: ['8373a025427f'], root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root }, replies: [], resolved: false }
+    const thread: Thread = { id: root.id, blocks: ['8373a025427f'], root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root, reactions: [] }, replies: [], resolved: false }
     await postReply(DOC, thread, { text: 'Cut it' })
     const e = sent()
     expect(e.kind).toBe(1111)
@@ -60,7 +60,7 @@ describe('a comment from the column', () => {
 
   it('resolves a thread with the 9101 Peek writes, in the document\'s Folder', async () => {
     const root = comment([], 'x')
-    await setResolved(DOC, { id: root.id, root: { id: root.id, by: AUTHOR, at: 0, body: 'x', event: root }, replies: [], resolved: false }, true)
+    await setResolved(DOC, { id: root.id, root: { id: root.id, by: AUTHOR, at: 0, body: 'x', event: root, reactions: [] }, replies: [], resolved: false }, true)
     const e = sent()
     expect(e.kind).toBe(9101)
     expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', root.id], ['action', 'resolved']]))
@@ -93,7 +93,7 @@ describe('what a comment names', () => {
 
   it('in a reply, names the person and the file, but quotes neither the comment it answers nor the page by a second a', async () => {
     const root = comment([], 'Too long?')
-    const thread: Thread = { id: root.id, root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root }, replies: [], resolved: false }
+    const thread: Thread = { id: root.id, root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root, reactions: [] }, replies: [], resolved: false }
     await postReply(DOC, thread, { text: `nostr:${encodeNpub(QA2)} see ${fileReference(ISSUE)}, ${messageReference(root.id, 1111)} and ${fileReference(ADDRESS)}` })
     const e = sent()
     expect(e.tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE]]))
@@ -115,7 +115,7 @@ describe("a document's threads", () => {
       event(9101, [['h', FOLDER], ['e', onBlock.id], ['t', 'resolution'], ['action', 'reopened']]),
     ]
     relay.events = [onBlock, whole, elsewhere, reply, ...resolvedThenReopened]
-    const threads = await readThreads(DOC)
+    const { threads } = await readThreads(DOC)
     expect(threads.map((t) => [t.root.body, t.blocks, t.replies.map((r) => r.body), t.resolved])).toEqual([
       ['On the paragraph', ['b1'], ['Cut it'], false],
       ['On the page', undefined, [], true],
@@ -123,9 +123,20 @@ describe("a document's threads", () => {
     ])
   })
 
+  it('reads reactions on replies as on comments, and says how many of the oldest were past the horizon of 100', async () => {
+    const root = comment([], 'Plan?')
+    const replies = Array.from({ length: 100 }, (_, i) => event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['h', FOLDER]], `reply ${i}`))
+    const onLast = event(7, [['e', replies[99].id]], '🎉', ME)
+    relay.events = [root, ...replies, onLast]
+    const { threads, reactionsOmitted } = await readThreads(DOC)
+    expect(threads[0].replies[99].reactions.map((r) => [r.emoji, r.by])).toEqual([['🎉', ME]])
+    // 101 comments: the oldest, the root, is the one not asked about.
+    expect(reactionsOmitted).toBe(1)
+  })
+
   it("resolves a thread filed in another Folder in that Folder, its comment's own", async () => {
     const elsewhere = comment([], 'x', 'another-folder')
-    await setResolved(DOC, { id: elsewhere.id, root: { id: elsewhere.id, by: AUTHOR, at: 0, body: 'x', event: elsewhere }, replies: [], resolved: false }, true)
+    await setResolved(DOC, { id: elsewhere.id, root: { id: elsewhere.id, by: AUTHOR, at: 0, body: 'x', event: elsewhere, reactions: [] }, replies: [], resolved: false }, true)
     expect(sent().tags).toContainEqual(['h', 'another-folder'])
   })
 })

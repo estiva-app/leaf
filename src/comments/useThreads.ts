@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { KIND_COMMENT } from '@estiva-app/conversation'
 import { viewerPubkey } from '../relay/bridge'
 import { relayClient } from '../relay/client'
-import { COMMENT_KINDS, readThreads, type Commented, type Thread } from './comments'
+import { COMMENT_KINDS, readThreads, type Commented, type Thread, type Threads } from './comments'
 
 /** The column's threads: `null` while the first read is out, and whether that read failed. */
 export interface ThreadsState {
   threads: Thread[] | null
+  /** How many of the oldest comments and replies were not asked about reactions, and whether the reaction read was cut (SPEC §6.6). */
+  reactionsOmitted: number
+  reactionsCut: boolean
   failed: boolean
   /** When they were read, in ms: the "now" a card's "2 minutes ago" is said from. */
   readAt: number
@@ -16,13 +19,14 @@ export interface ThreadsState {
 
 /**
  * A document's threads, kept current: someone else's comment or reply on it,
- * or a resolution of one of its threads, arrives on the tab's one connection
- * (its Folder, kinds `1111` and `9101`), and the threads are read again, so it
- * shows without a reload. Other files' comments in the Folder are passed by.
+ * a resolution of one of its threads, or a reaction to one of its comments or
+ * its taking back, arrives on the tab's one connection (its Folder, kinds
+ * `1111`, `9101`, `7` and `5`), and the threads are read again, so it shows
+ * without a reload. Other files' comments in the Folder are passed by.
  */
 export function useThreads(doc: Partial<Commented>): ThreadsState {
   const { address, folder } = doc
-  const [threads, setThreads] = useState<Thread[] | null>(null)
+  const [read, setRead] = useState<Threads | null>(null)
   const [readAt, setReadAt] = useState(0)
   const [failed, setFailed] = useState(false)
   const [tick, setTick] = useState(0)
@@ -34,7 +38,7 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
     readThreads({ address, folder }).then(
       (next) => {
         if (!live) return
-        setThreads(next)
+        setRead(next)
         setReadAt(Date.now())
         setFailed(false)
       },
@@ -48,11 +52,12 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
     }
   }, [address, folder, tick])
 
-  // The threads' ids, for the watch: a resolution names a thread only by its comment's id.
+  // What the watch matches by `e`: a resolution or a reaction names a comment or a reply by its id, and a take-back names the reaction's.
   const ids = useRef(new Set<string>())
   useEffect(() => {
-    ids.current = new Set(threads?.map((t) => t.id) ?? [])
-  }, [threads])
+    const comments = read?.threads.flatMap((t) => [t.root, ...t.replies]) ?? []
+    ids.current = new Set(comments.flatMap((c) => [c.id, ...c.reactions.map((r) => r.id)]))
+  }, [read])
 
   useEffect(() => {
     const client = relayClient()
@@ -65,7 +70,7 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
         if (!event || !COMMENT_KINDS.includes(event.kind)) return
         // Your own write is read again as it is accepted; its echo here would read it twice.
         if (event.pubkey === me) return
-        // The Folder carries every file's comments: only this document's, or a resolution of one of its threads.
+        // The Folder carries every file's comments: only this document's, or what names one of its comments or reactions.
         const ours =
           event.kind === KIND_COMMENT
             ? event.tags.some((t) => t[0] === 'A' && t[1] === address)
@@ -84,5 +89,5 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
     }
   }, [address, folder, reread])
 
-  return { threads, failed, readAt, reread }
+  return { threads: read?.threads ?? null, reactionsOmitted: read?.reactionsOmitted ?? 0, reactionsCut: read?.reactionsCut ?? false, failed, readAt, reread }
 }
