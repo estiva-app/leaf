@@ -21,10 +21,12 @@ vi.mock('../relay/client', () => ({
     },
   }),
 }))
+/* Who is signed in: ME, unless a test signs out. */
+const signedIn = vi.hoisted(() => ({ pubkey: 'a'.repeat(64) as string | null }))
 vi.mock('../relay/bridge', () => ({
   query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((e) => filters.some((f) => matches(e, f)))),
   publish,
-  viewerPubkey: () => ME,
+  viewerPubkey: () => signedIn.pubkey,
 }))
 
 /* Files another app owns, by reference: interop's projection of one needs its app's manifest, which is interop's own contract and tested there. */
@@ -501,6 +503,22 @@ describe('reactions on a comment (COMM-4)', () => {
     expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('signed out, shows the reactions with nothing to click and writes nothing', async () => {
+    const root = comment([], 'Too long?')
+    signedIn.pubkey = null
+    try {
+      await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
+      const shown = await pill('Makes sense, 1')
+      expect((shown as HTMLButtonElement).disabled).toBe(true)
+      expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+      act(() => void fireEvent.click(shown))
+      await act(async () => {})
+      expect(publish).not.toHaveBeenCalled()
+    } finally {
+      signedIn.pubkey = ME
+    }
+  })
+
   it('writes nothing more while the read after an accepted reaction is still out', async () => {
     const root = comment([], 'Too long?')
     await open([root])
@@ -545,6 +563,14 @@ describe('reactions on a comment (COMM-4)', () => {
     expect(await screen.findByText('Not reacted: it did not go through.')).toBeTruthy()
     expect(publish.mock.calls[0][0].kind).toBe(7)
     expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('says to try again in a moment when the relay refuses a reaction for coming too fast', async () => {
+    const root = comment([], 'Too long?')
+    await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
+    publish.mockResolvedValueOnce({ ok: false, reason: 'rate-limited: slow down' })
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
+    expect(await screen.findByText('Not reacted: too many at once, try again in a moment.')).toBeTruthy()
   })
 
   it("shows someone else's reaction without a reload, and its going when they take it back", async () => {

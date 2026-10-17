@@ -106,6 +106,8 @@ async function send(unsigned: Parameters<typeof publish>[0] | null, refused: str
   if (result.ok) return { ok: true }
   // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] write refused', unsigned.kind, result)
+  // Too fast is the refusal a person can do something about: they wait and try again (NIP-01's `rate-limited:` prefix).
+  if (/^rate-limited/.test(result.reason ?? '')) return { ok: false, reason: 'too many at once, try again in a moment' }
   return { ok: false, reason: refused }
 }
 
