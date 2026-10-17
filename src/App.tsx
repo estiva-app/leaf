@@ -12,7 +12,7 @@ import {
   type Identity,
 } from '@estiva-app/ui'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, currentToken, whoAmI } from './auth/estivaId'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { NewDocumentDialog } from './folders/NewDocumentDialog'
@@ -24,7 +24,7 @@ import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
-import { filePath, navigate, routeOf, usePathname } from './route'
+import { filePath, navigate, newDocumentFolderOf, replace, routeOf, usePathname } from './route'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
 type Unlisted = { naddr: string; address: string; folder: string; folderName: string }
@@ -51,6 +51,12 @@ function Frame() {
   const { showToast } = useToast()
   const [making, setMaking] = useState(false)
   const [unlisted, setUnlisted] = useState<Unlisted | null>(null)
+  /*
+    New document on one Folder, from a link another app offered it by
+    (`newDocumentPath`): Leaf writes the document, the app that linked here
+    signs nothing (Miky, 2026-10-16). Read once, as the tab opens on it.
+  */
+  const [handoff, setHandoff] = useState(() => newDocumentFolderOf(window.location.pathname, window.location.search))
 
   useEffect(() => {
     if (!signedIn) return
@@ -73,8 +79,34 @@ function Frame() {
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
+  /*
+    Once the Folders are read: the linked one, if a document can go in it here. A read that failed refuses
+    nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
+  */
+  const settled = workspace.folders !== null && !workspace.failed
+  const handoffFolder = handoff && settled ? takers.find((f) => f.id === handoff) : undefined
+  const refused = !!handoff && settled && !handoffFolder
+
+  const toldRefused = useRef(false)
+  useEffect(() => {
+    if (!refused || toldRefused.current) return
+    toldRefused.current = true
+    // A Folder this person cannot read, or one that takes no document: nothing is written.
+    showToast({ label: 'You can’t add a document to that Folder.', type: 'error' })
+    replace('/')
+  }, [refused, showToast])
+
+  function closeNew() {
+    setMaking(false)
+    if (!handoff) return
+    setHandoff(null)
+    // Still on the link: it has done its job. A document made from it has already opened its page.
+    if (newDocumentFolderOf(window.location.pathname, window.location.search)) replace('/')
+  }
 
   async function make(title: string, folder: string): Promise<boolean> {
+    // Made from a link: the document's page takes the link's place, so Back does not offer New document again.
+    const go = handoff ? replace : navigate
     const result = await createDocument({ folder, title })
     if (!result.ok && !result.made) {
       showToast({ label: result.reason, type: 'error' })
@@ -83,14 +115,14 @@ function Frame() {
     if (!result.ok) {
       const folderName = takers.find((f) => f.id === folder)?.name ?? 'its Folder'
       setUnlisted({ naddr: result.naddr, address: result.address, folder, folderName })
-      navigate(filePath(result.naddr))
+      go(filePath(result.naddr))
       return true
     }
     // Read the Folder first, so the document is in hand when it opens rather than "not found" for a moment,
     // and open its group, so the new row is there to see.
     await workspace.reloadFolder(folder)
     setFolderOpen(folder, true)
-    navigate(filePath(result.naddr))
+    go(filePath(result.naddr))
     return true
   }
 
@@ -146,7 +178,9 @@ function Frame() {
       >
         {main}
       </AppShell>
-      {making && <NewDocumentDialog folders={takers} defaultFolder={open?.folder.folder.id} onCreate={make} onClose={() => setMaking(false)} />}
+      {(making || handoffFolder) && (
+        <NewDocumentDialog folders={takers} defaultFolder={handoffFolder?.id ?? open?.folder.folder.id} onCreate={make} onClose={closeNew} />
+      )}
     </AppProvider>
   )
 }

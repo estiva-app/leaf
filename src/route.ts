@@ -18,12 +18,51 @@ export function filePath(naddr: string): string {
   return `/f/${naddr}`
 }
 
+/**
+ * The link that opens New document on one Folder, by the Folder's id (its
+ * channel uuid). What another app links to when it offers Leaf's New
+ * document: Leaf writes the document, signing its own `kind:30842`, and the
+ * app that offered it signs nothing (Miky, 2026-10-16).
+ *
+ * Not yet a published contract: how a manifest advertises an app's "New …"
+ * and how its link names the Folder is still Miky's open question, and
+ * nothing links here until it is answered. Change it freely until then.
+ */
+export function newDocumentPath(folder: string): string {
+  return `/new?folder=${encodeURIComponent(folder)}`
+}
+
+/** The Folder a {@link newDocumentPath} link names, or null for any other place. */
+export function newDocumentFolderOf(pathname: string, search: string): string | null {
+  if (!/^\/new\/?$/.test(pathname)) return null
+  const folder = new URLSearchParams(search).get('folder')?.trim()
+  return folder ? folder : null
+}
+
+/**
+ * A path Leaf may land on after sign-in: its own, never another origin's. The
+ * stored `returnTo` is written from this tab's location, so anything else is
+ * not one Leaf wrote. A control character is refused too: the URL parser
+ * drops a tab or a newline, so `/\t/x` would read as `//x`.
+ */
+export function ownPath(returnTo: string | null | undefined): string | null {
+  if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//') || returnTo.includes('\\')) return null
+  for (const char of returnTo) if (char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f) return null
+  return returnTo
+}
+
 const listeners = new Set<() => void>()
 
 /** Go to `href` without a reload: AppProvider's `navigate`, for every link the package draws. */
 export function navigate(href: string): void {
   if (href === window.location.pathname) return
   window.history.pushState(null, '', href)
+  for (const listener of listeners) listener()
+}
+
+/** Be at `href` in place of where this tab is, so Back does not return to it: a link that has done its job. */
+export function replace(href: string): void {
+  window.history.replaceState(null, '', href)
   for (const listener of listeners) listener()
 }
 

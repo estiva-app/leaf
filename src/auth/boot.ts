@@ -9,8 +9,10 @@ import {
   signInAvailable,
   startRenewal,
   stashShellReason,
+  takeReturnTo,
   takeShellReason,
 } from './estivaId'
+import { ownPath } from '../route'
 
 export type BootResult = { kind: 'app' } | { kind: 'shell'; state: ShellState } | { kind: 'leaving' }
 
@@ -22,8 +24,9 @@ export type BootResult = { kind: 'app' } | { kind: 'shell'; state: ShellState } 
 export async function bootAuth(): Promise<BootResult> {
   if (!signInAvailable) return { kind: 'app' }
 
+  const callback = callbackParams()
   const action = decideBoot({
-    callback: callbackParams(),
+    callback,
     hasValidToken: currentToken() !== null,
     guardAttemptedAt: guardAttemptedAt(),
     enteredThisPageLoad: false,
@@ -36,8 +39,10 @@ export async function bootAuth(): Promise<BootResult> {
       return { kind: 'app' }
     case 'complete_callback':
       try {
-        await completeSignIn()
+        const { returnTo } = await completeSignIn()
         clearQuery()
+        // Back where sign-in began: a page's link, or New document in a Folder another app linked to.
+        landOn(returnTo)
         startRenewal()
         return { kind: 'app' }
       } catch (cause) {
@@ -53,9 +58,30 @@ export async function bootAuth(): Promise<BootResult> {
         return shell('network')
       }
     case 'prompt_passkey':
+      /*
+        A silent attempt that found no session lands on `/?error=…`, but it began on the link the person
+        opened. Put that link back before the shell draws, so Continue starts from it and signing in lands
+        there, and a reload does not read the old answer again (as Ship and Peek do, PEEK-123).
+      */
+      if (callback?.error) {
+        const back = takeReturnTo()
+        clearQuery()
+        landOn(back)
+      }
       return { kind: 'shell', state: { phase: 'authenticating', reason: takeShellReason() ?? action.reason } }
     case 'fail':
       return shell(action.reason)
+  }
+}
+
+/** Be on `returnTo` if it is one of Leaf's own paths; otherwise stay put. Never throws: a signed-in person stays signed in. */
+function landOn(returnTo: string | null): void {
+  const back = ownPath(returnTo)
+  if (!back) return
+  try {
+    window.history.replaceState({}, '', back)
+  } catch (cause) {
+    console.warn('[auth] could not return to', back, cause)
   }
 }
 
