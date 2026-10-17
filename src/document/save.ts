@@ -1,5 +1,6 @@
 import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
 import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { byOrder } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -25,18 +26,10 @@ export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder'
   try {
     const [changes, roots] = await Promise.all([query([{ kinds: [CHANGE], '#a': [file.address] }]), query([{ ids: [file.eventId] }])])
     const value = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
-    // A `ts` counts only when it agrees with `created_at` to the second, as the manifest's ordering says; a forged one is ignored.
-    const at = (e: SignedEvent) => {
-      const ts = Number(value(e, 'ts'))
-      return Number.isFinite(ts) && Math.floor(ts / 1000) === e.created_at ? ts : e.created_at * 1000
-    }
-    const order = (e: SignedEvent) => [at(e), e.created_at, e.id] as const
+    // §6.3's order, the suite's own: a `ts` counts only when it agrees with `created_at`, so a forged one is ignored.
     const newest = changes
-      .filter((e) => value(e, 'field') === 'summary' && value(e, 'h') === file.folder && value(e, 'value') !== undefined)
-      .sort((a, b) => {
-        const [x, y] = [order(a), order(b)]
-        return x[0] - y[0] || x[1] - y[1] || (x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0)
-      })
+      .filter((e: SignedEvent) => value(e, 'field') === 'summary' && value(e, 'h') === file.folder && value(e, 'value') !== undefined)
+      .sort(byOrder)
       .at(-1)
     return (newest ? value(newest, 'value') : roots[0] && value(roots[0], 'summary')) ?? ''
   } catch {

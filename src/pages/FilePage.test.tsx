@@ -13,7 +13,9 @@ let changes: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
-  query: async (filters: { kinds?: number[] }[]) => (filters[0]?.kinds?.[0] === 1851 ? changes : []),
+  // The page's changes, only to a read that asks for them by its address.
+  query: async (filters: { kinds?: number[]; '#a'?: string[] }[]) =>
+    filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`) ? changes : [],
   publish: async (event: UnsignedEvent) => {
     published.push(event)
     return answers.shift() ?? { ok: true }
@@ -96,7 +98,7 @@ describe("a page's summary, under its title", () => {
     render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
     const empty = await summaryBox()
     expect(empty.textContent).toBe('')
-    expect(empty.closest('div')?.parentElement?.innerHTML).toContain('Add a summary')
+    expect(empty.getAttribute('aria-placeholder')).toBe('Add a summary')
   })
 
   it('clears the summary when you empty it: the change carries an empty value', async () => {
@@ -112,15 +114,25 @@ describe("a page's summary, under its title", () => {
     expect(published[0].tags.find((t) => t[0] === 'value')).toEqual(['value', ''])
   })
 
-  it('edits the whole of a summary longer than the card’s cut, never the cut text with its "…"', async () => {
+  it('saves an edit to a summary longer than the card’s cut as the whole text, and writes nothing when left unchanged', async () => {
     const long = `${'A sentence about the Friday call. '.repeat(10)}End.`
-    const change = (value: string, ts: number, h = FOLDER): SignedEvent =>
-      ({ id: `c${ts}`, pubkey: ME, kind: 1851, created_at: Math.floor(ts / 1000), tags: [['a', ADDRESS], ['field', 'summary'], ['value', value], ['h', h], ['ts', String(ts)]], content: '', sig: '' }) as SignedEvent
-    changes = [change('Older.', 1_000_000), change(long, 2_000_000), change('Another Folder.', 3_000_000, 'elsewhere')]
+    const change = (value: string, ts: number, h = FOLDER, forged = false): SignedEvent =>
+      ({ id: `c${ts}`, pubkey: ME, kind: 1851, created_at: Math.floor(ts / 1000), tags: [['a', ADDRESS], ['field', 'summary'], ['value', value], ['h', h], ['ts', String(forged ? ts * 1000 : ts)]], content: '', sig: '' }) as SignedEvent
+    // An older one, another Folder's, and one whose `ts` claims the far future: none of them is the summary.
+    changes = [change('Older.', 1_000_000), change(long, 2_000_000), change('Another Folder.', 3_000_000, 'elsewhere'), change('Forged.', 1_500_000, FOLDER, true)]
     render(<ToastProvider><FilePage file={doc(`${long.slice(0, 280).trimEnd()}…`)} loading={false} /></ToastProvider>)
-    // The editor is drawn again once it may be edited: look it up each time.
+    // The editor is drawn again once the whole text is in: look it up each time.
     await waitFor(async () => expect((await summaryBox()).editor.getText()).toBe(long))
-    expect((await summaryBox()).editor.isEditable).toBe(true)
+    const box = await summaryBox()
+    act(() => {
+      box.editor.commands.focus('end')
+      fireEvent.focus(box)
+    })
+    leave(box)
+    write(box, `${long} More.`)
+    leave(box)
+    await waitFor(() => expect(published).toHaveLength(1))
+    expect(tag(published[0], 'value')).toBe(`${long} More.`)
   })
 
   it('keeps your text and says it was not saved when the relay refuses it', async () => {

@@ -68,22 +68,32 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   // 280 with an "…" is read whole before it can be edited, so a save never writes the cut text back.
   const slot = file.slots.subtitle?.value ?? ''
   const cut = slot.endsWith('…')
-  const [whole, setWhole] = useState<{ from: string; value: string } | null>(null)
+  // Read again with every read of the page (each is a new `file`), so a change past the cut — yours or someone
+  // else's — is what the line shows; a read that fails is tried again a few times, 3 s apart.
+  const [whole, setWhole] = useState<string | null>(null)
   useEffect(() => {
     if (!cut) return
     let live = true
-    void readSummary(target.current).then((value) => {
-      if (live && value !== null) setWhole({ from: slot, value })
-    })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const read = (left: number) => {
+      void readSummary(target.current).then((value) => {
+        if (!live) return
+        if (value !== null) setWhole(value)
+        else if (left > 0) timer = setTimeout(() => read(left - 1), 3000)
+      })
+    }
+    read(3)
     return () => {
       live = false
+      clearTimeout(timer)
     }
-  }, [cut, slot])
-  const wholeNow = cut && whole?.from === slot ? whole.value : null
+  }, [cut, file])
+  // The last whole read stays up while the next one runs: the line is never cut, and never drawn afresh under your caret.
+  const wholeNow = cut ? whole : null
   const summary = wholeNow ?? slot
   async function summarize(value: string): Promise<true | string> {
     const result = await saveField(target.current, 'summary', value)
-    return result.ok ? true : 'Try again; your text is still here.'
+    return result.ok ? true : result.reason
   }
   // The comments column (LEAF-5): it draws in the editor, and a block's handle starts a comment in it.
   const [editor, setEditor] = useState<Editor | null>(null)
@@ -111,7 +121,8 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
                 {/* In place, as Ship's title (ui InlineText, ship#306), at Leaf's own heading size; Enter goes on into the summary. */}
                 <InlineText variant="title" className="text-h1" value={title} placeholder="Untitled" label="Title" onCommit={rename} onEnter={() => summaryEditor.current?.focus('start')} />
               </h1>
-              <PageSummary ref={summaryEditor} value={summary} onCommit={summarize} onEnter={toText} readOnly={cut && wholeNow === null} />
+              {/* Drawn afresh once the whole of a cut summary is in, so the editor's saved text is the whole one. */}
+              <PageSummary key={wholeNow === null ? 'slot' : 'whole'} ref={summaryEditor} value={summary} onCommit={summarize} onEnter={toText} readOnly={cut && wholeNow === null} />
             </div>
             <LiveDocument
               value={body?.value ?? ''}
