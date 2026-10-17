@@ -1,5 +1,6 @@
 import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
-import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type UnsignedEvent } from '@estiva-app/protocol'
+import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { byOrder } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -11,6 +12,29 @@ const people = createPeopleCache()
 /** One document, read again on its own: what the page shows after a change to it arrives. */
 export function readDocument(naddr: string): Promise<ForeignObject | null> {
   return resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests)
+}
+
+/**
+ * A page's whole summary, for its editor: interop's `subtitle` stops at 280
+ * characters with an "…", and saving that back would cut the summary short.
+ * The `summary` field folded as SPEC §6.12 says — the newest change in the
+ * page's own Folder by `ts`, then `created_at`, then id, else the root's seed —
+ * read only when the slot was cut. `null` when it cannot be read.
+ */
+export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder' | 'eventId'>): Promise<string | null> {
+  if (!file.address || !file.folder) return null
+  try {
+    const [changes, roots] = await Promise.all([query([{ kinds: [CHANGE], '#a': [file.address] }]), query([{ ids: [file.eventId] }])])
+    const value = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
+    // §6.3's order, the suite's own: a `ts` counts only when it agrees with `created_at`, so a forged one is ignored.
+    const newest = changes
+      .filter((e: SignedEvent) => value(e, 'field') === 'summary' && value(e, 'h') === file.folder && value(e, 'value') !== undefined)
+      .sort(byOrder)
+      .at(-1)
+    return (newest ? value(newest, 'value') : roots[0] && value(roots[0], 'summary')) ?? ''
+  } catch {
+    return null
+  }
 }
 
 /** A person's name for "<name> saved a newer version", from their profile; `null` when they have none. */
@@ -31,7 +55,7 @@ export async function nameOf(pubkey: string): Promise<string | null> {
 export function buildChange(
   pubkey: string,
   createdAtMs: number,
-  args: { target: string; field: 'title' | 'description'; value: string; folder: string; contentFormat?: string },
+  args: { target: string; field: DocumentField; value: string; folder: string; contentFormat?: string },
 ): UnsignedEvent {
   return {
     pubkey,
@@ -63,10 +87,13 @@ export function onSaved(listener: () => void): () => void {
   }
 }
 
-/** Save a document's title or text. `ok: false` carries what to tell the person. */
+/** The fields a page writes: its title, its summary (plain text, never a `content-format`, SPEC §6.12) and its text. */
+export type DocumentField = 'title' | 'summary' | 'description'
+
+/** Save a document's title, summary or text. `ok: false` carries what to tell the person. */
 export async function saveField(
   file: Pick<ForeignObject, 'address' | 'folder'>,
-  field: 'title' | 'description',
+  field: DocumentField,
   value: string,
   contentFormat?: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {

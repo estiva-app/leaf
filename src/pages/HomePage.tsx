@@ -1,5 +1,5 @@
 import type { RelayState } from '@estiva-app/protocol'
-import { Card, EmptyState, KindIcon, Panel, SectionHeader, SkeletonList, WithTooltip } from '@estiva-app/ui'
+import { Card, cn, EmptyState, KindIcon, Panel, SectionHeader, SkeletonList, WithTooltip } from '@estiva-app/ui'
 import { IconFilePlus } from '@tabler/icons-react'
 import { useState } from 'react'
 import { relayLabel } from '../config'
@@ -76,12 +76,18 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
               <SkeletonList rows={4} />
             ) : (
               recent.map((r) => (
-                <Card key={r.address} href={filePath(r.naddr)} hover="fill" quietUntilHover className="flex items-center gap-3 px-3 py-2">
-                  <KindIcon kind="file" />
-                  <WithTooltip label={r.title} wrapperClassName="min-w-0 flex-1">
-                    <span className="block truncate text-body-2-strong text-text-primary">{r.title}</span>
-                  </WithTooltip>
-                  <span className="shrink-0 text-caption text-text-muted">
+                // The summary is one line under the title, and the row keeps to one line without it (the short-summary story's LeafRecentRow).
+                <Card key={r.address} href={filePath(r.naddr)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
+                  <span className={cn('flex shrink-0', r.summary && 'pt-0.5')}>
+                    <KindIcon kind="file" />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <WithTooltip label={r.title} wrapperClassName="min-w-0">
+                      <span className="block truncate text-body-2-strong text-text-primary">{r.title}</span>
+                    </WithTooltip>
+                    {r.summary && <span className="block truncate text-body-2 text-text-secondary">{r.summary}</span>}
+                  </span>
+                  <span className={cn('shrink-0 text-caption text-text-muted', r.summary && 'pt-0.5')}>
                     {r.byName ? `${r.folder} · ${r.byName}, ` : `${r.folder} · `}
                     <WithTooltip inline label={exactly(r.at)}>
                       <span>{whenOf(r.at, now ?? opened)}</span>

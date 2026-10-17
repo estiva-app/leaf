@@ -11,6 +11,7 @@ import {
   type ForeignObject,
 } from '@estiva-app/interop'
 import { buildDocument, encodeNaddr, KIND, type PublishResult } from '@estiva-app/protocol'
+import { summaryText } from '../document/summary'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /*
@@ -70,11 +71,15 @@ export type NewDocument =
  * The document goes first, so a refused `add` leaves one that exists and is
  * reachable by its address rather than a listing that points at nothing.
  */
-export async function createDocument(args: { folder: string; title: string }): Promise<NewDocument> {
+export async function createDocument(args: { folder: string; title: string; summary?: string }): Promise<NewDocument> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, made: false, reason: 'Sign in to make a document.' }
   const fileId = crypto.randomUUID()
-  const made = await publish(buildDocument(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder }))
+  const root = buildDocument(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder })
+  // The summary seeds the page's `summary` field: last, as the reference writers put it, and only when there is one (SPEC §6.12).
+  const summary = summaryText(args.summary ?? '')
+  if (summary) root.tags.push(['summary', summary])
+  const made = await publish(root)
   if (!made.ok) return { ok: false, made: false, reason: plainly(made, 'The document could not be made in that Folder. Try again.') }
   const address = `${KIND.DOCUMENT}:${pubkey}:${fileId}`
   const naddr = encodeNaddr({ kind: KIND.DOCUMENT, pubkey, identifier: fileId, relays: [] })

@@ -39,6 +39,20 @@ describe('New document', () => {
     expect(published).toHaveLength(2)
   })
 
+  it("seeds the page's summary as its root's last tag, on one line (SPEC §6.12)", async () => {
+    await createDocument({ folder: FOLDER, title: 'Friday notes', summary: '  What we decided\non Friday.  ' })
+    const [doc] = published
+    expect(doc.tags.at(-1)).toEqual(['summary', 'What we decided on Friday.'])
+  })
+
+  it('puts no summary tag on a page made without one, or with only spaces', async () => {
+    await createDocument({ folder: FOLDER, title: 'Friday notes' })
+    await createDocument({ folder: FOLDER, title: 'Friday notes', summary: '  \n ' })
+    const roots = published.filter((e) => e.kind === 30842)
+    expect(roots).toHaveLength(2)
+    expect(roots.every((doc) => !doc.tags.some((t) => t[0] === 'summary'))).toBe(true)
+  })
+
   it('says nothing was made, and lists nothing, when the relay refuses the document', async () => {
     answers = [{ ok: false, reason: 'blocked: not a member' }]
     const result = await createDocument({ folder: FOLDER, title: 'Friday notes' })

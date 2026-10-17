@@ -1,5 +1,6 @@
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { CHANGE } from '../document/save'
+import { summaryText } from '../document/summary'
 
 /** How many rows Home shows (Miky, LEAF-6's kickoff). */
 export const HOME_ROWS = 7
@@ -12,6 +13,8 @@ export interface Page {
   /** The page's own event: its `created_at` is when it was made. */
   eventId: string
   title: string
+  /** Its summary, the row's second line; left out when it has none (SPEC §6.12). */
+  summary?: string
   /** The Folder's name, as the row says it. */
   folder: string
   /** The Folder's id: the `h` every change and comment on the page carries. */
@@ -27,7 +30,7 @@ export interface RecentRow extends Page {
 
 /**
  * The reads Home makes for `pages`: the pages' own events (when each was
- * made), every save of a page's text or title (`1851`, by its `a`) and every
+ * made), every save of a page's text, title or summary (`1851`, by its `a`) and every
  * comment on it (`1111`, by its root `A` — a reply carries only `A`, and a
  * lowercase `a` on someone else's comment is a mention, SPEC §6.4). Started
  * from the pages that exist, never from the viewer's own `1851`s: a deleted
@@ -50,9 +53,9 @@ export function recentFilters(pages: Page[]): Record<string, unknown>[] {
 function pageOf(event: SignedEvent, pages: ReadonlyMap<string, unknown>): string | null {
   const naming = (name: string) => event.tags.find((t) => t[0] === name && pages.has(t[1]))?.[1] ?? null
   if (event.kind === CHANGE) {
-    // A `1851` also sets `member:`, `archived` or `parent` (SPEC §11.8): only the text and the title are an edit.
+    // A `1851` also sets `member:`, `archived` or `parent` (SPEC §11.8): only the text, the title and the summary are an edit.
     const field = event.tags.find((t) => t[0] === 'field')?.[1]
-    return field === 'title' || field === 'description' ? naming('a') : null
+    return field === 'title' || field === 'summary' || field === 'description' ? naming('a') : null
   }
   return event.kind === KIND.COMMENT ? naming('A') : null
 }
@@ -81,6 +84,7 @@ export function rankRecent(pages: Page[], events: SignedEvent[], me: string | nu
   const byEvent = new Map<string, RecentRow>()
   const touched = new Set<string>()
   const titledAt = new Map<string, number>()
+  const summarizedAt = new Map<string, number>()
   for (const page of pages) {
     const maker = page.address.split(':')[1] ?? ''
     const row = { ...page, at: 0, by: maker }
@@ -106,6 +110,12 @@ export function rankRecent(pages: Page[], events: SignedEvent[], me: string | nu
     if (title && at > (titledAt.get(row.address) ?? 0)) {
       titledAt.set(row.address, at)
       row.title = title
+    }
+    // The newest summary, the same way; an empty one clears it (SPEC §6.12).
+    const summary = event.kind === CHANGE && tag(event, 'field') === 'summary' ? tag(event, 'value') : undefined
+    if (summary !== undefined && at > (summarizedAt.get(row.address) ?? 0)) {
+      summarizedAt.set(row.address, at)
+      row.summary = summaryText(summary) || undefined
     }
   }
   const all = [...rows.values()]

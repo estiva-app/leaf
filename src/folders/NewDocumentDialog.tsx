@@ -1,9 +1,11 @@
 import type { FolderSummary } from '@estiva-app/interop'
-import { Button, DialogShell, EmptyState, Field, Form, Select, TextInput } from '@estiva-app/ui'
+import { Button, DialogShell, EmptyState, Field, Form, Select, Textarea, TextInput } from '@estiva-app/ui'
 import { useId, useState } from 'react'
+import { SummaryCount } from '../document/SummaryCount'
+import { SUMMARY_LIMIT, summaryLength, summaryText } from '../document/summary'
 
 /**
- * New document: a title and the Folder it goes in, as Peek's New topic asks.
+ * New document: a title, an optional summary and the Folder it goes in, as Peek's New topic asks.
  * Only Folders that take a new document are offered (`takesNewDocuments`).
  * Everyone in the chosen Folder can read it.
  */
@@ -17,11 +19,13 @@ export function NewDocumentDialog({
   folders: FolderSummary[]
   /** Which one starts chosen: the Folder of the file open in the tree, when there is one. */
   defaultFolder?: string
-  /** Resolves `true` when the dialog should close. */
-  onCreate: (title: string, folder: string) => Promise<boolean>
+  /** Resolves `true` when the dialog should close. `summary` is on one line, '' for none. */
+  onCreate: (title: string, folder: string, summary: string) => Promise<boolean>
   onClose: () => void
 }) {
   const [title, setTitle] = useState('')
+  const [summary, setSummary] = useState('')
+  const long = summaryLength(summary) > SUMMARY_LIMIT
   const [folder, setFolder] = useState(() =>
     defaultFolder && folders.some((f) => f.id === defaultFolder) ? defaultFolder : (folders[0]?.id ?? ''),
   )
@@ -34,7 +38,7 @@ export function NewDocumentDialog({
   async function create() {
     if (!ready || creating) return
     setCreating(true)
-    const done = await onCreate(trimmed, folder)
+    const done = await onCreate(trimmed, folder, summaryText(summary))
     setCreating(false)
     if (done) onClose()
   }
@@ -61,6 +65,11 @@ export function NewDocumentDialog({
           <p className="text-body-2 text-text-secondary">{`Everyone in ${where?.name ?? 'the Folder'} can read it.`}</p>
           <Field label="Title">
             <TextInput value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What is it about?" aria-label="Document title" autoFocus />
+          </Field>
+          {/* Optional, as the short-summary story's SummaryField draws it: the helper until the text runs past 240, then the count and a taller box. */}
+          <Field label="Summary" helper={long ? undefined : 'One or two sentences. It shows under the title, in lists and on cards.'}>
+            <Textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="What is it for, in a sentence?" aria-label="Summary" className={long ? 'h-20' : 'h-16'} />
+            <SummaryCount text={summary} />
           </Field>
           <Field label="Folder">
             <Select

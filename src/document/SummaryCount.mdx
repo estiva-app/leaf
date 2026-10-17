@@ -1,0 +1,35 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './SummaryCount.stories'
+
+<Meta of={Stories} />
+
+# SummaryCount
+
+The count a summary past about 240 characters shows under it: a warning,
+never a refusal.
+
+**Seen in**: *Document/SummaryCount*: **Long Summary**; and under the summary
+on a page, while it is being written.
+
+## When
+
+- Under a page's summary while it is being written: **PageSummary** draws it
+  under the line on the page, and New document under its Summary field.
+
+## When not
+
+- To stop someone typing: a summary is never cut or refused (Miky, 15 Oct).
+- For any other line under a field → **FieldLine**, or **Field**'s `helper`.
+
+## How
+
+```tsx
+import { SummaryCount } from '../document/SummaryCount'
+
+<SummaryCount text={draft} />
+```
+
+## What it owns
+
+- **The limit**, 240, and **counting as a person does**: what would be saved,
+  letter by letter. Nothing at or under the limit.

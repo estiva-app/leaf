@@ -29,27 +29,28 @@ export const Connecting: Story = { args: { relay: 'http://localhost:3000', state
 export const Connected: Story = { args: { relay: 'http://localhost:3000', state: 'live', name: 'Alex Kim' } }
 
 const NOW = Date.UTC(2026, 9, 9, 8)
-const row = (n: number, title: string, folder: string, byName: string, ago: number) => ({
+const row = (n: number, title: string, folder: string, byName: string, ago: number, summary?: string) => ({
   address: `30842:${'a'.repeat(64)}:p${n}`,
   naddr: `naddr1p${n}`,
   eventId: `e${n}`,
   folderId: folder.toLowerCase(),
   title,
+  summary,
   folder,
   at: NOW - ago,
   by: 'a'.repeat(64),
   byName,
 })
 
-/** The pages you touched last, newest change first, naming who made it (Katerina's Home story). */
+/** The pages you touched last, newest change first, naming who made it (Katerina's Home story); a summary is the row's second line. */
 export const Recent: Story = {
   args: {
     relay: 'http://localhost:3000',
     state: 'live',
     now: NOW,
     recent: [
-      row(1, 'Launch plan', 'Launch', 'Ana Duarte', 2 * 60_000),
-      row(2, 'Checklist', 'Launch', 'Ravi Mehta', 26 * 3_600_000),
+      row(1, 'Launch plan', 'Launch', 'Ana Duarte', 2 * 60_000, 'What ships on launch day, who does what, and the order we do it in.'),
+      row(2, 'Checklist', 'Launch', 'Ravi Mehta', 26 * 3_600_000, 'Every check before we switch the domain over, ticked by whoever ran it.'),
       row(3, 'Type scale notes', 'Design', 'Mia Chen', 3 * 86_400_000),
       row(4, 'Interview guide', 'Design', 'Sam Porter', 8 * 86_400_000),
     ],
