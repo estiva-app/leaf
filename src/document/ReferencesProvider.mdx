@@ -1,0 +1,38 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './ReferencesProvider.stories'
+
+<Meta of={Stories} />
+
+# ReferencesProvider
+
+Hands the files a set of references names, read once per tab, to every
+**ReferenceChip** inside it, including chips in an editor's node views, which
+React's props do not reach.
+
+**Seen in**: around a page's text, and around the comments column.
+
+## When
+
+- Around anything that draws **ReferenceChip**: the page's editor, the
+  column's cards and its comment box.
+
+## When not
+
+- To read one file for a page of its own → interop's `resolveForeignObject`.
+- One chip whose file the page already holds → **ReferenceChip** inside the provider the page has; for people's names, the column's people (`useMentionPeople`) or a profile
+  read.
+
+## How
+
+```tsx
+import { ReferencesProvider, useReferences } from '../document/references'
+
+const references = useReferences(page.flatMap((c) => findNostrUris(c.body)))
+
+<ReferencesProvider value={references}>{children}</ReferencesProvider>
+```
+
+## What it owns
+
+- Nothing but the hand-over: **useReferences** does the reading, once per tab,
+  and keeps a dropped read from turning into "cannot be read".

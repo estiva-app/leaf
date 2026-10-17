@@ -1,6 +1,6 @@
 /**
  * What `[` offers on a Leaf page (SUM-7): files only — a page has no messages
- * — ranked by `@estiva-app/conversation`'s `rankReferences`, the order Peek and
+ * — and in a comment box, its messages first (COMM-3); ranked by `@estiva-app/conversation`'s `rankReferences`, the order Peek and
  * Ship draw too. Ship's `api/references.ts` is the template.
  *
  * - **This Folder's files**, the listing the tree already read, then, once you
@@ -14,9 +14,9 @@
  * landing tells the open list to draw again ({@link subscribeReferences}).
  */
 import { useEffect } from 'react'
-import { FILE_TIER, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
+import { FILE_TIER, KIND_COMMENT, MESSAGE_TIER, messageReference, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
 import { fileCandidates, searchFileReferences, type ForeignObject } from '@estiva-app/interop'
-import { KIND } from '@estiva-app/protocol'
+import { KIND, decodeNpub, findNostrUris } from '@estiva-app/protocol'
 import { KindIcon, thingKindOf } from '@estiva-app/ui'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
 import { manifests } from '../folders/workspace'
@@ -25,7 +25,7 @@ import { query } from '../relay/bridge'
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
 
 /** The list's name and its one heading. */
-export const REFERENCE_COPY = { ariaLabel: 'Files', files: 'Files' }
+export const REFERENCE_COPY = { ariaLabel: 'Files', files: 'Files', messages: 'Messages' }
 
 // A Folder's rows, built once per listing the tree read: every page in it offers the same ones.
 const BUILT = new WeakMap<readonly ForeignObject[], Promise<ReferenceCandidate[]>>()
@@ -72,14 +72,71 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
 
 /** The one section `[` draws for what was typed. */
 export function referenceSections(typed: string): ReferenceSection[] {
-  const ranked = rankReferences({
-    messages: [],
+  return [{ label: REFERENCE_COPY.files, items: rankedFiles(typed, []).files.map(itemOf) }]
+}
+
+function rankedFiles(typed: string, messages: readonly ReferenceCandidate[]) {
+  return rankReferences({
+    messages,
     files: [...folderFiles, ...search.hits(typed)],
     query: typed,
     ownKinds: [KIND.DOCUMENT],
     exclude: openFile ? [openFile] : [],
   })
-  return [{ label: REFERENCE_COPY.files, items: ranked.files.map(itemOf) }]
+}
+
+/** A comment `[` can offer, as the column holds it. */
+export interface ReferableComment {
+  id: string
+  by: string
+  /** Unix seconds. */
+  at: number
+  body: string
+}
+
+/** A comment's opening words as a row's caption, as Ship's `snippetOf`: marks gone, a person by name, any other pointer dropped. */
+export function snippetOf(body: string, nameOf: (pubkey: string) => string | undefined): string {
+  const text = body.replace(/nostr:[a-z0-9]+/gi, (uri) => {
+    const found = findNostrUris(uri)[0]
+    if (!found?.startsWith('nostr:npub1')) return found ? '' : uri
+    try {
+      return `@${nameOf(decodeNpub(found)) ?? 'someone'}`
+    } catch {
+      return ''
+    }
+  })
+  return text.replace(/\*\*|__|[*`]/g, '').replace(/^\s*(?:#{1,6}|>|[-*]|\d+\.)\s+/gm, '').replace(/\s+/g, ' ').trim()
+}
+
+const messageRows = (comments: readonly ReferableComment[], tier: number, nameOf: (pubkey: string) => string | undefined): ReferenceCandidate[] =>
+  comments.map((c) => ({
+    id: c.id,
+    uri: messageReference(c.id, KIND_COMMENT),
+    type: 'message' as const,
+    kind: KIND_COMMENT,
+    title: nameOf(c.by) ?? 'Someone',
+    caption: snippetOf(c.body, nameOf),
+    search: c.body,
+    tier,
+    at: c.at,
+  }))
+
+/**
+ * What `[` offers in a comment box: Messages, then Files. A reply's box offers
+ * its own thread's comments first, then the rest of the page's; a new comment's
+ * box offers the page's (`here`, with nothing after it), as Ship's boxes do.
+ * Files are the page's: this Folder's, then relay search, never the page itself.
+ */
+export function commentReferenceSections(
+  scope: { here: readonly ReferableComment[]; rest: readonly ReferableComment[] },
+  typed: string,
+  nameOf: (pubkey: string) => string | undefined,
+): ReferenceSection[] {
+  const ranked = rankedFiles(typed, [...messageRows(scope.here, MESSAGE_TIER.here, nameOf), ...messageRows(scope.rest, MESSAGE_TIER.parent, nameOf)])
+  return [
+    { label: REFERENCE_COPY.messages, items: ranked.messages.map((m) => ({ id: m.id, label: m.title, snippet: m.caption, uri: m.uri, search: m.search })) },
+    { label: REFERENCE_COPY.files, items: ranked.files.map(itemOf) },
+  ]
 }
 
 /**
