@@ -53,6 +53,26 @@ describe("Home's rows", () => {
     expect(rows.map((r) => [r.title, r.by, r.at])).toEqual([['Page 1', ME, 30_000]])
   })
 
+  it('counts a summary change as an edit, like a rename, and shows the newest summary', () => {
+    const [summarised, renamed] = [page(1), page(2)]
+    const rows = rankRecent(
+      [summarised, renamed],
+      [made(summarised, 10), made(renamed, 10), save(renamed, ME, 20, 'title', 'Renamed'), save(summarised, ME, 40, 'summary', 'Newer'), save(summarised, ME, 30, 'summary', 'Older')],
+      ME,
+    )
+    expect(rows.map((r) => [r.address, r.summary])).toEqual([
+      [summarised.address, 'Newer'],
+      [renamed.address, undefined],
+    ])
+    expect(rows[0].at).toBe(40_000)
+  })
+
+  it('shows no summary once the newest change clears it, even over the one the page was listed with', () => {
+    const listed = { ...page(1), summary: 'From the tree' }
+    const rows = rankRecent([listed], [made(listed, 10), save(listed, ME, 20, 'summary', '  ')], ME)
+    expect(rows[0].summary).toBeUndefined()
+  })
+
   it("shows the Folders' latest pages to someone who touched none", () => {
     const [one, two] = [page(1), page(2)]
     const rows = rankRecent([one, two], [made(one, 10), made(two, 20), save(one, RAVI, 30)], ME)

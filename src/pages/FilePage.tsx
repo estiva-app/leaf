@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
+import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { Divider, EditableText, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
+import { PageSummary } from '../document/PageSummary'
 import { saveField } from '../document/save'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
@@ -60,8 +62,23 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
     if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
     return result.ok
   }
+  // The summary: the folded `summary` field, which interop draws as `subtitle` (SPEC §6.12, §7.2).
+  const summary = file.slots.subtitle?.value ?? ''
+  async function summarize(value: string): Promise<true | string> {
+    const result = await saveField(target.current, 'summary', value)
+    return result.ok ? true : 'Try again; your text is still here.'
+  }
   // The comments column (LEAF-5): it draws in the editor, and a block's handle starts a comment in it.
   const [editor, setEditor] = useState<Editor | null>(null)
+  // Enter in the summary goes on into the text, on its first line: 'start' can be a selection, which opens the
+  // format toolbar over the whole page when it is empty (Ship's HeaderEditing, ship#307).
+  function toText() {
+    if (!editor) return
+    editor.commands.focus('start')
+    if (editor.state.selection.empty) return
+    const caret = TextSelection.findFrom(editor.state.doc.resolve(0), 1, true)
+    if (caret) editor.view.dispatch(editor.state.tr.setSelection(caret))
+  }
   const [draft, setDraft] = useState<Anchor | null>(null)
   const docBody = useRef<HTMLDivElement | null>(null)
   // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
@@ -71,10 +88,13 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Panel title={title} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-            {/* The page's heading, as Katerina's prototype draws it. */}
-            <h1 className="text-h1 text-text-primary">
-              <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
-            </h1>
+            {/* The page's heading, as Katerina's prototype draws it, and its summary 4px under it (the short-summary story's LeafFilePage). */}
+            <div className="flex flex-col gap-1">
+              <h1 className="text-h1 text-text-primary">
+                <EditableText value={title} placeholder="Untitled" label="Title" onCommit={rename} className="-mx-2" />
+              </h1>
+              <PageSummary value={summary} onCommit={summarize} onEnter={toText} />
+            </div>
             <LiveDocument
               value={body?.value ?? ''}
               format={body?.format ?? 'marker'}

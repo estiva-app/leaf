@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { nameOf, onSaved } from '../document/save'
+import { summaryText } from '../document/summary'
 import { isDocument, titleOf } from '../folders/tree'
 import type { WorkspaceFolder } from '../folders/useWorkspace'
 import { query, viewerPubkey } from '../relay/bridge'
@@ -25,6 +26,8 @@ export function pagesOf(folders: WorkspaceFolder[] | null): Page[] | null {
         naddr: f.naddr!,
         eventId: f.eventId,
         title: titleOf(f),
+        // Interop's default `subtitle` is the folded summary (SPEC §6.12, §7.2); empty is none.
+        summary: summaryText(f.slots.subtitle?.value ?? '') || undefined,
         folder: folder.name ?? folder.id,
         folderId: folder.id,
       })),

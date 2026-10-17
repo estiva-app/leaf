@@ -104,10 +104,10 @@ function Frame() {
     if (newDocumentFolderOf(window.location.pathname, window.location.search)) replace('/')
   }
 
-  async function make(title: string, folder: string): Promise<boolean> {
+  async function make(title: string, folder: string, summary: string): Promise<boolean> {
     // Made from a link: the document's page takes the link's place, so Back does not offer New document again.
     const go = handoff ? replace : navigate
-    const result = await createDocument({ folder, title })
+    const result = await createDocument({ folder, title, summary })
     if (!result.ok && !result.made) {
       showToast({ label: result.reason, type: 'error' })
       return false

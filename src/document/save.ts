@@ -31,7 +31,7 @@ export async function nameOf(pubkey: string): Promise<string | null> {
 export function buildChange(
   pubkey: string,
   createdAtMs: number,
-  args: { target: string; field: 'title' | 'description'; value: string; folder: string; contentFormat?: string },
+  args: { target: string; field: DocumentField; value: string; folder: string; contentFormat?: string },
 ): UnsignedEvent {
   return {
     pubkey,
@@ -63,10 +63,13 @@ export function onSaved(listener: () => void): () => void {
   }
 }
 
-/** Save a document's title or text. `ok: false` carries what to tell the person. */
+/** The fields a page writes: its title, its summary (plain text, never a `content-format`, SPEC §6.12) and its text. */
+export type DocumentField = 'title' | 'summary' | 'description'
+
+/** Save a document's title, summary or text. `ok: false` carries what to tell the person. */
 export async function saveField(
   file: Pick<ForeignObject, 'address' | 'folder'>,
-  field: 'title' | 'description',
+  field: DocumentField,
   value: string,
   contentFormat?: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
