@@ -6,12 +6,15 @@ import {
   isCommentOn,
   KIND_ASSERTION,
   KIND_COMMENT,
+  KIND_DELETION,
+  KIND_REACTION,
   mentionTagsFor,
   quoteTagsFor,
   referenceTagsFor,
   urgentTagsFor,
+  type ReactionEvent,
 } from '@estiva-app/conversation'
-import { blockRunOf, blockRunTag, buildResolution, quoteOf, quoteTag, type Quote, type SignedEvent } from '@estiva-app/protocol'
+import { blockRunOf, blockRunTag, buildDeletion, buildReaction, buildResolution, quoteOf, quoteTag, type Quote, type SignedEvent } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A document as its comments name it: its address, its Folder (the `h` every comment carries) and its author. */
@@ -28,6 +31,8 @@ export interface CommentItem {
   at: number
   body: string
   event: SignedEvent
+  /** Its reactions, one per person and emoji, oldest first (SPEC §6.6). */
+  reactions: ReactionEvent[]
 }
 
 /** A top-level comment and its replies: one card in the column. */
@@ -46,24 +51,40 @@ export interface Thread {
 /** What a write tells the person: `ok`, or the plain words for a refusal. */
 export type WriteResult = { ok: true } | { ok: false; reason: string }
 
-const item = (event: SignedEvent): CommentItem => ({ id: event.id, by: event.pubkey, at: event.created_at, body: event.content, event })
+/** A document's threads, and what the reaction read left out (SPEC §6.6 makes saying so a MUST). */
+export interface Threads {
+  threads: Thread[]
+  /** How many comments and replies, the oldest, were not asked about reactions: past the horizon. */
+  reactionsOmitted: number
+  /** The reaction read came back at the relay's page ceiling, so some may be missing. */
+  reactionsCut: boolean
+}
 
 /**
  * Every thread on a document, oldest first: its comments (`1111` naming it by
- * `A`, roots and replies alike), grouped by NIP-22, and each root's
- * resolutions (`9101`), read as Peek reads them. Whatever Folder a comment
- * was filed in, it is this document's: reads go by anchor and are never
- * bounded by Folder. A reply whose root is gone has no card: there is no
- * top-level comment to draw it under.
+ * `A`, roots and replies alike), grouped by NIP-22, each root's resolutions
+ * (`9101`), and every comment's and reply's reactions (`7`), read as Peek
+ * reads them. Whatever Folder a comment was filed in, it is this document's:
+ * reads go by anchor and are never bounded by Folder. A reply whose root is
+ * gone has no card: there is no top-level comment to draw it under.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-thread-belongs-to-what-it-is-about.md
  */
-export async function readThreads(doc: Commented): Promise<Thread[]> {
+export async function readThreads(doc: Commented): Promise<Threads> {
   const events = await query([{ kinds: [KIND_COMMENT], '#A': [doc.address], limit: 500 }])
   const { roots, replies } = groupThreads(events.filter((e) => e.kind === KIND_COMMENT))
   const on = roots.filter((e) => isCommentOn(e, doc.address))
-  const decorations = on.length ? await decorationsOf(on.map((e) => ({ id: e.id, at: e.created_at })), query) : null
-  return on.map((root) => {
+  const all = on.flatMap((root) => [root, ...(replies[root.id] ?? [])])
+  const decorations = all.length ? await decorationsOf(all.map((e) => ({ id: e.id, at: e.created_at })), query) : null
+  const item = (event: SignedEvent): CommentItem => ({
+    id: event.id,
+    by: event.pubkey,
+    at: event.created_at,
+    body: event.content,
+    event,
+    reactions: decorations?.byId[event.id]?.reactions ?? [],
+  })
+  const threads = on.map((root) => {
     const blocks = blockRunOf(root)
     const quote = blocks ? quoteOf(root) : undefined
     const last = decorations?.byId[root.id]?.resolutions.at(-1)
@@ -76,6 +97,7 @@ export async function readThreads(doc: Commented): Promise<Thread[]> {
       resolved: last?.action === 'resolved',
     }
   })
+  return { threads, reactionsOmitted: decorations?.reactionTargetsOmitted ?? 0, reactionsCut: decorations?.reactionEventsCut ?? false }
 }
 
 async function send(unsigned: Parameters<typeof publish>[0] | null, refused: string, signedOut = 'Sign in to comment.'): Promise<WriteResult> {
@@ -83,7 +105,9 @@ async function send(unsigned: Parameters<typeof publish>[0] | null, refused: str
   const result = await publish(unsigned)
   if (result.ok) return { ok: true }
   // The relay's reason names kinds and rules: the console keeps it.
-  console.warn('[relay] comment refused', result)
+  console.warn('[relay] write refused', unsigned.kind, result)
+  // Too fast is the refusal a person can do something about: they wait and try again (NIP-01's `rate-limited:` prefix).
+  if (/^rate-limited/.test(result.reason ?? '')) return { ok: false, reason: 'too many at once, try again in a moment' }
   return { ok: false, reason: refused }
 }
 
@@ -152,5 +176,23 @@ export function setResolved(doc: Commented, thread: Thread, resolved: boolean): 
   )
 }
 
-/** The kinds that change what the column shows: a comment, a reply, a resolution. */
-export const COMMENT_KINDS: number[] = [KIND_COMMENT, KIND_ASSERTION]
+// The card says this after "Not reacted:".
+const NOT_REACTED = 'it did not go through'
+
+/**
+ * React to a comment or a reply: the `kind:7` Ship and Peek write, with no
+ * `h` — the relay files it under the comment's Folder, from its `e`.
+ */
+export function react(comment: CommentItem, emoji: string): Promise<WriteResult> {
+  const pubkey = viewerPubkey()
+  return send(pubkey ? buildReaction(pubkey, Date.now(), { targetEventId: comment.id, emoji }) : null, NOT_REACTED, SIGNED_OUT)
+}
+
+/** Take your reaction back: a `kind:5` naming the reaction's own event, as Ship's and Peek's do. */
+export function unreact(reactionId: string): Promise<WriteResult> {
+  const pubkey = viewerPubkey()
+  return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: reactionId }) : null, NOT_REACTED, SIGNED_OUT)
+}
+
+/** The kinds that change what the column shows: a comment, a reply, a resolution, a reaction and its taking back. */
+export const COMMENT_KINDS: number[] = [KIND_COMMENT, KIND_ASSERTION, KIND_REACTION, KIND_DELETION]

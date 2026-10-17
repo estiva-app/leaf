@@ -21,10 +21,12 @@ vi.mock('../relay/client', () => ({
     },
   }),
 }))
+/* Who is signed in: ME, unless a test signs out. */
+const signedIn = vi.hoisted(() => ({ pubkey: 'a'.repeat(64) as string | null }))
 vi.mock('../relay/bridge', () => ({
   query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((e) => filters.some((f) => matches(e, f)))),
   publish,
-  viewerPubkey: () => ME,
+  viewerPubkey: () => signedIn.pubkey,
 }))
 
 /* Files another app owns, by reference: interop's projection of one needs its app's manifest, which is interop's own contract and tested there. */
@@ -448,5 +450,139 @@ describe('a comment on a selection (LEAF-7)', () => {
     const e = publish.mock.calls[0][0]
     expect(e.tags).toContainEqual(['block', FIRST, SECOND])
     expect(e.tags.some((t) => t[0] === 'quote')).toBe(false)
+  })
+})
+
+describe('reactions on a comment (COMM-4)', () => {
+  const reaction = (target: string, emoji: string, by: string, id: string): SignedEvent => ({ id, pubkey: by, created_at: 1_760_000_100, kind: 7, tags: [['e', target]], content: emoji, sig: '' })
+  const replyTo = (root: SignedEvent, content: string): SignedEvent => ({
+    ...comment([], content),
+    pubkey: ME,
+    tags: [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['h', FOLDER]],
+  })
+  // The relay keeps what it accepts, and stops returning what a kind:5 takes back: the column's read after the write finds that.
+  const relayKeeps = () =>
+    publish.mockImplementationOnce(async (e) => {
+      const target = e.tags.find((t) => t[0] === 'e')?.[1]
+      relay.events = e.kind === 5 ? relay.events.filter((x) => x.id !== target) : [...relay.events, { ...e, id: '9'.repeat(64), sig: '' } as SignedEvent]
+      return { ok: true }
+    })
+  const pill = (name: string) => screen.findByRole('button', { name })
+  const deliver = async (event: SignedEvent) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => live.listeners.forEach((l) => l(FOLDER, event)))
+      await act(() => vi.advanceTimersByTimeAsync(300))
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it("draws someone else's reactions on a comment and on its reply, not lit, and names who reacted", async () => {
+    const root = comment([], 'Too long?')
+    const reply = replyTo(root, 'Cut it')
+    await open([root, reply, reaction(root.id, '👍', QA2, '7'.repeat(64)), reaction(reply.id, '🙏', QA2, '6'.repeat(64)), profile(QA2, 'QA-2')])
+    const onRoot = await pill('Makes sense, 1')
+    expect(onRoot.getAttribute('aria-pressed')).toBe('false')
+    expect((await pill('Thank you, 1')).closest('[data-comment-id]')?.getAttribute('data-comment-id')).toBe(reply.id)
+    fireEvent.pointerEnter(onRoot)
+    fireEvent.focus(onRoot)
+    expect(await screen.findByText('QA-2 reacted with Makes sense')).toBeTruthy()
+  })
+
+  it('reacts from the picker with a kind:7 on the comment and no h, and the pill shows, lit, once the relay accepts it', async () => {
+    const root = comment([], 'Too long?')
+    await open([root])
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    relayKeeps()
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Add a reaction' })))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content, e.tags, e.pubkey]).toEqual([7, '👍', [['e', root.id]], ME])
+    expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('signed out, shows the reactions with nothing to click and writes nothing', async () => {
+    const root = comment([], 'Too long?')
+    signedIn.pubkey = null
+    try {
+      await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
+      const shown = await pill('Makes sense, 1')
+      expect((shown as HTMLButtonElement).disabled).toBe(true)
+      expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+      act(() => void fireEvent.click(shown))
+      await act(async () => {})
+      expect(publish).not.toHaveBeenCalled()
+    } finally {
+      signedIn.pubkey = ME
+    }
+  })
+
+  it('writes nothing more while the read after an accepted reaction is still out', async () => {
+    const root = comment([], 'Too long?')
+    await open([root])
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    const { query } = await import('../relay/bridge')
+    const real = vi.mocked(query).getMockImplementation()!
+    // The relay accepts the reaction; the column's read after it does not answer yet.
+    vi.mocked(query).mockImplementation(() => new Promise(() => {}))
+    try {
+      const pick = () => {
+        act(() => void fireEvent.click(screen.getByRole('button', { name: 'Add a reaction' })))
+        act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
+      }
+      pick()
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      pick()
+      await act(async () => {})
+      expect(publish).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
+  it('takes your own reaction back with a kind:5 naming that reaction, and the pill goes', async () => {
+    const root = comment([], 'Too long?')
+    const mine = reaction(root.id, '👍', ME, '8'.repeat(64))
+    await open([root, mine])
+    relayKeeps()
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.tags]).toEqual([5, [['e', mine.id]]])
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Makes sense, 1' })).toBeNull())
+  })
+
+  it('leaves the row as it was and says why when the relay refuses a reaction', async () => {
+    const root = comment([], 'Too long?')
+    await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 7 not allowed' })
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
+    expect(await screen.findByText('Not reacted: it did not go through.')).toBeTruthy()
+    expect(publish.mock.calls[0][0].kind).toBe(7)
+    expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('says to try again in a moment when the relay refuses a reaction for coming too fast', async () => {
+    const root = comment([], 'Too long?')
+    await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
+    publish.mockResolvedValueOnce({ ok: false, reason: 'rate-limited: slow down' })
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
+    expect(await screen.findByText('Not reacted: too many at once, try again in a moment.')).toBeTruthy()
+  })
+
+  it("shows someone else's reaction without a reload, and its going when they take it back", async () => {
+    const root = comment([], 'Too long?')
+    await open([root])
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    const theirs = reaction(root.id, '👍', QA2, '7'.repeat(64))
+    relay.events = [root, theirs]
+    await deliver(theirs)
+    await pill('Makes sense, 1')
+    relay.events = [root]
+    await deliver({ id: '5'.repeat(64), pubkey: QA2, created_at: 1_760_000_300, kind: 5, tags: [['e', theirs.id]], content: '', sig: '' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Makes sense, 1' })).toBeNull())
   })
 })

@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
 import { IconArrowBackUp, IconCircleCheck, IconMessage, IconX } from '@tabler/icons-react'
-import { composerDraft, composerText, createDraftStore, draftKeys, type DraftStore } from '@estiva-app/conversation'
+import { composerDraft, composerText, createDraftStore, draftKeys, groupReactions, REACTION_EMOJI, REACTION_HORIZON, type DraftStore } from '@estiva-app/conversation'
 import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument } from '@estiva-app/protocol'
-import { Card, Chip, CollapsibleSection, EmptyState, IconButton, InlineChip, Panel, Person, RichText, SkeletonList, WithTooltip, useToast } from '@estiva-app/ui'
+import {
+  AddReactionButton,
+  Card,
+  Chip,
+  CollapsibleSection,
+  EmptyState,
+  FieldLine,
+  IconButton,
+  InlineChip,
+  Panel,
+  Person,
+  ReactionRow,
+  RichText,
+  SkeletonList,
+  WithTooltip,
+  useToast,
+} from '@estiva-app/ui'
 import {
   CommentBox,
   commentBoxRows,
@@ -21,7 +37,8 @@ import { commentReferenceSections, snippetOf, subscribeReferences, type Referabl
 import { CarriedCards, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
 import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
 import { exactly, whenOf } from '../home/recent'
-import { postComment, postReply, setResolved, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
+import { postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
+import { viewerPubkey } from '../relay/bridge'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
 
@@ -194,8 +211,56 @@ function AnchorLine({ thread, where, editor, names }: { thread: Thread; where: W
   )
 }
 
-/** One comment or reply in a card: who, when, and the text. */
-function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentItem; names: Record<string, string>; now: number; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[] }) {
+// The five emoji Peek and Ship offer, each with its meaning.
+const REACTION_OPTIONS = REACTION_EMOJI.map(({ emoji, name }) => ({ emoji, label: name }))
+
+/** Your reaction on or off: `mine` is your reaction with that emoji, which taking it back names. */
+type OnReact = (comment: CommentItem, emoji: string, mine?: string) => Promise<WriteResult>
+
+/**
+ * One comment or reply in a card: who, when, the text, and its reactions. The
+ * add button sits on the header line, shown on hover or focus as in the
+ * approved story (Comments everywhere/Leaf column). A reaction shows once the
+ * relay accepts it; a refused one leaves the row as it was and says why.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
+ */
+function CommentLine({
+  comment,
+  names,
+  now,
+  nameOf,
+  page,
+  viewer,
+  onReact,
+}: {
+  comment: CommentItem
+  names: Record<string, string>
+  now: number
+  nameOf: (pubkey: string) => string | undefined
+  page: readonly CommentItem[]
+  /** Who is looking: their reactions are lit. */
+  viewer?: string
+  /** Absent, the reactions only show (signed out). */
+  onReact?: OnReact
+}) {
+  const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
+  const [refused, setRefused] = useState<string | null>(null)
+  // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
+  const pending = useRef(false)
+  useEffect(() => {
+    pending.current = false
+  }, [comment])
+  const toggle = async (emoji: string) => {
+    if (!onReact || pending.current) return
+    pending.current = true
+    setRefused(null)
+    const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine).catch(() => ({ ok: false, reason: 'it did not go through' }) as const)
+    if (!result.ok) {
+      pending.current = false
+      setRefused(result.reason)
+    }
+  }
   const blocks = useMemo(() => toRenderTree(comment.body, contentFormatOf(comment.event)), [comment])
   const urgent = useMemo(() => comment.event.tags.filter((t) => t[0] === 'urgent' && t[1]).map((t) => t[1]), [comment])
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
@@ -204,7 +269,7 @@ function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentIt
   const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
   const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />
   return (
-    <div data-comment-id={comment.id} className="flex flex-col gap-1">
+    <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 text-body-2-strong text-text-primary">
           <Person name={names[comment.by] ?? 'Someone'} />
@@ -212,6 +277,11 @@ function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentIt
         <WithTooltip label={exactly(comment.at * 1000)}>
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
         </WithTooltip>
+        {onReact && (
+          <div className="-my-1 ml-auto opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
+            <AddReactionButton options={REACTION_OPTIONS} onPick={(emoji) => void toggle(emoji)} />
+          </div>
+        )}
       </div>
       <RichText
         blocks={placed.blocks}
@@ -226,6 +296,8 @@ function CommentLine({ comment, names, now, nameOf, page }: { comment: CommentIt
         }}
       />
       <CarriedCards cards={placed.cards} />
+      <ReactionRow reactions={reactions} options={REACTION_OPTIONS} nameOf={(pubkey) => named(pubkey) ?? 'Someone'} viewer={viewer} onToggle={onReact ? (emoji) => void toggle(emoji) : undefined} className="pt-1" />
+      {refused && <FieldLine tone="error">Not reacted: {refused}.</FieldLine>}
     </div>
   )
 }
@@ -322,6 +394,8 @@ function ThreadCard({
   onReply,
   people,
   page,
+  viewer,
+  onReact,
 }: {
   thread: Thread
   where: Where
@@ -335,6 +409,8 @@ function ThreadCard({
   people: BoxPeople
   /** Every comment on the page, for what `[` offers after this thread's own and for drawing one a comment references. */
   page: readonly CommentItem[]
+  viewer?: string
+  onReact?: OnReact
 }) {
   const own = useMemo(() => [thread.root, ...thread.replies], [thread])
   const scope = useMemo(() => ({ here: own, rest: page.filter((c) => !own.includes(c)) }), [own, page])
@@ -359,7 +435,7 @@ function ThreadCard({
         )}
       </div>
       {own.map((c) => (
-        <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} />
+        <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} viewer={viewer} onReact={onReact} />
       ))}
       {active && !thread.resolved && <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} />}
     </Card>
@@ -392,7 +468,7 @@ export interface CommentsColumnProps {
 
 /** The comments column of a Leaf document. */
 export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft }: CommentsColumnProps) {
-  const { threads, failed, readAt, reread } = useThreads(doc)
+  const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
   const { showToast } = useToast()
   const [active, setActive] = useState<string | null>(null)
   const [columnBody, setColumnBody] = useState<HTMLDivElement | null>(null)
@@ -410,7 +486,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   }, [editor])
 
   const all = useMemo(() => threads ?? [], [threads])
-  const names = useNames(all.flatMap((t) => [t.root.by, ...t.replies.map((r) => r.by)]))
+  // Authors and reactors: "who reacted" names them too.
+  const names = useNames(all.flatMap((t) => [t.root, ...t.replies].flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
   const people = useMentionPeople()
   const page = useMemo(() => all.flatMap((t) => [t.root, ...t.replies]), [all])
   const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])
@@ -497,6 +574,12 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     if (next && active === thread.id) setActive(null)
     reread()
   }
+  const viewer = viewerPubkey() ?? undefined
+  const toggleReaction = async (comment: CommentItem, emoji: string, mine?: string): Promise<WriteResult> => {
+    const result = mine ? await unreact(mine) : await react(comment, emoji)
+    if (result.ok) reread()
+    return result
+  }
 
   const draftPlace = editor && draft ? commentPlace(editor, { id: DRAFT, ...draft }) : null
   const draftLine = draft?.quote ? `On “${quoteText(draft.quote)}”` : draftPlace ? wholeBlocksLine(editor, draftPlace) : ''
@@ -519,6 +602,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       onReply={(written) => reply(t, written)}
       people={people}
       page={page}
+      viewer={viewer}
+      onReact={viewer ? toggleReaction : undefined}
     />
   )
 
@@ -580,6 +665,15 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
               <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
                 {resolved.map(card)}
               </CollapsibleSection>
+            )}
+            {(reactionsOmitted > 0 || reactionsCut) && (
+              // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
+              <p className="shrink-0 text-caption text-text-muted">
+                {reactionsOmitted > 0 &&
+                  `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
+                {reactionsOmitted > 0 && reactionsCut && ' '}
+                {reactionsCut && 'Some reactions may be missing.'}
+              </p>
             )}
           </>
         )}
