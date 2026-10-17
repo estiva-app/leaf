@@ -264,7 +264,7 @@ function CommentLine({
   const blocks = useMemo(() => toRenderTree(comment.body, contentFormatOf(comment.event)), [comment])
   const urgent = useMemo(() => comment.event.tags.filter((t) => t[0] === 'urgent' && t[1]).map((t) => t[1]), [comment])
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
-  // Where each line draws, as Peek draws a message (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+  // Where each line draws, as Peek draws a message (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md).
   const placed = useMemo(() => placeComment(blocks, comment.event), [blocks, comment])
   const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
   const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />

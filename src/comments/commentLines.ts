@@ -3,7 +3,7 @@ import { cardsIn, embedsOf, lineDrawOf, linesOf, referencesIn, valueOfReference,
 /**
  * A line of a comment that is only a link to a file or a message, drawn as
  * that file's row in place (SPEC §13.2, §13.6.2; why:
- * https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md).
  * `reference` is the `nostr:` reference the line names; `unreadable` is one
  * that names no address or event id.
  */
