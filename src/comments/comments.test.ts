@@ -15,7 +15,7 @@ vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
 }))
 
-import { postComment, postReply, readThreads, setResolved, type Thread } from './comments'
+import { deleteComment, editComment, postComment, postReply, readThreads, setResolved, type CommentItem, type Thread } from './comments'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const AUTHOR = 'b'.repeat(64)
@@ -30,6 +30,9 @@ const event = (kind: number, tags: string[][], content = '', pubkey = AUTHOR): S
 }
 const comment = (tags: string[][], content: string, h = FOLDER) =>
   event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['a', ADDRESS], ['k', '30842'], ['p', AUTHOR], ...tags, ['h', h]], content)
+const reply = (to: SignedEvent, tags: string[][], content: string, pubkey = ME) =>
+  event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', to.id], ['k', '1111'], ['p', to.pubkey], ...tags, ['h', FOLDER]], content, pubkey)
+const itemOf = (e: SignedEvent): CommentItem => ({ id: e.id, by: e.pubkey, at: e.created_at, body: e.content, edited: false, event: e, reactions: [] })
 
 describe('a comment from the column', () => {
   it("on a block is a 1111 on the document, naming the block and carrying the document's Folder as h", async () => {
@@ -45,14 +48,15 @@ describe('a comment from the column', () => {
     expect(sent().tags.some((t) => t[0] === 'block')).toBe(false)
   })
 
-  it("is a reply naming the thread's comment, with no block of its own and no lowercase a (SPEC §13.6, §6.4)", async () => {
-    const root = comment([['block', '8373a025427f']], 'Too long?')
-    const thread: Thread = { id: root.id, blocks: ['8373a025427f'], root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root, reactions: [] }, replies: [], resolved: false }
+  it("is a reply naming the thread's comment, copying its block and quote, with no lowercase a (SPEC §13.6, §6.4)", async () => {
+    const quote = ['quote', 'too long', 'by far']
+    const root = comment([['block', '8373a025427f', '9a1b'], quote], 'Too long?')
+    const thread: Thread = { id: root.id, blocks: ['8373a025427f', '9a1b'], root: itemOf(root), replies: [], resolved: false }
     await postReply(DOC, thread, { text: 'Cut it' })
     const e = sent()
     expect(e.kind).toBe(1111)
-    expect(e.tags).toEqual(expect.arrayContaining([['A', ADDRESS], ['e', root.id], ['h', FOLDER]]))
-    expect(e.tags.some((t) => t[0] === 'block' || t[0] === 'a')).toBe(false)
+    expect(e.tags).toEqual(expect.arrayContaining([['A', ADDRESS], ['e', root.id], ['h', FOLDER], ['block', '8373a025427f', '9a1b'], quote]))
+    expect(e.tags.some((t) => t[0] === 'a')).toBe(false)
     // The comment's author is the one told, not the replier.
     expect(e.tags).toContainEqual(['p', AUTHOR])
     expect(e.tags.some((t) => t[0] === 'p' && t[1] === ME)).toBe(false)
@@ -60,10 +64,27 @@ describe('a comment from the column', () => {
 
   it('resolves a thread with the 9101 Peek writes, in the document\'s Folder', async () => {
     const root = comment([], 'x')
-    await setResolved(DOC, { id: root.id, root: { id: root.id, by: AUTHOR, at: 0, body: 'x', event: root, reactions: [] }, replies: [], resolved: false }, true)
+    await setResolved(DOC, { id: root.id, root: itemOf(root), replies: [], resolved: false }, true)
     const e = sent()
     expect(e.kind).toBe(9101)
     expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', root.id], ['action', 'resolved']]))
+  })
+
+  it("edits your comment with the 40003 Peek writes, in the comment's own Folder, carrying no place of its own", async () => {
+    const root = comment([['block', 'b1'], ['quote', 'words']], 'Too long?', 'another-folder')
+    expect(await editComment(itemOf(root), { text: 'Far too long?' })).toEqual({ ok: true })
+    const e = sent()
+    expect(e.kind).toBe(40003)
+    expect(e.content).toBe('Far too long?')
+    expect(e.tags).toEqual(expect.arrayContaining([['h', 'another-folder'], ['e', root.id]]))
+    expect(e.tags.some((t) => t[0] === 'block' || t[0] === 'quote')).toBe(false)
+  })
+
+  it('deletes your comment with a kind:5 naming it', async () => {
+    const root = comment([], 'x')
+    await deleteComment(itemOf(root))
+    expect(sent().kind).toBe(5)
+    expect(sent().tags).toContainEqual(['e', root.id])
   })
 
   it('gives plain words when the relay refuses, for the box to say after "Not sent:"', async () => {
@@ -93,7 +114,7 @@ describe('what a comment names', () => {
 
   it('in a reply, names the person and the file, but quotes neither the comment it answers nor the page by a second a', async () => {
     const root = comment([], 'Too long?')
-    const thread: Thread = { id: root.id, root: { id: root.id, by: AUTHOR, at: root.created_at, body: root.content, event: root, reactions: [] }, replies: [], resolved: false }
+    const thread: Thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
     await postReply(DOC, thread, { text: `nostr:${encodeNpub(QA2)} see ${fileReference(ISSUE)}, ${messageReference(root.id, 1111)} and ${fileReference(ADDRESS)}` })
     const e = sent()
     expect(e.tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE]]))
@@ -116,7 +137,7 @@ describe("a document's threads", () => {
     ]
     relay.events = [onBlock, whole, elsewhere, reply, ...resolvedThenReopened]
     const { threads } = await readThreads(DOC)
-    expect(threads.map((t) => [t.root.body, t.blocks, t.replies.map((r) => r.body), t.resolved])).toEqual([
+    expect(threads.map((t) => [t.root?.body, t.blocks, t.replies.map((r) => r.body), t.resolved])).toEqual([
       ['On the paragraph', ['b1'], ['Cut it'], false],
       ['On the page', undefined, [], true],
       ['Filed in another Folder', undefined, [], false],
@@ -134,9 +155,49 @@ describe("a document's threads", () => {
     expect(reactionsOmitted).toBe(1)
   })
 
+  it("shows a comment's latest edit, marked edited, and a reply's", async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    const answer = reply(root, [], 'Cut it')
+    relay.events = [
+      root,
+      answer,
+      event(40003, [['h', FOLDER], ['e', root.id], ['ts', '1']], 'Far too long?'),
+      event(40003, [['h', FOLDER], ['e', answer.id], ['ts', '2']], 'Cut it in half', ME),
+    ]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.body, t.root?.edited, t.blocks, t.replies.map((r) => [r.body, r.edited])])).toEqual([['Far too long?', true, ['b1'], [['Cut it in half', true]]]])
+  })
+
+  it("keeps a deleted comment's replies, without it, on the place they copied from it", async () => {
+    const root = comment([['block', 'b1', 'b2'], ['quote', 'the plan']], 'Too long?')
+    const first = reply(root, [['block', 'b1', 'b2'], ['quote', 'the plan']], 'Cut it')
+    const second = reply(root, [], 'Agreed', 'c'.repeat(64))
+    // The relay no longer returns the comment; its deletion by its author it does.
+    relay.events = [first, second, event(5, [['e', root.id]], '', AUTHOR)]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.id, t.root, t.blocks, t.quote, t.replies.map((r) => r.body), t.resolved])).toEqual([
+      [root.id, null, ['b1', 'b2'], { start: 'the plan' }, ['Cut it', 'Agreed'], false],
+    ])
+  })
+
+  it('keeps a deleted comment whose replies copied no place, with no place', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    relay.events = [reply(root, [], 'Cut it'), event(5, [['e', root.id]], '', AUTHOR)]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root, t.blocks, t.replies.map((r) => r.body)])).toEqual([[null, undefined, ['Cut it']]])
+  })
+
+  it('draws no card for replies whose comment is only out of the read, or "deleted" by someone else', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    relay.events = [reply(root, [['block', 'b1']], 'Cut it')]
+    expect((await readThreads(DOC)).threads).toEqual([])
+    relay.events = [reply(root, [['block', 'b1']], 'Cut it'), event(5, [['e', root.id]], '', 'c'.repeat(64))]
+    expect((await readThreads(DOC)).threads).toEqual([])
+  })
+
   it("resolves a thread filed in another Folder in that Folder, its comment's own", async () => {
     const elsewhere = comment([], 'x', 'another-folder')
-    await setResolved(DOC, { id: elsewhere.id, root: { id: elsewhere.id, by: AUTHOR, at: 0, body: 'x', event: elsewhere, reactions: [] }, replies: [], resolved: false }, true)
+    await setResolved(DOC, { id: elsewhere.id, root: itemOf(elsewhere), replies: [], resolved: false }, true)
     expect(sent().tags).toContainEqual(['h', 'another-folder'])
   })
 })

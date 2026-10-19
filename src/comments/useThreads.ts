@@ -19,9 +19,10 @@ export interface ThreadsState {
 
 /**
  * A document's threads, kept current: someone else's comment or reply on it,
- * a resolution of one of its threads, or a reaction to one of its comments or
- * its taking back, arrives on the tab's one connection (its Folder, kinds
- * `1111`, `9101`, `7` and `5`), and the threads are read again, so it shows
+ * an edit or a deletion of one of its comments, a resolution of one of its
+ * threads, or a reaction to one of its comments or its taking back, arrives on
+ * the tab's one connection (its Folder, kinds `1111`, `40003`, `9101`, `7` and
+ * `5`), and the threads are read again, so it shows
  * without a reload. Other files' comments in the Folder are passed by.
  */
 export function useThreads(doc: Partial<Commented>): ThreadsState {
@@ -55,7 +56,7 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
   // What the watch matches by `e`: a resolution or a reaction names a comment or a reply by its id, and a take-back names the reaction's.
   const ids = useRef(new Set<string>())
   useEffect(() => {
-    const comments = read?.threads.flatMap((t) => [t.root, ...t.replies]) ?? []
+    const comments = read?.threads.flatMap((t) => [...(t.root ? [t.root] : []), ...t.replies]) ?? []
     ids.current = new Set(comments.flatMap((c) => [c.id, ...c.reactions.map((r) => r.id)]))
   }, [read])
 

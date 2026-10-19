@@ -1,17 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
-import { IconArrowBackUp, IconCircleCheck, IconMessage, IconX } from '@tabler/icons-react'
-import { composerDraft, composerText, createDraftStore, draftKeys, groupReactions, REACTION_EMOJI, REACTION_HORIZON, type DraftStore } from '@estiva-app/conversation'
+import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconMessage, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
+import {
+  composerDocument,
+  composerDraft,
+  composerText,
+  createDraftStore,
+  draftKeys,
+  groupReactions,
+  offersEditAndDelete,
+  REACTION_EMOJI,
+  REACTION_HORIZON,
+  type DraftStore,
+} from '@estiva-app/conversation'
 import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument } from '@estiva-app/protocol'
 import {
   AddReactionButton,
   Card,
   Chip,
   CollapsibleSection,
+  ConfirmDialog,
   EmptyState,
   FieldLine,
   IconButton,
   InlineChip,
+  Menu,
+  MenuItem,
+  MenuPanel,
   Panel,
   Person,
   ReactionRow,
@@ -37,7 +52,7 @@ import { commentReferenceSections, snippetOf, subscribeReferences, type Referabl
 import { CarriedCards, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
 import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
 import { exactly, whenOf } from '../home/recent'
-import { postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
+import { deleteComment, editComment, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { knownName, useMentionPeople } from './people'
@@ -139,6 +154,8 @@ interface BoxPeople {
  * answers, and a refusal puts them back and says so (record
  * a-refused-action-is-undone-and-your-text-comes-back). What is written is kept
  * as a draft under `draftKey`; give the box a React `key` per destination.
+ * Given `editing`, it is the same box in its edit mode: the comment's words
+ * with their chips, Save and Cancel, and no draft.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
  */
@@ -150,24 +167,30 @@ function Box({
   onSend,
   autoFocus,
   onSent,
+  editing,
 }: {
   /** Said in the empty box, and its accessible name. */
   placeholder: string
-  draftKey: string
+  draftKey?: string
   scope: { here: readonly ReferableComment[]; rest: readonly ReferableComment[] }
   people: BoxPeople
   onSend: (written: Written) => Promise<WriteResult>
   autoFocus?: boolean
   /** Called once the box has let go of an accepted send. */
   onSent?: () => void
+  /** The comment being edited, and how to stop: Save is `onSend`. */
+  editing?: { comment: CommentItem; onCancel: () => void }
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
-  const draft = useMemo(() => composerDraft(draftStore(), draftKey, { personLabel: knownName }), [draftKey])
+  const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
   const send = async (body: JSONContent): Promise<SendAnswer> => {
     const written = composerText(body as EditorDocument)
     const result = await onSend(written)
     return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
+  // The words an edit opens with are the comment's as the edit began: a re-read while editing does not reset them.
+  const [opened] = useState(() => (editing ? (composerDocument(editing.comment.body, { personLabel: knownName }, urgentOf(editing.comment)) as JSONContent) : undefined))
+  const edit = editing && opened ? { body: opened, onCancel: editing.onCancel, onSave: (body: JSONContent) => send(body) } : undefined
   return (
     <CommentBox
       label={placeholder}
@@ -177,9 +200,10 @@ function Box({
       referencesChanged={subscribeReferences}
       referenceView={ReferenceChip}
       insert={INSERT}
-      draft={draft}
+      draft={edit ? undefined : draft}
+      edit={edit}
       send={send}
-      autoFocus={autoFocus}
+      autoFocus={autoFocus || !!edit}
       onSent={onSent ? () => onSent() : undefined}
     />
   )
@@ -190,10 +214,12 @@ type Where = CommentPlace | { state: 'unaddressable' } | null
 
 /** What a thread is about, in one line — the one place its states differ on a card. */
 function AnchorLine({ thread, where, editor, names }: { thread: Thread; where: Where; editor: Editor | null; names: Record<string, string> }) {
+  // A deleted comment whose replies remember no place: where it was is not known, so nothing is said (record a-reply-on-a-page-keeps-its-threads-place).
+  if (!thread.root && !thread.blocks) return null
   if (!thread.blocks || !where) return <p className="text-caption text-text-muted">On the whole document</p>
   if (where.state === 'unaddressable') return <p data-anchor-state="unaddressable" className="text-caption italic text-text-muted">On a part of this document Leaf cannot show</p>
   const quoted = thread.quote ? `“${quoteText(thread.quote)}”` : null
-  const by = names[thread.root.by] ?? 'Someone'
+  const by = (thread.root && names[thread.root.by]) || 'Someone'
   if (where.state === 'reworded' || (where.state === 'detached' && quoted)) {
     // §13.6 reworded, and detached with words: the words as the commenter quoted them, never as what the page says (Miky, LEAF-7 /land).
     const gone = where.state === 'reworded' ? 'No longer in the text' : 'Deleted from the page'
@@ -218,6 +244,71 @@ const REACTION_OPTIONS = REACTION_EMOJI.map(({ emoji, name }) => ({ emoji, label
 /** Your reaction on or off: `mine` is your reaction with that emoji, which taking it back names. */
 type OnReact = (comment: CommentItem, emoji: string, mine?: string) => Promise<WriteResult>
 
+/** Whom a comment names urgently, as sent: an edit carries no `urgent`, so an edited comment keeps them. */
+const urgentOf = (comment: CommentItem) => comment.event.tags.filter((t) => t[0] === 'urgent' && t[1]).map((t) => t[1])
+
+/**
+ * What your own comment or reply offers besides reacting — Edit and Delete,
+ * only on your own (record edit-and-delete-are-offered-only-on-your-own-message).
+ */
+interface OwnActions {
+  /** What the edit box offers: the people `@` names, and the comments `[` names. */
+  people: BoxPeople
+  scope: { here: readonly ReferableComment[]; rest: readonly ReferableComment[] }
+  onSave: (written: Written) => Promise<WriteResult>
+  onDelete: () => Promise<WriteResult>
+  /** It is a reply, not the thread's comment: what the delete question names. */
+  reply: boolean
+  /** The replies a deleted comment leaves behind, which the question says stay. */
+  replies: number
+}
+
+/** The ⋮ menu on your own comment, as the approved story draws it (Comments everywhere/Leaf column). */
+function OwnMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  return (
+    <Menu
+      align="right"
+      trigger={
+        <IconButton variant="muted" tooltip="More" aria-label="More">
+          <IconDotsVertical size={16} stroke={1.5} />
+        </IconButton>
+      }
+    >
+      <MenuPanel className="min-w-[180px]">
+        <MenuItem label="Edit message" leading={<IconPencil size={16} stroke={1.5} />} onClick={onEdit} />
+        <MenuItem label="Delete message" destructive leading={<IconTrash size={16} stroke={1.5} />} onClick={onDelete} />
+      </MenuPanel>
+    </Menu>
+  )
+}
+
+/**
+ * The question before a delete, in Peek's words (`ConfirmDelete`), and that the
+ * replies stay. A refusal keeps it open and says why.
+ */
+function ConfirmDeleteComment({ own, onClose }: { own: OwnActions; onClose: () => void }) {
+  const noun = own.reply ? 'reply' : 'message'
+  const [refused, setRefused] = useState<string | null>(null)
+  return (
+    <ConfirmDialog
+      title={`Delete this ${noun}?`}
+      confirmLabel={`Delete ${noun}`}
+      destructive
+      onConfirm={async () => {
+        setRefused(null)
+        const result = await own.onDelete()
+        if (!result.ok) setRefused(result.reason)
+        return result.ok
+      }}
+      onClose={onClose}
+    >
+      <p>Leaf asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.</p>
+      {own.replies > 0 && <p>{own.replies === 1 ? 'Its reply stays, under “This comment was deleted.”' : `Its ${own.replies} replies stay, under “This comment was deleted.”`}</p>}
+      {refused && <FieldLine tone="error">{refused}</FieldLine>}
+    </ConfirmDialog>
+  )
+}
+
 /**
  * One comment or reply in a card: who, when, the text, and its reactions. The
  * add button sits on the header line, shown on hover or focus as in the
@@ -234,6 +325,7 @@ function CommentLine({
   page,
   viewer,
   onReact,
+  own,
 }: {
   comment: CommentItem
   names: Record<string, string>
@@ -244,7 +336,11 @@ function CommentLine({
   viewer?: string
   /** Absent, the reactions only show (signed out). */
   onReact?: OnReact
+  /** Present on your own comment: Edit and Delete. */
+  own?: OwnActions
 }) {
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
   const [refused, setRefused] = useState<string | null>(null)
   // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
@@ -263,7 +359,7 @@ function CommentLine({
     }
   }
   const blocks = useMemo(() => toRenderTree(comment.body, contentFormatOf(comment.event)), [comment])
-  const urgent = useMemo(() => comment.event.tags.filter((t) => t[0] === 'urgent' && t[1]).map((t) => t[1]), [comment])
+  const urgent = useMemo(() => urgentOf(comment), [comment])
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   // Where each line draws, as Peek draws a message (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md).
   const placed = useMemo(() => placeComment(blocks, comment.event), [blocks, comment])
@@ -278,25 +374,44 @@ function CommentLine({
         <WithTooltip label={exactly(comment.at * 1000)}>
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
         </WithTooltip>
-        {onReact && (
-          <div className="-my-1 ml-auto opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
-            <AddReactionButton options={REACTION_OPTIONS} onPick={(emoji) => void toggle(emoji)} />
+        {comment.edited && <span className="text-caption text-text-muted">(edited)</span>}
+        {(onReact || own) && !editing && (
+          <div className="-my-1 ml-auto flex items-center opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
+            {onReact && <AddReactionButton options={REACTION_OPTIONS} onPick={(emoji) => void toggle(emoji)} />}
+            {own && <OwnMenu onEdit={() => setEditing(true)} onDelete={() => setConfirming(true)} />}
           </div>
         )}
       </div>
-      <RichText
-        blocks={placed.blocks}
-        size="small"
-        renderReference={(uri, run) => {
-          const line = placed.rowRuns.get(run)
-          return line ? row(line) : reference(uri)
-        }}
-        renderBlock={(block) => {
-          const line = block.type === ROW_BLOCK ? placed.rowOf(block) : undefined
-          return line ? row(line) : undefined
-        }}
-      />
-      <CarriedCards cards={placed.cards} />
+      {editing && own ? (
+        <Box
+          placeholder="Edit message"
+          scope={own.scope}
+          people={own.people}
+          editing={{ comment, onCancel: () => setEditing(false) }}
+          onSend={async (written) => {
+            const result = await own.onSave(written)
+            if (result.ok) setEditing(false)
+            return result
+          }}
+        />
+      ) : (
+        <>
+          <RichText
+            blocks={placed.blocks}
+            size="small"
+            renderReference={(uri, run) => {
+              const line = placed.rowRuns.get(run)
+              return line ? row(line) : reference(uri)
+            }}
+            renderBlock={(block) => {
+              const line = block.type === ROW_BLOCK ? placed.rowOf(block) : undefined
+              return line ? row(line) : undefined
+            }}
+          />
+          <CarriedCards cards={placed.cards} />
+        </>
+      )}
+      {confirming && own && <ConfirmDeleteComment own={own} onClose={() => setConfirming(false)} />}
       <ReactionRow reactions={reactions} options={REACTION_OPTIONS} nameOf={(pubkey) => named(pubkey) ?? 'Someone'} viewer={viewer} onToggle={onReact ? (emoji) => void toggle(emoji) : undefined} className="pt-1" />
       {refused && <FieldLine tone="error">Not reacted: {refused}.</FieldLine>}
     </div>
@@ -397,6 +512,8 @@ function ThreadCard({
   page,
   viewer,
   onReact,
+  onEdit,
+  onDelete,
 }: {
   thread: Thread
   where: Where
@@ -412,20 +529,29 @@ function ThreadCard({
   page: readonly CommentItem[]
   viewer?: string
   onReact?: OnReact
+  onEdit: (comment: CommentItem, written: Written) => Promise<WriteResult>
+  onDelete: (comment: CommentItem) => Promise<WriteResult>
 }) {
-  const own = useMemo(() => [thread.root, ...thread.replies], [thread])
+  const own = useMemo(() => commentsOf(thread), [thread])
   const scope = useMemo(() => ({ here: own, rest: page.filter((c) => !own.includes(c)) }), [own, page])
   const click = (e: MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button, a, [role="button"], [data-interactive], [contenteditable="true"]')) return
     onActivate()
   }
+  // Its comment deleted, the thread takes no new replies and has nothing to resolve, as in Peek (PER-24).
+  const deleted = !thread.root
+  const actionsOn = (c: CommentItem): OwnActions | undefined =>
+    offersEditAndDelete({ viewer, author: c.by })
+      ? { people, scope, onSave: (written) => onEdit(c, written), onDelete: () => onDelete(c), reply: c !== thread.root, replies: c === thread.root ? thread.replies.length : 0 }
+      : undefined
+  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
   return (
-    <Card data-thread-id={thread.id} data-active={active || undefined} data-resolved={thread.resolved || undefined} hover="fill" quietUntilHover selected={active} onClick={click} className="flex shrink-0 flex-col gap-3 p-3">
+    <Card data-thread-id={thread.id} data-active={active || undefined} data-resolved={thread.resolved || undefined} data-deleted={deleted || undefined} hover="fill" quietUntilHover selected={active} onClick={click} className="flex shrink-0 flex-col gap-3 p-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <AnchorLine thread={thread} where={where} editor={editor} names={names} />
         </div>
-        {thread.resolved ? (
+        {deleted ? null : thread.resolved ? (
           <IconButton tooltip="Reopen" aria-label="Reopen" onClick={() => onResolve(false)}>
             <IconArrowBackUp size={16} stroke={1.5} />
           </IconButton>
@@ -435,10 +561,9 @@ function ThreadCard({
           </IconButton>
         )}
       </div>
-      {own.map((c) => (
-        <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} viewer={viewer} onReact={onReact} />
-      ))}
-      {active && !thread.resolved && <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} />}
+      {deleted && <p className="text-body-2 italic text-text-muted">This comment was deleted.</p>}
+      {own.map(line)}
+      {active && !thread.resolved && !deleted && <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} />}
     </Card>
   )
 }
@@ -451,6 +576,9 @@ function scrollWithin(box: HTMLElement | null, el: Element | null) {
   if (at.top < view.top) box.scrollBy({ top: at.top - view.top - 16 })
   else if (at.bottom > view.bottom) box.scrollBy({ top: at.bottom - view.bottom + 16 })
 }
+
+/** A thread's comment, while it is not deleted, and its replies. */
+const commentsOf = (t: Thread): CommentItem[] => [...(t.root ? [t.root] : []), ...t.replies]
 
 const anchorOf = (t: Thread): CommentAnchor | null => (t.blocks ? { id: t.id, blocks: t.blocks, ...(t.quote ? { quote: t.quote } : {}) } : null)
 
@@ -505,9 +633,9 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
 
   const all = useMemo(() => threads ?? [], [threads])
   // Authors and reactors: "who reacted" names them too.
-  const names = useNames(all.flatMap((t) => [t.root, ...t.replies].flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
+  const names = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
   const people = useMentionPeople()
-  const page = useMemo(() => all.flatMap((t) => [t.root, ...t.replies]), [all])
+  const page = useMemo(() => all.flatMap(commentsOf), [all])
   const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])
   // The files the comments name, read once per tab as the page's own chips are.
   const references = useReferences(useMemo(() => page.flatMap((c) => findNostrUris(c.body).filter((uri) => /^nostr:naddr1/i.test(uri))), [page]))
@@ -527,7 +655,10 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     const where = whereOf(t)
     return where && 'from' in where ? where.from : Number.MAX_SAFE_INTEGER
   }
-  const open = all.filter((t) => !t.resolved && whereOf(t)?.state !== 'detached').sort((a, b) => at(a) - at(b))
+  // A thread whose comment was deleted and whose replies remember no place is drawn apart, after the rest (record a-reply-on-a-page-keeps-its-threads-place).
+  const placeless = (t: Thread) => !t.root && !t.blocks
+  const open = all.filter((t) => !t.resolved && !placeless(t) && whereOf(t)?.state !== 'detached').sort((a, b) => at(a) - at(b))
+  const apart = all.filter((t) => !t.resolved && placeless(t))
   const deleted = all.filter((t) => !t.resolved && whereOf(t)?.state === 'detached')
   const resolved = all.filter((t) => t.resolved)
 
@@ -598,6 +729,16 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     if (result.ok) reread()
     return result
   }
+  const edit = async (comment: CommentItem, written: Written): Promise<WriteResult> => {
+    const result = await editComment(comment, written)
+    if (result.ok) reread()
+    return result
+  }
+  const remove = async (comment: CommentItem): Promise<WriteResult> => {
+    const result = await deleteComment(comment)
+    if (result.ok) reread()
+    return result
+  }
 
   const draftPlace = editor && draft ? commentPlace(editor, { id: DRAFT, ...draft }) : null
   const draftLine = draft?.quote ? `On “${quoteText(draft.quote)}”` : draftPlace ? wholeBlocksLine(editor, draftPlace) : ''
@@ -622,6 +763,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       page={page}
       viewer={viewer}
       onReact={viewer ? toggleReaction : undefined}
+      onEdit={edit}
+      onDelete={remove}
     />
   )
 
@@ -674,6 +817,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
         ) : (
           <>
             {open.map(card)}
+            {apart.map(card)}
             {deleted.length > 0 && (
               <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
                 {deleted.map(card)}

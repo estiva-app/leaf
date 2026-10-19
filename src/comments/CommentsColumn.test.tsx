@@ -632,3 +632,136 @@ describe('reactions on a comment (COMM-4)', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Makes sense, 1' })).toBeNull())
   })
 })
+
+describe('editing and deleting your own comment (COMM-5)', () => {
+  const mine = (tags: string[][], content: string): SignedEvent => ({ ...comment(tags, content), pubkey: ME })
+  const replyTo = (root: SignedEvent, content: string, by: string, place: string[][] = []): SignedEvent => ({
+    ...comment([], content),
+    pubkey: by,
+    tags: [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['p', root.pubkey], ...place, ['h', FOLDER]],
+  })
+  const line = (id: string) => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${id}"]`)
+  const more = (id: string) => within(line(id)!).queryByRole('button', { name: 'More' })
+  const choose = async (id: string, item: 'Edit message' | 'Delete message') => {
+    act(() => void fireEvent.click(more(id)!))
+    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: item })))
+  }
+
+  it("offers Edit and Delete on your own comment and reply, and neither on someone else's", async () => {
+    const theirs = comment([], 'Too long?')
+    const yours = replyTo(theirs, 'Cut it', ME)
+    const own = mine([], 'Mine')
+    await open([theirs, yours, own])
+    await waitFor(() => expect(line(own.id)).not.toBeNull())
+    expect(more(theirs.id)).toBeNull()
+    expect(more(yours.id)).not.toBeNull()
+    act(() => void fireEvent.click(more(own.id)!))
+    expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Edit message', 'Delete message'])
+  })
+
+  it("shows someone else's edit, made in Peek, without a reload", async () => {
+    const theirs = comment([], 'Too long?')
+    await open([theirs])
+    await waitFor(() => expect(line(theirs.id)).not.toBeNull())
+    const edit: SignedEvent = { id: '6'.repeat(64), pubkey: AUTHOR, created_at: 1_760_000_300, kind: 40003, tags: [['h', FOLDER], ['e', theirs.id], ['ts', '1760000300000']], content: 'Far too long?', sig: '' }
+    relay.events = [theirs, edit]
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => live.listeners.forEach((l) => l(FOLDER, edit)))
+      await act(() => vi.advanceTimersByTimeAsync(300))
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => expect(within(line(theirs.id)!).getByText('Far too long?')).toBeTruthy())
+  })
+
+  it('signed out, offers neither on what you wrote', async () => {
+    const own = mine([], 'Mine')
+    signedIn.pubkey = null
+    try {
+      await open([own])
+      await waitFor(() => expect(line(own.id)).not.toBeNull())
+      expect(more(own.id)).toBeNull()
+    } finally {
+      signedIn.pubkey = ME
+    }
+  })
+
+  it('opens your words in the shared box with the person as a chip, and Escape puts them back unsent', async () => {
+    const own = mine([], `Ask nostr:${encodeNpub(QA2)} first`)
+    await open([own, roster, profile(QA2, 'QA-2')])
+    await waitFor(() => expect(within(line(own.id)!).getByText('@QA-2')).toBeTruthy())
+    await choose(own.id, 'Edit message')
+    const edit = box('Edit message')
+    expect(edit.textContent).toContain('@QA-2')
+    expect(edit.textContent).not.toContain('npub')
+    act(() => void fireEvent.keyDown(edit, { key: 'Escape' }))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull())
+    expect(within(line(own.id)!).getByText('@QA-2')).toBeTruthy()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('saves an edit as a 40003 on the comment, in its Folder, and the card shows the new words, marked edited, on the same paragraph', async () => {
+    const own = mine([['block', PARAGRAPH]], 'Too long?')
+    await open([own])
+    await waitFor(() => expect(line(own.id)).not.toBeNull())
+    await choose(own.id, 'Edit message')
+    act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent('Far too long?').run())
+    publish.mockImplementationOnce(async (e) => {
+      relay.events = [...relay.events, { ...e, id: '8'.repeat(64), sig: '' } as SignedEvent]
+      return { ok: true }
+    })
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content, e.pubkey]).toEqual([40003, 'Far too long?', ME])
+    expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', own.id]]))
+    expect(e.tags.some((t) => t[0] === 'block')).toBe(false)
+    await waitFor(() => expect(within(line(own.id)!).getByText('Far too long?')).toBeTruthy())
+    expect(within(line(own.id)!).getByText('(edited)')).toBeTruthy()
+    expect(within(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!).getByText('On the paragraph')).toBeTruthy()
+  })
+
+  it('keeps your words in the box and says so when the relay refuses the edit', async () => {
+    const own = mine([], 'Too long?')
+    await open([own])
+    await waitFor(() => expect(line(own.id)).not.toBeNull())
+    await choose(own.id, 'Edit message')
+    act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent('Far too long?').run())
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    expect(await screen.findByText(/Not saved: it did not go through/)).toBeTruthy()
+    expect(box('Edit message').textContent).toContain('Far too long?')
+  })
+
+  it("deletes your comment after asking; QA-2's reply stays on its paragraph, highlighted, under the note, with no reply box and no Resolve", async () => {
+    const own = mine([['block', PARAGRAPH]], 'Too long?')
+    const theirs = replyTo(own, 'Cut it', QA2, [['block', PARAGRAPH]])
+    await open([own, theirs])
+    await waitFor(() => expect(line(theirs.id)).not.toBeNull())
+    await choose(own.id, 'Delete message')
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Its reply stays, under “This comment was deleted.”')).toBeTruthy()
+    expect(publish).not.toHaveBeenCalled()
+    // The relay stops returning the comment and keeps the deletion.
+    publish.mockImplementationOnce(async (e) => {
+      relay.events = [...relay.events.filter((x) => x.id !== own.id), { ...e, id: '7'.repeat(64), sig: '' } as SignedEvent]
+      return { ok: true }
+    })
+    act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Delete message' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    expect([publish.mock.calls[0][0].kind, publish.mock.calls[0][0].tags]).toEqual([5, [['e', own.id]]])
+    const card = await waitFor(() => {
+      const c = document.querySelector<HTMLElement>(`[data-thread-id="${own.id}"]`)!
+      expect(within(c).getByText('This comment was deleted.')).toBeTruthy()
+      return c
+    })
+    expect(within(card).getByText('Cut it')).toBeTruthy()
+    expect(within(card).getByText('On the paragraph')).toBeTruthy()
+    expect(within(card).queryByRole('button', { name: 'Resolve' })).toBeNull()
+    expect(page().querySelector(`[data-comment-id="${own.id}"]`)).not.toBeNull()
+    act(() => void page().editor.emit('commentSelect', { id: own.id }))
+    await waitFor(() => expect(card.getAttribute('data-active')).toBe('true'))
+    expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
+  })
+})
