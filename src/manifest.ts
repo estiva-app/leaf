@@ -169,8 +169,8 @@ export function manifestContent() {
 
 /**
  * The unsigned `kind:31990`: `d`, the kind it claims, and NIP-89's `web` tag —
- * where "Open in Leaf" goes, Leaf's `/f/<naddr>` route, which a manifest
- * declaring `document` MUST publish so any shared file opens in it (SPEC §7.8).
+ * where "Open in Leaf" goes, Leaf's `/f/<naddr>` route. Since LTX-4 its content
+ * also declares the `document` aspect (SPEC §7.8).
  */
 export function buildManifest(pubkey: string, createdAtMs: number, appUrl = DEFAULT_APP_URL): UnsignedEvent {
   const tags: NostrTag[] = [
