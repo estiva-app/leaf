@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
-import { IconMessage, IconMessagePlus } from '@tabler/icons-react'
+import { IconLink, IconMessage, IconMessagePlus } from '@tabler/icons-react'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { TextSelection } from '@tiptap/pm/state'
@@ -93,6 +93,7 @@ export function LiveDocument({
   onLeftUnsaved,
   onEditor,
   onCommentOn,
+  onCopyLink,
 }: {
   value: string
   /** Where its unsaved text is held when the sign-in ends while it is open (AUT-5): the document's address. */
@@ -106,6 +107,8 @@ export function LiveDocument({
   onEditor?: (editor: Editor | null) => void
   /** Comment, from a block's handle or the selection's strip: start a comment on that block, or on what is selected. */
   onCommentOn?: (anchor: SelectionAnchor) => void
+  /** Copy link, from a block's handle: copy the link to that block, as Ship's block menu does. */
+  onCopyLink?: (blockId: string) => void
 }) {
   const [failed, setFailed] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -309,11 +312,17 @@ export function LiveDocument({
       <div className="flex flex-col gap-1">
         <EditorBlockHandle
           editor={editor}
-          actions={(block) =>
-            onCommentOn && block.id ? (
-              <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCommentOn({ blocks: [block.id!] })} />
-            ) : null
-          }
+          actions={(block) => {
+            // A block without an id yet has nothing to address, so it gets neither row (Ship's blockRows).
+            const id = block.id
+            if (!id || (!onCopyLink && !onCommentOn)) return null
+            return (
+              <>
+                {onCopyLink && <MenuItem label="Copy link" leading={<IconLink size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCopyLink(id)} />}
+                {onCommentOn && <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCommentOn({ blocks: [id] })} />}
+              </>
+            )
+          }}
         >
           <EditorTableControls editor={editor}>
             <EditorContent editor={editor} className="-mx-2 cursor-text px-2 py-1" data-document="editing" />

@@ -1,5 +1,5 @@
-import type { ForeignObject } from '@estiva-app/interop'
-import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
+import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
@@ -143,5 +143,32 @@ describe("a page's summary, under its title", () => {
     leave(box)
     expect(await screen.findByText(/Summary not saved\./)).toBeTruthy()
     expect(box.editor.getText()).toBe('What we decided on Friday.')
+  })
+})
+
+describe('a page opened at one of its blocks', () => {
+  const body = descriptionTextToBlockDocument('# Plan\n\nThe paragraph a link names.')
+  const withBody = () =>
+    ({ ...doc(), slots: { ...doc().slots, [BODY_SLOT]: { value: serializeBlockDocument(body), format: 'blocks' } } }) as unknown as ForeignObject
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  it('scrolls the block the link names to the middle of the page, and says nothing', async () => {
+    const block = blockIds(body)[1]
+    const scrolled: string[] = []
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
+      scrolled.push(this.getAttribute('data-block-id') ?? '')
+    })
+    window.history.replaceState(null, '', `/document/plan-page-1#block-${block}`)
+    render(<ToastProvider><FilePage file={withBody()} loading={false} /></ToastProvider>)
+    await waitFor(() => expect(scrolled).toContain(block))
+    expect(screen.queryByText(/That part of the page/)).toBeNull()
+    spy.mockRestore()
+  })
+
+  it('says the part was removed when the block is gone, and opens the page', async () => {
+    window.history.replaceState(null, '', '/document/plan-page-1#block-0123456789ab')
+    render(<ToastProvider><FilePage file={withBody()} loading={false} /></ToastProvider>)
+    expect(await screen.findByText('That part of the page was removed.')).toBeTruthy()
+    expect(await screen.findByText('The paragraph a link names.')).toBeTruthy()
   })
 })

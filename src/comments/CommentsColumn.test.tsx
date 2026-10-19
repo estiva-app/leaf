@@ -57,6 +57,8 @@ vi.mock('@estiva-app/interop', async (importOriginal) => {
 
 import { FilePage } from '../pages/FilePage'
 import { LiveDocument } from '../document/LiveDocument'
+import { blockLinkOf } from '../document/blockLink'
+import { buildManifest } from '../manifest'
 import { CommentsColumn } from './CommentsColumn'
 import type { Anchor } from './comments'
 import { query } from '../relay/bridge'
@@ -881,7 +883,9 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     content: '',
     sig: '',
   })
-  const MANIFESTS = [manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851), manifest('leaf', 'https://leaf.example/p/<slug>-<d>#block-<block>', 30842)]
+  // Leaf's own shape, as its manifest publishes it: a made-up one hid that production declared none (38796b47).
+  const LEAF_SHAPE = buildManifest(SHIP, 1_760_000_000_000, 'https://leaf.example/').tags.find((t) => t[0] === 'urls')![1]
+  const MANIFESTS = [manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851), manifest('leaf', LEAF_SHAPE, 30842)]
   const file = (kind: number, pubkey: string, d: string): SignedEvent => ({ id: `${d.padEnd(62, '0')}77`, pubkey, created_at: 1_760_000_000, kind, tags: [['d', d]], content: '', sig: '' })
 
   const ISSUE_D = '22222222-2222-4222-8222-222222222222'
@@ -894,8 +898,8 @@ describe('the card and the live parts under the box (COMM-8)', () => {
   const TWO = descriptionTextToBlockDocument('# Two\n\nThe block that stays live.')
   const TWO_BLOCK = blockIds(TWO)[1]
   const TWO_ADDRESS = `30842:${AUTHOR}:${TWO_D}`
-  const PART_URL = `https://leaf.example/p/two-${TWO_D}#block-${TWO_BLOCK}`
-  const OWN_BLOCK_URL = `https://leaf.example/p/plan-${PAGE_D}#block-${PARAGRAPH}`
+  const PART_URL = blockLinkOf({ kind: 30842, address: TWO_ADDRESS, slots: { title: { value: 'Two' } } } as unknown as ForeignObject, TWO_BLOCK, 'https://leaf.example')!
+  const OWN_BLOCK_URL = blockLinkOf({ kind: 30842, address: ADDRESS, slots: { title: { value: 'Plan' } } } as unknown as ForeignObject, PARAGRAPH, 'https://leaf.example')!
   const uriOf = (address: string) => {
     const [kind, pubkey, identifier] = address.split(':')
     return `nostr:${encodeNaddr({ kind: Number(kind), pubkey, identifier, relays: [] })}`

@@ -1,7 +1,7 @@
 import { nestingOf, type ForeignObject } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
 import { Chip, KindIcon, thingKindOf, type NavTreeGroup, type NavTreeNode } from '@estiva-app/ui'
-import { filePath } from '../route'
+import { dOf, pagePath } from '../route'
 import type { Workspace, WorkspaceFolder } from './useWorkspace'
 
 /** What a file is called on screen: its title, or what a file with none is. */
@@ -40,7 +40,7 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
   const node: NavTreeNode = {
     id: fileKey(file),
     label: titleOf(file),
-    href: file.naddr ? filePath(file.naddr) : '/',
+    href: pagePath({ ...file, title: file.slots.title?.value }),
     icon: <KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />,
     hint: isDocument(file) ? undefined : <Chip type="neutral" label={typeOf(file)} />,
   }
@@ -97,4 +97,31 @@ export function findFile(
     if (file) return { file, folder }
   }
   return null
+}
+
+/**
+ * Find a document by its `d`, the identity its `/document/<slug>-<d>` link
+ * carries. The link names no author, so it is read by SPEC §7.7's one-author
+ * rule: a `d` two authors hold names nothing, rather than whichever was read
+ * first — the same link is a raw URL in every other app then.
+ */
+export function findDocument(
+  folders: WorkspaceFolder[] | null,
+  children: Workspace['children'],
+  d: string,
+): { file: ForeignObject; folder: WorkspaceFolder } | null {
+  let found: { file: ForeignObject; folder: WorkspaceFolder } | null = null
+  for (const folder of folders ?? []) {
+    const listed = folder.contents?.files ?? []
+    const under = listed.flatMap((f) => {
+      const read = children[f.ref]
+      return Array.isArray(read) ? read : []
+    })
+    for (const file of [...listed, ...under]) {
+      if (!isDocument(file) || file.unreachable || !file.address || dOf(file.address) !== d) continue
+      if (found && found.file.address !== file.address) return null
+      found ??= { file, folder }
+    }
+  }
+  return found
 }

@@ -3,7 +3,7 @@
  * `returnTo` is the one thing between a sign-in and an open redirect.
  */
 import { describe, expect, it } from 'vitest'
-import { newDocumentFolderOf, newDocumentPath, ownPath } from './route'
+import { documentPath, newDocumentFolderOf, newDocumentPath, ownPath, pagePath, routeOf } from './route'
 
 describe('ownPath, the place sign-in returns to', () => {
   it('keeps a path of Leaf’s own, query and all', () => {
@@ -21,6 +21,28 @@ describe('ownPath, the place sign-in returns to', () => {
     ['nothing', ''],
   ])('refuses %s', (_, returnTo) => {
     expect(ownPath(returnTo)).toBeNull()
+  })
+})
+
+describe("a document's link", () => {
+  const D = 'a1b2c3d4-0000-4000-8000-00000000000a'
+
+  it('opens the document its d names, whatever the slug says after a rename', () => {
+    expect(routeOf(documentPath(D, 'Plan for Friday'))).toEqual({ page: 'document', d: D })
+    expect(documentPath(D, 'Plan for Friday')).toBe(`/document/plan-for-friday-${D}`)
+    expect(routeOf(`/document/an-old-title-${D}`)).toEqual({ page: 'document', d: D })
+    expect(routeOf(`/document/${D}`)).toEqual({ page: 'document', d: D })
+  })
+
+  it('still opens a file by its old /f/ link, and a path with no d is Home', () => {
+    expect(routeOf('/f/naddr1xyz')).toEqual({ page: 'file', naddr: 'naddr1xyz' })
+    expect(routeOf('/document/plan')).toEqual({ page: 'home' })
+    expect(routeOf('/document/%E0%A4%A')).toEqual({ page: 'home' })
+  })
+
+  it("opens a document at its own link and another app's file at its naddr", () => {
+    expect(pagePath({ kind: 30842, address: `30842:${'a'.repeat(64)}:${D}`, naddr: 'naddr1d', title: 'Plan' })).toBe(`/document/plan-${D}`)
+    expect(pagePath({ kind: 30851, address: `30851:${'a'.repeat(64)}:${D}`, naddr: 'naddr1i', title: 'Bug' })).toBe('/f/naddr1i')
   })
 })
 
