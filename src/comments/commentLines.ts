@@ -14,6 +14,7 @@ import {
   type RenderBlock,
   type RenderInline,
 } from '@estiva-app/protocol'
+import { MAX_PARTS } from '@estiva-app/conversation'
 
 /** The `nostr:` reference a file's address is written as, for its chip and card; undefined for anything that is not an address. */
 export function referenceOfValue(value: string): string | undefined {
@@ -105,7 +106,10 @@ function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type
 export function placeComment(blocks: readonly RenderBlock[], event: { tags: readonly (readonly string[])[] }, context: PlaceContext = {}): PlacedComment {
   const { here, resolveLink } = context
   const named = new Set(valuesIn(blocks, resolveLink))
-  const parts = partsOf({ tags: event.tags.map((t) => [...t]) }).filter((part) => part.address !== here && named.has(part.address))
+  // At most six live under one comment (§13.6.1): each one re-reads its file every 30 s.
+  const parts = partsOf({ tags: event.tags.map((t) => [...t]) })
+    .filter((part) => part.address !== here && named.has(part.address))
+    .slice(0, MAX_PARTS)
   // A file's card only: Leaf reads files, not another app's messages, so a message's line keeps its row instead of a card that never loads.
   const embeds = embedsOf(event).filter((embed) => embed.value.includes(':'))
   const carried = embeds.length ? cardsIn(embeds, blocks, parts, resolveLink) : []
