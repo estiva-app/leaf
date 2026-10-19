@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { relayLabel } from '../config'
 import { exactly, whenOf } from '../home/recent'
 import type { Recent } from '../home/useRecent'
-import { filePath } from '../route'
+import { documentPath, dOf } from '../route'
 
 export interface HomePageProps {
   /** The relay this build is set to, or `null` when the app runs alone. */
@@ -77,7 +77,7 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
             ) : (
               recent.map((r) => (
                 // The summary is one line under the title, and the row keeps to one line without it (the short-summary story's LeafRecentRow).
-                <Card key={r.address} href={filePath(r.naddr)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
+                <Card key={r.address} href={documentPath(dOf(r.address), r.title)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
                   <span className={cn('flex shrink-0', r.summary && 'pt-0.5')}>
                     <KindIcon kind="file" />
                   </span>

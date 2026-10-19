@@ -1,4 +1,4 @@
-import { actionProblems, buildActionEvents } from '@estiva-app/interop'
+import { actionProblems, buildActionEvents, matchObjectUrl, urlPatternsOf } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
 import { describe, expect, it } from 'vitest'
 import { buildManifest, manifestContent } from './manifest'
@@ -72,5 +72,29 @@ describe("Leaf's 31990 declares the document app (SPEC §7.8, LTX-4)", () => {
     expect(event.tags.filter((t) => t[0] === 'k')).toEqual([['k', String(KIND.DOCUMENT)]])
     expect(JSON.parse(event.content).aspect).toBe('document')
     expect(event.tags.find((t) => t[0] === 'web')).toEqual(['web', 'https://leaf.estiva.app/f/<bech32>', 'naddr'])
+  })
+})
+
+describe("A Leaf link reads back as its document in any app (SPEC §7.7)", () => {
+  const D = 'a1b2c3d4-0000-4000-8000-00000000000a'
+  const shapes = urlPatternsOf(buildManifest(ME, 1_759_000_000_000, 'https://leaf.estiva.app/'))
+
+  it('a link to one block names the document and the block', () => {
+    expect(matchObjectUrl(`https://leaf.estiva.app/document/plan-${D}#block-28bad0a555e9`, shapes)).toEqual({
+      identifier: D,
+      by: 'd',
+      kind: KIND.DOCUMENT,
+      block: '28bad0a555e9',
+    })
+  })
+
+  it('a link to the whole page names the document, whatever its slug says', () => {
+    expect(matchObjectUrl(`https://leaf.estiva.app/document/an-old-title-${D}`, shapes)).toMatchObject({ identifier: D, by: 'd', kind: KIND.DOCUMENT })
+    expect(matchObjectUrl(`https://leaf.estiva.app/document/plan-${D}`, shapes)?.block).toBeUndefined()
+  })
+
+  it('another host, or the old /f/ link, names nothing', () => {
+    expect(matchObjectUrl(`https://leaf.example/document/plan-${D}`, shapes)).toBeNull()
+    expect(matchObjectUrl('https://leaf.estiva.app/f/naddr1qqxyz', shapes)).toBeNull()
   })
 })

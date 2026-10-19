@@ -1,21 +1,55 @@
 import { useSyncExternalStore } from 'react'
+import { identifierFromRef, objectRef } from '@estiva-app/interop'
+import { KIND } from '@estiva-app/protocol'
 
 /**
- * Leaf's two places: Home at `/`, and one file at `/f/<naddr>`. The address is
- * the file's own `naddr`, so a link to a page names the page rather than where
- * it was opened from. Kept to the History API: two routes need no router.
+ * Leaf's places: Home at `/`, a document at `/document/<slug>-<d>`, and any
+ * other file at `/f/<naddr>`. A document's link is the shape Leaf's manifest
+ * declares in `urls` (SPEC §7.7), so every app reads it as the page's chip and
+ * `#block-<id>` as one of its blocks; the word is Miky's (the issue
+ * conversation, 2026-10-19). The `/f/` link of a document still opens it, and
+ * is replaced by the document's own link once the page is found. Kept to the
+ * History API: three routes need no router.
  */
-export type Route = { page: 'home' } | { page: 'file'; naddr: string }
+export type Route = { page: 'home' } | { page: 'file'; naddr: string } | { page: 'document'; d: string }
 
 /** The place a path names. Anything Leaf does not know is Home. */
 export function routeOf(pathname: string): Route {
-  const match = /^\/f\/([a-z0-9]+)\/?$/.exec(pathname)
-  return match ? { page: 'file', naddr: match[1] } : { page: 'home' }
+  const file = /^\/f\/([a-z0-9]+)\/?$/.exec(pathname)
+  if (file) return { page: 'file', naddr: file[1] }
+  // The slug is decoration and may be stale after a rename: only the `d` names the page (SPEC §7.7).
+  const document = /^\/document\/([^/]+)\/?$/.exec(pathname)
+  const d = document ? identifierFromRef(decodeRef(document[1])) : null
+  return d ? { page: 'document', d } : { page: 'home' }
 }
 
-/** The path of a file's page. */
+function decodeRef(ref: string): string {
+  try {
+    return decodeURIComponent(ref)
+  } catch {
+    return ref
+  }
+}
+
+/** The path of a file's page by its `naddr`: what a file of another app opens at. */
 export function filePath(naddr: string): string {
   return `/f/${naddr}`
+}
+
+/** The path of a document's page: `/document/<slug>-<d>`, the slug from its title. */
+export function documentPath(d: string, title?: string): string {
+  return `/document/${objectRef(d, title)}`
+}
+
+/** The `d` of an address `<kind>:<pubkey>:<d>`. */
+export function dOf(address: string): string {
+  return address.split(':').slice(2).join(':')
+}
+
+/** Where a file opens in Leaf: a document at its own link, anything else at its `naddr`. */
+export function pagePath(file: { kind: number; address?: string; naddr?: string; title?: string }): string {
+  if (file.kind === KIND.DOCUMENT && file.address) return documentPath(dOf(file.address), file.title)
+  return file.naddr ? filePath(file.naddr) : '/'
 }
 
 /**

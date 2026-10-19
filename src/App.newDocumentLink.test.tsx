@@ -73,7 +73,8 @@ describe('a link to New document in a Folder', () => {
     expect(tag(doc, 'h')).toBe(QA)
     expect(tag(doc, 'title')).toBe('Friday notes')
     expect([add.kind, tag(add, 'op'), tag(add, 'h')]).toEqual([1852, 'add', QA])
-    await waitFor(() => expect(window.location.pathname).toMatch(/^\/f\/naddr1/))
+    // At the document's own link, the one every app reads (SPEC §7.7).
+    await waitFor(() => expect(window.location.pathname).toBe(`/document/friday-notes-${tag(doc, 'd')}`))
     // The page took the link's place: Back does not land on New document again.
     expect(window.history.length).toBe(entries)
   })

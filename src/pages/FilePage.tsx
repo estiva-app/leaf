@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { Divider, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { Banner, Divider, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
@@ -111,11 +112,22 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const docBody = useRef<HTMLDivElement | null>(null)
   // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
   const addressable = !body?.value || body.format === 'blocks'
+  function copyBlockLink(block: string) {
+    const link = blockLinkOf(file, block)
+    if (link) void copyLink(link, (label) => showToast({ label }))
+  }
+  // Opened at `#block-<id>`: scrolled to it, or told it is gone (Ship's issue page says the same).
+  const [missing, dismissMissing] = useLinkedBlock(body?.value ?? '', body?.format ?? 'marker')
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
         <Panel title={title} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+            {missing && (
+              <Banner tone="info" onDismiss={dismissMissing}>
+                {missing === 'detached' ? 'That part of the page was removed.' : 'That link is to a part of the page, which is no longer written in parts.'}
+              </Banner>
+            )}
             {/* The page's heading, as Katerina's prototype draws it, and its summary 4px under it (the short-summary story's LeafFilePage). */}
             <div className="flex flex-col gap-1">
               <h1 className="text-h1 text-text-primary">
@@ -134,6 +146,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               onLeftUnsaved={leftUnsaved}
               onEditor={setEditor}
               onCommentOn={addressable ? setDraft : undefined}
+              onCopyLink={addressable ? copyBlockLink : undefined}
             />
           </div>
         </Panel>

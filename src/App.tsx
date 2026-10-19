@@ -17,7 +17,7 @@ import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
 import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { NewDocumentDialog } from './folders/NewDocumentDialog'
-import { findFile, groupsOf } from './folders/tree'
+import { fileKey, findDocument, findFile, groupsOf, isDocument } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
@@ -25,10 +25,10 @@ import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
-import { filePath, navigate, newDocumentFolderOf, replace, routeOf, usePathname } from './route'
+import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
-type Unlisted = { naddr: string; address: string; folder: string; folderName: string }
+type Unlisted = { address: string; folder: string; folderName: string }
 
 /** The app, with what the package's parts need around them: tooltips and toasts. */
 export function App() {
@@ -78,7 +78,16 @@ function Frame() {
     () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
     [folders, children, opened, setOpen, setFolderOpen],
   )
-  const open = route.page === 'file' ? findFile(folders, children, route.naddr) : null
+  const open =
+    route.page === 'file' ? findFile(folders, children, route.naddr) : route.page === 'document' ? findDocument(folders, children, route.d) : null
+  /*
+    A document opened by its old `/f/<naddr>` link: its own link takes the old one's place, block included, so the
+    address bar holds the link every app reads (SPEC §7.7).
+  */
+  const relink = route.page === 'file' && open && isDocument(open.file) ? pagePath({ ...open.file, title: open.file.slots.title?.value }) : null
+  useEffect(() => {
+    if (relink) replace(`${relink}${window.location.hash}`)
+  }, [relink])
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
@@ -120,15 +129,15 @@ function Frame() {
     }
     if (!result.ok) {
       const folderName = takers.find((f) => f.id === folder)?.name ?? 'its Folder'
-      setUnlisted({ naddr: result.naddr, address: result.address, folder, folderName })
-      go(filePath(result.naddr))
+      setUnlisted({ address: result.address, folder, folderName })
+      go(documentPath(dOf(result.address), title))
       return true
     }
     // Read the Folder first, so the document is in hand when it opens rather than "not found" for a moment,
     // and open its group, so the new row is there to see.
     await workspace.reloadFolder(folder)
     setFolderOpen(folder, true)
-    go(filePath(result.naddr))
+    go(documentPath(dOf(result.address), title))
     return true
   }
 
@@ -151,7 +160,7 @@ function Frame() {
         recent={workspace.failed ? 'failed' : recent}
         onNew={takers.length ? () => setMaking(true) : undefined}
       />
-    ) : unlisted?.naddr === route.naddr && !open ? (
+    ) : unlisted && route.page === 'document' && dOf(unlisted.address) === route.d && !open ? (
       <EmptyState
         scope="page"
         message={`This document was made, but ${unlisted.folderName} does not list it yet.`}
@@ -176,7 +185,7 @@ function Frame() {
                 takers.length ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => setMaking(true) }] : undefined
               }
               groups={workspace.failed ? [] : groups}
-              selected={route.page === 'file' ? route.naddr : undefined}
+              selected={open ? fileKey(open.file) : route.page === 'file' ? route.naddr : undefined}
               emptyMessage={workspace.failed ? 'Your Folders could not be read. Reload to try again.' : 'No Folders yet.'}
             />
           </Sidebar>

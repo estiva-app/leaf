@@ -168,15 +168,24 @@ export function manifestContent() {
 }
 
 /**
- * The unsigned `kind:31990`: `d`, the kind it claims, and NIP-89's `web` tag —
- * where "Open in Leaf" goes, Leaf's `/f/<naddr>` route. Since LTX-4 its content
- * also declares the `document` aspect (SPEC §7.8).
+ * The unsigned `kind:31990`: `d`, the kind it claims, NIP-89's `web` tag —
+ * where "Open in Leaf" goes, Leaf's `/f/<naddr>` route — and the `urls` shape
+ * of a document's own link. Since LTX-4 its content also declares the
+ * `document` aspect (SPEC §7.8).
  */
 export function buildManifest(pubkey: string, createdAtMs: number, appUrl = DEFAULT_APP_URL): UnsignedEvent {
   const tags: NostrTag[] = [
     ['d', MANIFEST_D_TAG],
     ['k', DOCUMENT],
     ['web', `${appUrl.replace(/\/+$/, '')}/f/<bech32>`, 'naddr'],
+    /*
+      `urls` is inbound (SPEC §7.7): how any app reads a pasted Leaf link back
+      to its document, drawing the page's chip, and with `#block-<id>` that
+      block's live part — Ship's issue links in the same shape. The block menu's
+      Copy link builds from it. The `/f/<naddr>` links Leaf gave out before are
+      not declared: §7.7 keeps bech32 out of an app URL, so only Leaf opens them.
+    */
+    ['urls', `${appUrl.replace(/\/+$/, '')}/document/<slug>-<d>#block-<block>`, DOCUMENT],
   ]
   return { pubkey, created_at: Math.floor(createdAtMs / 1000), kind: 31990, tags, content: JSON.stringify(manifestContent()) }
 }

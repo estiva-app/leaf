@@ -1,7 +1,11 @@
 import type { ForeignObject } from '@estiva-app/interop'
 import { describe, expect, it } from 'vitest'
-import { findFile, groupsOf, isDocument, typeOf, type Expansion } from './tree'
+import { findDocument, findFile, groupsOf, isDocument, typeOf, type Expansion } from './tree'
 import type { WorkspaceFolder } from './useWorkspace'
+
+const A = 'a'.repeat(64)
+const B = 'b'.repeat(64)
+const D = 'a1b2c3d4-0000-4000-8000-00000000000a'
 
 const file = (over: Partial<ForeignObject>): ForeignObject =>
   ({ ref: 'r', kind: 30842, eventId: 'e', widget: 'card', slots: {}, meta: [], actions: [], viaRecommendation: false, ...over }) as ForeignObject
@@ -17,11 +21,23 @@ const none: Expansion = { children: {}, opened: new Set(), setOpen: () => {}, se
 describe('the Folders tree', () => {
   it("draws a document by its title, and leaves out a file the viewer cannot read", () => {
     const groups = groupsOf(
-      [folder([file({ ref: 'p', naddr: 'naddr1p', slots: { title: { value: 'Friday notes' } } }), file({ ref: 'x', naddr: 'naddr1x', unreachable: true })])],
+      [folder([file({ ref: 'p', naddr: 'naddr1p', address: `30842:${A}:${D}`, slots: { title: { value: 'Friday notes' } } }), file({ ref: 'x', naddr: 'naddr1x', unreachable: true })])],
       none,
     )!
     expect(groups[0].title).toBe('QA')
-    expect(groups[0].nodes?.map((n) => [n.label, n.href])).toEqual([['Friday notes', '/f/naddr1p']])
+    // A document's row opens its own link, the one every app reads (SPEC §7.7).
+    expect(groups[0].nodes?.map((n) => [n.label, n.href])).toEqual([['Friday notes', `/document/friday-notes-${D}`]])
+  })
+
+  it('finds a document by the d its link carries, and finds nothing when two authors hold that d', () => {
+    const mine = file({ ref: 'm', naddr: 'naddr1m', address: `30842:${A}:${D}` })
+    const issue = file({ ref: 'i', kind: 30851, naddr: 'naddr1i', address: `30851:${A}:${D}` })
+    expect(findDocument([folder([issue, mine])], {}, D)?.file.ref).toBe('m')
+    // Listed twice, in two Folders, it is still one document.
+    expect(findDocument([folder([mine]), folder([mine])], {}, D)?.file.ref).toBe('m')
+    const theirs = file({ ref: 't', naddr: 'naddr1t', address: `30842:${B}:${D}` })
+    expect(findDocument([folder([mine]), folder([theirs])], {}, D)).toBeNull()
+    expect(findDocument([folder([issue])], {}, D)).toBeNull()
   })
 
   it('labels another app\'s file by its type, never its app', () => {
