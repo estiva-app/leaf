@@ -1,11 +1,17 @@
-import type { RelayState } from '@estiva-app/protocol'
-import { Card, cn, EmptyState, KindIcon, Panel, SectionHeader, SkeletonList, WithTooltip } from '@estiva-app/ui'
+import { KIND, type RelayState } from '@estiva-app/protocol'
+import { Card, cn, EmptyState, KindIcon, Panel, SectionHeader, SkeletonList, thingKindOf, WithTooltip } from '@estiva-app/ui'
 import { IconFilePlus } from '@tabler/icons-react'
 import { useState } from 'react'
 import { relayLabel } from '../config'
 import { exactly, whenOf } from '../home/recent'
 import type { Recent } from '../home/useRecent'
 import { filePath } from '../route'
+
+/** The icon a recent row draws, read from its address's kind: Leaf's own page, or the kind of another app's file. */
+function kindOf(address: string) {
+  const kind = Number(address.split(':')[0])
+  return kind === KIND.DOCUMENT ? 'file' : thingKindOf(kind)
+}
 
 export interface HomePageProps {
   /** The relay this build is set to, or `null` when the app runs alone. */
@@ -79,7 +85,8 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
                 // The summary is one line under the title, and the row keeps to one line without it (the short-summary story's LeafRecentRow).
                 <Card key={r.address} href={filePath(r.naddr)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
                   <span className={cn('flex shrink-0', r.summary && 'pt-0.5')}>
-                    <KindIcon kind="file" />
+                    {/* A page, or another app's file whose text was written here: an issue reads as one (LTX). */}
+                    <KindIcon kind={kindOf(r.address)} />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
                     <WithTooltip label={r.title} wrapperClassName="min-w-0">

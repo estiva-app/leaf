@@ -93,6 +93,7 @@ export function LiveDocument({
   onLeftUnsaved,
   onEditor,
   onCommentOn,
+  readOnly = false,
 }: {
   value: string
   /** Where its unsaved text is held when the sign-in ends while it is open (AUT-5): the document's address. */
@@ -106,6 +107,8 @@ export function LiveDocument({
   onEditor?: (editor: Editor | null) => void
   /** Comment, from a block's handle or the selection's strip: start a comment on that block, or on what is selected. */
   onCommentOn?: (anchor: SelectionAnchor) => void
+  /** Read, never written: an archived file's text (SPEC §6.5). Comments on it stay open. */
+  readOnly?: boolean
 }) {
   const [failed, setFailed] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -231,6 +234,7 @@ export function LiveDocument({
       ],
       // Built once. A value coming back must not rebuild the editor under the caret; see the effect below.
       content: held ?? toEditorDocument(documentForEditing(value, format)),
+      editable: !readOnly,
       editorProps: {
         attributes: { 'aria-label': 'Document', role: 'textbox', 'aria-multiline': 'true', class: richTextClassName('default', 'outline-none') },
         handleKeyDown: (view, event) => {
@@ -280,6 +284,11 @@ export function LiveDocument({
 
   const empty = useEditorState({ editor, selector: ({ editor: ed }) => !ed || ed.isEmpty })
 
+  // Archived or un-archived while open: the same editor, so the comments' highlights stay drawn in it.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && editor.isEditable === readOnly) editor.setEditable(!readOnly)
+  }, [editor, readOnly])
+
   // "Load it": theirs replaces what you have not saved.
   const load = () => {
     setBase(latest.current.value)
@@ -318,12 +327,12 @@ export function LiveDocument({
           <EditorTableControls editor={editor}>
             <EditorContent editor={editor} className="-mx-2 cursor-text px-2 py-1" data-document="editing" />
           </EditorTableControls>
-          {empty && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Type / for headings and lists.</span>}
+          {empty && !readOnly && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Type / for headings and lists.</span>}
         </EditorBlockHandle>
         <EditorLineCards editor={editor} resolved={references} />
         <SelectionToolbar
           editor={editor}
-          marks={['bold', 'italic', 'underline', 'code']}
+          marks={readOnly ? [] : ['bold', 'italic', 'underline', 'code']}
           actions={
             onCommentOn
               ? [
