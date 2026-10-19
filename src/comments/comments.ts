@@ -219,7 +219,12 @@ export function earnedTags(written: Written, own: { address: string; event?: str
 const NOT_SENT = 'it did not go through'
 const SIGNED_OUT = 'you are signed out'
 
-/** A comment on the document — on a selection or on whole blocks when `anchor` is given (SPEC §13.6), else on the whole of it. */
+/**
+ * A comment on the document — on a selection or on whole blocks when `anchor` is given (SPEC §13.6), else on the whole of it —
+ * in the document's own Folder.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
+ */
 export function postComment(doc: Commented, written: Written, anchor?: Anchor): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const place = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
@@ -230,18 +235,21 @@ export function postComment(doc: Commented, written: Written, anchor?: Anchor): 
 /**
  * A reply in a thread. It names the top-level comment and copies its `block`
  * and `quote`, so the thread keeps its place if the comment is deleted (SPEC
- * §13.6). A thread whose comment was deleted takes no reply.
+ * §13.6). It goes into its comment's Folder (its `h`), so a thread filed in
+ * another Folder stays in one. A thread whose comment was deleted takes no reply.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  */
 export function postReply(doc: Commented, thread: Thread, written: Written): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const root = thread.root
   if (!root) return Promise.resolve({ ok: false, reason: 'the comment was deleted' })
   const tags = [...earnedTags(written, { address: doc.address, event: thread.id }), ...underTags(written)]
+  const folder = root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
   return send(
     pubkey
-      ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder: doc.folder, body: written.text, files: written.files, tags })
+      ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder, body: written.text, files: written.files, tags })
       : null,
     NOT_SENT,
     SIGNED_OUT,

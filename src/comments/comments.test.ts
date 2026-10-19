@@ -62,6 +62,14 @@ describe('a comment from the column', () => {
     expect(e.tags.some((t) => t[0] === 'p' && t[1] === ME)).toBe(false)
   })
 
+  it("is a reply in its comment's Folder when the comment was filed in another one than the document's", async () => {
+    const elsewhere = '7c1f3e2a-9b4d-4e6f-8a2b-1c3d5e7f9a0b'
+    const root = comment([], 'Filed elsewhere', elsewhere)
+    await postReply(DOC, { id: root.id, root: itemOf(root), replies: [], resolved: false }, { text: 'Seen' })
+    const e = sent()
+    expect(e.tags.filter((t) => t[0] === 'h')).toEqual([['h', elsewhere]])
+  })
+
   it('resolves a thread with the 9101 Peek writes, in the document\'s Folder', async () => {
     const root = comment([], 'x')
     await setResolved(DOC, { id: root.id, root: itemOf(root), replies: [], resolved: false }, true)
@@ -140,7 +148,7 @@ describe("a document's threads", () => {
   it('groups replies under their comment, keeps the block, reads the last resolution, and keeps a comment filed in another Folder', async () => {
     const onBlock = comment([['block', 'b1']], 'On the paragraph')
     const whole = comment([], 'On the page')
-    // Reads go by anchor, never bounded by Folder (record a-thread-belongs-to-what-it-is-about).
+    // Reads go by anchor, never bounded by Folder (record what-belongs-to-a-file-is-stored-with-it).
     const elsewhere = comment([], 'Filed in another Folder', 'another-folder')
     const reply = event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', onBlock.id], ['k', '1111'], ['h', FOLDER]], 'Cut it', ME)
     const resolvedThenReopened = [
