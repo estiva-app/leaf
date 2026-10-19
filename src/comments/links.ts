@@ -1,0 +1,120 @@
+/**
+ * What an app link names — SPEC §7.7 — for the card under a comment and the
+ * live part of a block link (COMM-8). Ship's `api/linkCards.ts` and Peek's
+ * `cardValueOfUrl` / `blockOfUrl`, with Leaf's relay.
+ *
+ * A URL names an object when a published manifest's `urls` pattern claims its
+ * host and `<type>`, and then **one author** holds that `d`: the `#d` query asks
+ * for two, and a `d` two authors hold names nothing, so somebody publishing the
+ * same `(kind, d)` cannot put their object's card under a link to another's. A
+ * link to one block (`#block-<id>`) names its file too, so it reads as that
+ * file's chip, and the block is its part (§13.6.1).
+ *
+ * Asked once per link for the tab: a link names the same object for as long as
+ * its owner's manifest does. A read that failed is forgotten, so the next ask
+ * tries again. Whoever draws from these answers listens with `linksChanged`.
+ */
+import { useMemo, useSyncExternalStore } from 'react'
+import { matchObjectUrl, urlPatternsOf } from '@estiva-app/interop'
+import type { LinkResolver, PartPointer, SignedEvent } from '@estiva-app/protocol'
+import { query } from '../relay/bridge'
+import { referenceOfValue } from './commentLines'
+
+const EVENT_ID = /^[0-9a-f]{64}$/i
+
+/** The manifests apps publish (kind 31990), read once per tab; an empty or failed read is asked again next time. */
+let manifests: Promise<SignedEvent[]> | null = null
+function declaredManifests(): Promise<SignedEvent[]> {
+  manifests ??= query([{ kinds: [31990], limit: 500 }]).then(
+    (found) => {
+      if (found.length === 0) manifests = null
+      return found
+    },
+    (error: unknown) => {
+      manifests = null
+      throw error
+    },
+  )
+  return manifests
+}
+
+/** What one link names: an address or a message's event id, and the block when it links to one. */
+interface Answer {
+  value: string | null
+  block?: PartPointer
+}
+
+/** Throws when the relay could not be asked. */
+async function answerOf(url: string): Promise<Answer> {
+  const shapes = (await declaredManifests()).flatMap((manifest) => urlPatternsOf(manifest))
+  const hit = matchObjectUrl(url, shapes)
+  if (!hit) return { value: null }
+  if (hit.by === 'id') return { value: EVENT_ID.test(hit.identifier) ? hit.identifier.toLowerCase() : null }
+  const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
+  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  const found = await query([filter])
+  const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+  if (authors.size !== 1) return { value: null }
+  const address = `${[...authors][0]}:${hit.identifier}`
+  return hit.block ? { value: address, block: { address, block: hit.block } } : { value: address }
+}
+
+const asked = new Map<string, Promise<void>>()
+const known = new Map<string, Answer>()
+const listeners = new Set<() => void>()
+let answered = 0
+
+function ask(url: string): Promise<void> {
+  let pending = asked.get(url)
+  if (!pending) {
+    pending = answerOf(url).then(
+      (answer) => {
+        known.set(url, answer)
+        answered += 1
+        for (const listener of listeners) listener()
+      },
+      () => {
+        asked.delete(url)
+      },
+    )
+    asked.set(url, pending)
+  }
+  return pending
+}
+
+/** What a link names, from what has come back: undefined until it has, and for nothing. A `LinkResolver`. */
+export const knownLinkValue: LinkResolver = (url) => known.get(url)?.value ?? undefined
+
+/** The file and block a link to one block names, from what has come back. */
+export const knownBlockOf = (url: string): PartPointer | undefined => known.get(url)?.block
+
+/** The chip a pasted app URL becomes (`LinkChips`' `referenceOf`): its file's, a block link's too. Leaf draws files, not another app's messages. */
+export function linkReferenceOf(url: string): string | undefined {
+  const value = knownLinkValue(url)
+  return value ? referenceOfValue(value) : undefined
+}
+
+/**
+ * Ask what each of these links names; settles when every answer is in, and
+ * rejects when a read failed (it left no answer), so `LinkChips` forgets those
+ * links and asks again.
+ */
+export async function askLinks(urls: readonly string[]): Promise<void> {
+  const waiting = [...new Set(urls)].filter((url) => !known.has(url))
+  await Promise.all(waiting.map(ask))
+  if (waiting.some((url) => !known.has(url))) throw new Error('A link could not be asked about; asked again later.')
+}
+
+/** Called with a listener; it is called each time a link's answer comes back. Returns the unsubscribe. */
+export function linksChanged(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+/** {@link knownLinkValue}, as a new function each time an answer comes back: a component that draws from it draws again as each lands. */
+export function useKnownLinks(): LinkResolver {
+  const count = useSyncExternalStore(linksChanged, () => answered)
+  return useMemo(() => (count >= 0 ? (url: string) => knownLinkValue(url) : knownLinkValue), [count])
+}

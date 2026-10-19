@@ -1,0 +1,43 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as Stories from './PlacedObject.stories'
+
+<Meta of={Stories} />
+
+# PlacedObject
+
+A file drawn in a card or a row of its own: the card a comment carries, the
+card under the comment box while it is written, and a line that is only a
+link to a file.
+
+<Canvas of={Stories.Detailed} />
+
+**Seen in**: the comments column, under a comment and under the comment box.
+
+## When
+
+- `detailed`: the card a comment carries (`embed`, SPEC §13.6.2), and the one
+  file a comment being written names, under the box with its ✕ (COMM-8).
+- `compact`: a comment's line that is only a link to a file, as its row
+  (SPEC §13.2).
+
+## When not
+
+- A file named inside a sentence → **ReferenceChip**.
+- The cards under a line of the page's own text → **LineCards**.
+- One block of a file, live → `PartView`, in the package's PartCard frame.
+
+## How
+
+```tsx
+import { PlacedObject } from '../document/references'
+
+<PlacedObject uri="nostr:naddr1…" layout="detailed" />
+```
+
+## What it owns
+
+- **The file, read once per tab**: from **ReferencesProvider** when the page's
+  read holds it, else read by itself, so a card under the box finds its file.
+- **A placeholder while it is read**, and "not available" for a file the reader
+  cannot read, never blank.
+- **Opening the file beside Leaf** on a click, as "Open in" does.
