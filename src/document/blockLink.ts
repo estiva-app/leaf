@@ -43,8 +43,11 @@ export function linkedBlock(hash: string = window.location.hash): string | undef
 /** What a person does that means they have taken the page over from a block link's scroll. */
 const PERSON = ['wheel', 'touchmove', 'keydown', 'pointerdown'] as const
 
-/** The page's path and fragment: a new one is a new arrival, a block link's included. */
-const currentArrival = () => `${window.location.pathname}${window.location.hash}`
+/*
+  The fragment: a new one is a new arrival. Not the path — the page is drawn afresh for each document, and an
+  old `/f/` link replaced by the document's own link is the same arrival, not a second one.
+*/
+const currentArrival = () => window.location.hash
 function subscribeArrival(changed: () => void): () => void {
   window.addEventListener('popstate', changed)
   window.addEventListener('hashchange', changed)

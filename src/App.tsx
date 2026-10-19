@@ -28,7 +28,7 @@ import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
-type Unlisted = { naddr: string; address: string; folder: string; folderName: string }
+type Unlisted = { address: string; folder: string; folderName: string }
 
 /** The app, with what the package's parts need around them: tooltips and toasts. */
 export function App() {
@@ -129,7 +129,7 @@ function Frame() {
     }
     if (!result.ok) {
       const folderName = takers.find((f) => f.id === folder)?.name ?? 'its Folder'
-      setUnlisted({ naddr: result.naddr, address: result.address, folder, folderName })
+      setUnlisted({ address: result.address, folder, folderName })
       go(documentPath(dOf(result.address), title))
       return true
     }

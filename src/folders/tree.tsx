@@ -88,15 +88,20 @@ export function findFile(
   key: string,
 ): { file: ForeignObject; folder: WorkspaceFolder } | null {
   for (const folder of folders ?? []) {
-    const listed = folder.contents?.files ?? []
-    const under = listed.flatMap((f) => {
-      const read = children[f.ref]
-      return Array.isArray(read) ? read : []
-    })
-    const file = [...listed, ...under].find((f) => fileKey(f) === key && !f.unreachable)
+    const file = filesIn(folder, children).find((f) => fileKey(f) === key && !f.unreachable)
     if (file) return { file, folder }
   }
   return null
+}
+
+/** A Folder's files: its listing, then the rows read under them. */
+function filesIn(folder: WorkspaceFolder, children: Workspace['children']): ForeignObject[] {
+  const listed = folder.contents?.files ?? []
+  const under = listed.flatMap((f) => {
+    const read = children[f.ref]
+    return Array.isArray(read) ? read : []
+  })
+  return [...listed, ...under]
 }
 
 /**
@@ -112,12 +117,7 @@ export function findDocument(
 ): { file: ForeignObject; folder: WorkspaceFolder } | null {
   let found: { file: ForeignObject; folder: WorkspaceFolder } | null = null
   for (const folder of folders ?? []) {
-    const listed = folder.contents?.files ?? []
-    const under = listed.flatMap((f) => {
-      const read = children[f.ref]
-      return Array.isArray(read) ? read : []
-    })
-    for (const file of [...listed, ...under]) {
+    for (const file of filesIn(folder, children)) {
       if (!isDocument(file) || file.unreachable || !file.address || dOf(file.address) !== d) continue
       if (found && found.file.address !== file.address) return null
       found ??= { file, folder }
