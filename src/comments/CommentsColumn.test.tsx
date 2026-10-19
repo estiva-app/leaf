@@ -826,15 +826,23 @@ describe('attaching a file to a comment (COMM-6)', () => {
     ])
   })
 
-  it('says why a file did not upload, keeps the words in the box, and sends nothing', async () => {
+  it('says why a file did not upload, keeps the words, sends nothing on Enter, and sends the words once its ✕ takes it off', async () => {
     blobs.upload.mockResolvedValue({ ok: false, reason: 'Too large' })
     await open([])
     await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
     write('Comment on this document…', 'Here is the deck')
     pick(new File(['big'], 'deck.pdf', { type: 'application/pdf' }))
     await waitFor(() => expect(within(footBox()).getByText('Too large')).toBeTruthy())
+    expect(screen.getByText('Remove the file that did not upload to send.')).toBeTruthy()
+    sendWithEnter('Comment on this document…')
     expect(box('Comment on this document…').editor.getText()).toBe('Here is the deck')
     expect(publish).not.toHaveBeenCalled()
+    act(() => void fireEvent.click(within(footBox()).getByRole('button', { name: 'Remove deck.pdf' })))
+    sendWithEnter('Comment on this document…')
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content]).toEqual([1111, 'Here is the deck'])
+    expect(e.tags.some((t) => t[0] === 'imeta')).toBe(false)
   })
 
   it("draws a comment's picture and PDF under its words, fetched as the reader", async () => {
