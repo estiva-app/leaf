@@ -14,7 +14,7 @@ import {
   REACTION_HORIZON,
   type DraftStore,
 } from '@estiva-app/conversation'
-import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument } from '@estiva-app/protocol'
+import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Imeta } from '@estiva-app/protocol'
 import {
   AddReactionButton,
   Card,
@@ -45,8 +45,10 @@ import {
   setCommentAnchors,
   type CommentAnchor,
   type CommentPlace,
+  type BoxFile,
   type MentionPerson,
   type SendAnswer,
+  type UploadAnswer,
 } from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
 import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
@@ -55,6 +57,8 @@ import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
 import { exactly, whenOf } from '../home/recent'
 import { deleteComment, editComment, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
+import { uploadFile } from '../relay/blobs'
+import { CommentFiles } from './CommentFiles'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
@@ -126,8 +130,17 @@ function useNames(pubkeys: readonly string[]): Record<string, string> {
   return names
 }
 
-// Ship's `/` Insert rows (Miky, 16 October), after the shared Format section; File comes with attaching a file.
-const INSERT = [commentBoxRows.mention, commentBoxRows.urgent, commentBoxRows.reference]
+// Ship's `/` Insert rows (Miky, 16 October), after the shared Format section. An edit drops File and Urgent itself.
+const INSERT = [commentBoxRows.file, commentBoxRows.mention, commentBoxRows.urgent, commentBoxRows.reference]
+
+/** The box's upload: the file goes on the relay at once, and its `imeta` is what the send names (COMM-6). */
+async function upload(file: File): Promise<UploadAnswer> {
+  const answer = await uploadFile(file)
+  return answer.ok ? { accepted: true, value: answer.file } : { accepted: false, reason: answer.reason }
+}
+
+/** The files a send names, in the order they were attached: the box sends only uploaded ones, each with the `imeta` `upload` answered. */
+const filesOf = (files: readonly BoxFile[]): Imeta[] => files.flatMap((f) => (f.value ? [f.value as Imeta] : []))
 
 // One store for every box in the tab; a browser that refuses storage keeps no drafts.
 let drafts: DraftStore | null = null
@@ -185,8 +198,9 @@ function Box({
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
-  const send = async (body: JSONContent): Promise<SendAnswer> => {
-    const written = composerText(body as EditorDocument)
+  const send = async (body: JSONContent, files: readonly BoxFile[] = []): Promise<SendAnswer> => {
+    const attached = filesOf(files)
+    const written = { ...composerText(body as EditorDocument), ...(attached.length ? { files: attached } : {}) }
     const result = await onSend(written)
     return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
@@ -221,6 +235,7 @@ function Box({
       draft={edit ? undefined : draft}
       edit={edit}
       extensions={keepTyped}
+      upload={upload}
       send={send}
       autoFocus={autoFocus || !!edit}
       onSent={onSent ? () => onSent() : undefined}
@@ -436,6 +451,8 @@ function CommentLine({
           <CarriedCards cards={placed.cards} />
         </>
       )}
+      {/* Under the edit box too: an edit leaves a comment's files as they are. */}
+      <CommentFiles files={comment.files} />
       {confirming && own && <ConfirmDeleteComment own={own} onClose={() => setConfirming(false)} />}
       <ReactionRow reactions={reactions} options={REACTION_OPTIONS} nameOf={(pubkey) => named(pubkey) ?? 'Someone'} viewer={viewer} onToggle={onReact ? (emoji) => void toggle(emoji) : undefined} className="pt-1" />
       {refused && <FieldLine tone="error">Not reacted: {refused}.</FieldLine>}

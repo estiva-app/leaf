@@ -32,7 +32,7 @@ const comment = (tags: string[][], content: string, h = FOLDER) =>
   event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['a', ADDRESS], ['k', '30842'], ['p', AUTHOR], ...tags, ['h', h]], content)
 const reply = (to: SignedEvent, tags: string[][], content: string, pubkey = ME) =>
   event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', to.id], ['k', '1111'], ['p', to.pubkey], ...tags, ['h', FOLDER]], content, pubkey)
-const itemOf = (e: SignedEvent): CommentItem => ({ id: e.id, by: e.pubkey, at: e.created_at, body: e.content, edited: false, event: e, reactions: [] })
+const itemOf = (e: SignedEvent): CommentItem => ({ id: e.id, by: e.pubkey, at: e.created_at, body: e.content, edited: false, files: [], event: e, reactions: [] })
 
 describe('a comment from the column', () => {
   it("on a block is a 1111 on the document, naming the block and carrying the document's Folder as h", async () => {
@@ -85,6 +85,19 @@ describe('a comment from the column', () => {
     await deleteComment(itemOf(root))
     expect(sent().kind).toBe(5)
     expect(sent().tags).toContainEqual(['e', root.id])
+  })
+
+  it('names each attached file by an imeta, on a comment and on a reply, as Ship and Peek write them (SPEC §6.8)', async () => {
+    const png = { url: 'https://relay.test/abc.png', m: 'image/png', x: 'c'.repeat(64), size: 7909, filename: 'shot.png' }
+    const pdf = { url: 'https://relay.test/def.pdf', m: 'application/pdf', x: 'd'.repeat(64), size: 193, filename: 'plan.pdf' }
+    await postComment(DOC, { text: 'See these', files: [png, pdf] }, { blocks: ['b1'] })
+    const imetas = sent().tags.filter((t) => t[0] === 'imeta')
+    expect(imetas).toHaveLength(2)
+    expect(imetas[0]).toEqual(expect.arrayContaining([`url ${png.url}`, 'm image/png', `x ${png.x}`, 'filename shot.png']))
+    expect(imetas[1]).toEqual(expect.arrayContaining([`url ${pdf.url}`, 'm application/pdf', `x ${pdf.x}`]))
+    const root = comment([], 'x')
+    await postReply(DOC, { id: root.id, root: itemOf(root), replies: [], resolved: false }, { text: '', files: [pdf] })
+    expect(sent().tags.filter((t) => t[0] === 'imeta')).toEqual([expect.arrayContaining([`url ${pdf.url}`])])
   })
 
   it('gives plain words when the relay refuses, for the box to say after "Not sent:"', async () => {
@@ -166,6 +179,16 @@ describe("a document's threads", () => {
     ]
     const { threads } = await readThreads(DOC)
     expect(threads.map((t) => [t.root?.body, t.root?.edited, t.blocks, t.replies.map((r) => [r.body, r.edited])])).toEqual([['Far too long?', true, ['b1'], [['Cut it in half', true]]]])
+  })
+
+  it("reads a comment's files from its imeta, and an edit's set replaces them (SPEC §6.8)", async () => {
+    const imeta = (name: string) => ['imeta', `url https://relay.test/${name}`, 'm image/png', `x ${name[0].repeat(64)}`, 'size 7909', `filename ${name}`]
+    const root = comment([imeta('a.png'), imeta('b.png')], 'Two shots')
+    const answer = reply(root, [imeta('c.png')], 'And one')
+    relay.events = [root, answer, event(40003, [['h', FOLDER], ['e', answer.id], ['ts', '1'], imeta('d.png')], 'And one', ME)]
+    const { threads } = await readThreads(DOC)
+    expect(threads[0].root?.files?.map((f) => f.filename)).toEqual(['a.png', 'b.png'])
+    expect(threads[0].replies[0].files?.map((f) => f.filename)).toEqual(['d.png'])
   })
 
   it("keeps a deleted comment's replies, without it, on the place they copied from it", async () => {
