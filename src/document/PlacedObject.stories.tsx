@@ -23,7 +23,7 @@ const meta = {
     (Story) => (
       <ReferencesProvider value={resolved}>
         {/* The comments column's width, so the card reads at its real size. */}
-        <div className="w-90 p-4">
+        <div className="w-96 p-4">
           <Story />
         </div>
       </ReferencesProvider>

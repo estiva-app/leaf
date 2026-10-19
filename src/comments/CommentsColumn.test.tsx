@@ -1022,10 +1022,3 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     expect(drawn.textContent).toContain('still')
   })
 })
-
-/** Lets the link answers that have come back draw: a few turns of the promise queue. */
-async function settleLinks() {
-  await act(async () => {
-    for (let i = 0; i < 10; i++) await Promise.resolve()
-  })
-}
