@@ -1,7 +1,7 @@
 import { actionProblems, buildActionEvents } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
 import { describe, expect, it } from 'vitest'
-import { manifestContent } from './manifest'
+import { buildManifest, manifestContent } from './manifest'
 
 /*
   What Claude and every other consumer send when they act on a document through
@@ -63,5 +63,14 @@ describe("Leaf's manifest: a document's summary (SPEC §6.12)", () => {
     const root = (built as Exclude<typeof built, string>).find((e) => e.kind === KIND.DOCUMENT)!
     expect(tag(root, 'title')).toBe('Launch notes')
     expect(root.tags.some((t) => t[0] === 'summary')).toBe(false)
+  })
+})
+
+describe("Leaf's 31990 declares the document app (SPEC §7.8, LTX-4)", () => {
+  it('owns documents, declares `document`, and opens any file by its naddr', () => {
+    const event = buildManifest(ME, 1_759_000_000_000, 'https://leaf.estiva.app/')
+    expect(event.tags.filter((t) => t[0] === 'k')).toEqual([['k', String(KIND.DOCUMENT)]])
+    expect(JSON.parse(event.content).aspect).toBe('document')
+    expect(event.tags.find((t) => t[0] === 'web')).toEqual(['web', 'https://leaf.estiva.app/f/<bech32>', 'naddr'])
   })
 })

@@ -32,6 +32,13 @@ export function manifestContent() {
   return {
     name: 'Leaf',
     about: 'Documents in your Folders, written together by everyone in the Folder.',
+    /*
+      Leaf is also the document app (SPEC §7.8, LTX-4): it writes the title,
+      summary and text of any file whose own app shares them, as Peek shows
+      every file's conversation. It owns documents as well; the `k` tag says so.
+      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
+    */
+    aspect: 'document',
     records: {
       changeKind: CHANGE,
       targetTag: 'a',
@@ -162,8 +169,8 @@ export function manifestContent() {
 
 /**
  * The unsigned `kind:31990`: `d`, the kind it claims, and NIP-89's `web` tag —
- * where "Open in Leaf" goes, Leaf's `/f/<naddr>` route. No `aspect`: an app
- * owning a kind is a specialized app (SPEC §7.8).
+ * where "Open in Leaf" goes, Leaf's `/f/<naddr>` route, which a manifest
+ * declaring `document` MUST publish so any shared file opens in it (SPEC §7.8).
  */
 export function buildManifest(pubkey: string, createdAtMs: number, appUrl = DEFAULT_APP_URL): UnsignedEvent {
   const tags: NostrTag[] = [
