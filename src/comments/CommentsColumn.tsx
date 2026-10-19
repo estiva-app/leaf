@@ -14,7 +14,7 @@ import {
   REACTION_HORIZON,
   type DraftStore,
 } from '@estiva-app/conversation'
-import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument } from '@estiva-app/protocol'
+import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Imeta } from '@estiva-app/protocol'
 import {
   AddReactionButton,
   Card,
@@ -59,7 +59,6 @@ import { deleteComment, editComment, postComment, postReply, react, setResolved,
 import { viewerPubkey } from '../relay/bridge'
 import { uploadFile } from '../relay/blobs'
 import { CommentFiles } from './CommentFiles'
-import type { Imeta } from '@estiva-app/protocol'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
@@ -140,8 +139,8 @@ async function upload(file: File): Promise<UploadAnswer> {
   return answer.ok ? { accepted: true, value: answer.file } : { accepted: false, reason: answer.reason }
 }
 
-/** The uploaded files a send names, in the order they were attached: `upload` answered each with its `imeta`. */
-const filesOf = (files: readonly BoxFile[]): Imeta[] => files.flatMap((f) => (f.state === 'ready' && f.value ? [f.value as Imeta] : []))
+/** The files a send names, in the order they were attached: the box sends only uploaded ones, each with the `imeta` `upload` answered. */
+const filesOf = (files: readonly BoxFile[]): Imeta[] => files.flatMap((f) => (f.value ? [f.value as Imeta] : []))
 
 // One store for every box in the tab; a browser that refuses storage keeps no drafts.
 let drafts: DraftStore | null = null

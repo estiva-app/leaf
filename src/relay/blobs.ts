@@ -1,4 +1,5 @@
 import { fetchBlob, imetaFor, uploadBlob, type Imeta } from '@estiva-app/protocol'
+import { sessionEnded } from '../auth/estivaId'
 import { relaySigner } from './bridge'
 
 /**
@@ -22,10 +23,12 @@ const cache = new Map<string, Promise<string>>()
 
 /** An object URL for a file on this relay, fetched as whoever is signed in. Rejects when it cannot be read: the card says so. */
 export function blobObjectUrl(mediaUrl: string): Promise<string> {
-  const held = cache.get(mediaUrl)
-  if (held) return held
   const relay = relaySigner()
   if (!relay) return Promise.reject(new Error('signed out'))
+  // Kept per reader: someone else signing in in this tab reads with their own authorization, not the bytes held for the last one.
+  const key = `${relay.pubkey} ${mediaUrl}`
+  const held = cache.get(key)
+  if (held) return held
   if (!sameOriginAs(mediaUrl, relay.relayUrl)) return Promise.reject(new Error(`not this relay's media: ${mediaUrl}`))
   const pending = fetchBlob({
     relayUrl: relay.relayUrl,
@@ -35,8 +38,8 @@ export function blobObjectUrl(mediaUrl: string): Promise<string> {
     // The type is the server's say-so, and a blob: URL opens as Leaf: only pictures and PDFs keep theirs.
   }).then(({ bytes, contentType }) => URL.createObjectURL(new Blob([bytes], { type: safeBlobType(contentType) })))
   // A failure is not kept: an expired sign-in is the usual cause, and the next draw is when a renewed one works.
-  pending.catch(() => cache.delete(mediaUrl))
-  if (cache.size < CACHE_LIMIT) cache.set(mediaUrl, pending)
+  pending.catch(() => cache.delete(key))
+  if (cache.size < CACHE_LIMIT) cache.set(key, pending)
   return pending
 }
 
@@ -86,7 +89,8 @@ export async function uploadFile(file: File): Promise<Uploaded> {
   } catch (error) {
     // The relay's words name its limits in bytes: the console keeps them, the person gets what it means.
     console.warn('[relay] upload refused', file.name, error)
-    return { ok: false, reason: uploadRefusal(error) }
+    // Estiva ID refused to sign because the sign-in ended: signing in again is what helps, as a send says (bridge's signingFailure).
+    return { ok: false, reason: sessionEnded() ? 'Sign in again' : uploadRefusal(error) }
   }
 }
 

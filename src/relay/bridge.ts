@@ -39,7 +39,8 @@ export function viewerPubkey(): string | null {
 /** The relay's origin and the signed-in signer, for a request the bridge does not make itself (a file's bytes, `blobs.ts`); `null` signed out. */
 export function relaySigner(): { relayUrl: string; signer: Signer; pubkey: string } | null {
   const b = bridge()
-  return b && RELAY_URL ? { relayUrl: RELAY_URL, signer: b.signer, pubkey: b.pubkey } : null
+  // bridge() is null without a relay, so RELAY_URL is set whenever b is.
+  return b ? { relayUrl: RELAY_URL!, signer: b.signer, pubkey: b.pubkey } : null
 }
 
 /**

@@ -3,11 +3,12 @@ import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 
 const RELAY = 'https://relay.test'
 const ME = 'a'.repeat(64)
-const signed = vi.hoisted(() => ({ events: [] as UnsignedEvent[] }))
+const signed = vi.hoisted(() => ({ events: [] as UnsignedEvent[], viewer: 'a'.repeat(64), ended: false }))
+vi.mock('../auth/estivaId', () => ({ sessionEnded: () => (signed.ended ? 'expired' : null) }))
 vi.mock('./bridge', () => ({
   relaySigner: () => ({
     relayUrl: 'https://relay.test',
-    pubkey: 'a'.repeat(64),
+    pubkey: signed.viewer,
     signer: {
       sign: async (unsigned: UnsignedEvent): Promise<SignedEvent> => {
         signed.events.push(unsigned)
@@ -51,8 +52,11 @@ const has = (bytes: Uint8Array, text: string) => new TextDecoder('latin1').decod
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   clearBlobCache()
   signed.events = []
+  signed.viewer = ME
+  signed.ended = false
 })
 
 describe('uploading a file for a comment', () => {
@@ -81,6 +85,12 @@ describe('uploading a file for a comment', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ status: 500, text: async () => 'storage: io error' })))
     expect(await uploadFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toEqual({ ok: false, reason: 'Could not upload' })
   })
+
+  it('says to sign in again when the upload failed because the sign-in ended', async () => {
+    signed.ended = true
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 401, text: async () => 'unauthorized' })))
+    expect(await uploadFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toEqual({ ok: false, reason: 'Sign in again' })
+  })
 })
 
 describe("reading a comment's file", () => {
@@ -88,12 +98,27 @@ describe("reading a comment's file", () => {
     const sha = 'e'.repeat(64)
     const get = vi.fn(async () => ({ status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => PNG.buffer, text: async () => '' }))
     vi.stubGlobal('fetch', get)
-    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:leaf/1' }))
+    const made = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:leaf/1')
     expect(await blobObjectUrl(`${RELAY}/media/${sha}.png`)).toBe('blob:leaf/1')
     expect(get).toHaveBeenCalledTimes(1)
     expect(signed.events[0].tags).toContainEqual(['t', 'get'])
     await expect(blobObjectUrl(`https://elsewhere.test/media/${sha}.png`)).rejects.toThrow(/not this relay/)
     expect(get).toHaveBeenCalledTimes(1)
     expect(signed.events).toHaveLength(1)
+    expect(made).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads a file again, with their own signature, for someone else signed in in the same tab', async () => {
+    const url = `${RELAY}/media/${'e'.repeat(64)}.png`
+    const get = vi.fn(async () => ({ status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => PNG.buffer, text: async () => '' }))
+    vi.stubGlobal('fetch', get)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:leaf/1')
+    await blobObjectUrl(url)
+    await blobObjectUrl(url)
+    expect(get).toHaveBeenCalledTimes(1)
+    signed.viewer = 'b'.repeat(64)
+    await blobObjectUrl(url)
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(signed.events.map((e) => e.pubkey)).toEqual([ME, 'b'.repeat(64)])
   })
 })

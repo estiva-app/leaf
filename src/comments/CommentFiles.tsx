@@ -27,7 +27,7 @@ export function CommentFiles({ files }: { files: readonly Imeta[] }) {
             alt={isImage ? (file.alt ?? name) : undefined}
             size={file.size}
             contentType={file.m}
-            // The relay's thumbnail in the column; the original only when it is opened.
+            // The relay's thumbnail in the column; the original only when it is opened. Another file is fetched to open, as in Ship.
             remoteSrc={isImage ? (file.thumb ?? file.url) : file.url}
             remoteFullSrc={isImage ? file.url : undefined}
             fetchImage={blobObjectUrl}
