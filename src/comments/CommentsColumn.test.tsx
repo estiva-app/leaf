@@ -722,6 +722,28 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     expect(within(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!).getByText('On the paragraph')).toBeTruthy()
   })
 
+  /* As AUT-5's tests above: the passkey screen takes the page's place, and the page draws again after the tap. */
+  it('keeps your edit box open, with the words you typed, through a sign-in ending, and Save writes those words after the tap', async () => {
+    const own = mine([], 'Too long?')
+    await open([own])
+    await waitFor(() => expect(line(own.id)).not.toBeNull())
+    await choose(own.id, 'Edit message')
+    act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent('Far too long?').run())
+    act(() => {
+      holdTypingFor(ME)
+      holdTyping()
+    })
+    cleanup()
+
+    await open([own])
+    await waitFor(() => expect(box('Edit message').editor.getText()).toBe('Far too long?'))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content, e.pubkey]).toEqual([40003, 'Far too long?', ME])
+    expect(e.tags).toContainEqual(['e', own.id])
+  })
+
   it('keeps your words in the box and says so when the relay refuses the edit', async () => {
     const own = mine([], 'Too long?')
     await open([own])

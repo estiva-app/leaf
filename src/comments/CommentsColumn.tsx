@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
+import { Extension } from '@tiptap/core'
 import type { Editor, JSONContent } from '@tiptap/react'
 import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconMessage, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
 import {
@@ -155,7 +156,8 @@ interface BoxPeople {
  * a-refused-action-is-undone-and-your-text-comes-back). What is written is kept
  * as a draft under `draftKey`; give the box a React `key` per destination.
  * Given `editing`, it is the same box in its edit mode: the comment's words
- * with their chips, Save and Cancel, and no draft.
+ * with their chips, Save and Cancel, and no draft. What is typed there goes to
+ * `editing.onTyped`, so a sign-in ending can hold it (AUT-5).
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
  */
@@ -178,8 +180,8 @@ function Box({
   autoFocus?: boolean
   /** Called once the box has let go of an accepted send. */
   onSent?: () => void
-  /** The comment being edited, and how to stop: Save is `onSend`. */
-  editing?: { comment: CommentItem; onCancel: () => void }
+  /** The comment being edited, and how to stop: Save is `onSend`. `typed`: the words held through a sign-in ending, to open with instead. */
+  editing?: { comment: CommentItem; onCancel: () => void; typed?: () => JSONContent | null; onTyped?: (body: JSONContent) => void }
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
@@ -189,7 +191,23 @@ function Box({
     return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
   // The words an edit opens with are the comment's as the edit began: a re-read while editing does not reset them.
-  const [opened] = useState(() => (editing ? (composerDocument(editing.comment.body, { personLabel: knownName }, urgentOf(editing.comment)) as JSONContent) : undefined))
+  const [opened] = useState(() =>
+    editing ? (editing.typed?.() ?? (composerDocument(editing.comment.body, { personLabel: knownName }, urgentOf(editing.comment)) as JSONContent)) : undefined,
+  )
+  // The package's edit mode keeps no draft: this tells the column each change, for the ending to hold.
+  const [keepTyped] = useState(() => {
+    const onTyped = editing?.onTyped
+    return onTyped
+      ? [
+          Extension.create({
+            name: 'keepTypedEdit',
+            onUpdate() {
+              onTyped(this.editor.getJSON())
+            },
+          }),
+        ]
+      : undefined
+  })
   const edit = editing && opened ? { body: opened, onCancel: editing.onCancel, onSave: (body: JSONContent) => send(body) } : undefined
   return (
     <CommentBox
@@ -202,6 +220,7 @@ function Box({
       insert={INSERT}
       draft={edit ? undefined : draft}
       edit={edit}
+      extensions={keepTyped}
       send={send}
       autoFocus={autoFocus || !!edit}
       onSent={onSent ? () => onSent() : undefined}
@@ -261,6 +280,11 @@ interface OwnActions {
   reply: boolean
   /** The replies a deleted comment leaves behind, which the question says stay. */
   replies: number
+  /** Whether its edit box is open: the column holds it, so a sign-in ending can put it back (AUT-5). */
+  editing: boolean
+  onEditing: (open: boolean) => void
+  typed: () => JSONContent | null
+  onTyped: (body: JSONContent) => void
 }
 
 /** The ⋮ menu on your own comment, as the approved story draws it (Comments everywhere/Leaf column). */
@@ -339,7 +363,8 @@ function CommentLine({
   /** Present on your own comment: Edit and Delete. */
   own?: OwnActions
 }) {
-  const [editing, setEditing] = useState(false)
+  const editing = !!own?.editing
+  const setEditing = (open: boolean) => own?.onEditing(open)
   const [confirming, setConfirming] = useState(false)
   const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
   const [refused, setRefused] = useState<string | null>(null)
@@ -387,7 +412,7 @@ function CommentLine({
           placeholder="Edit message"
           scope={own.scope}
           people={own.people}
-          editing={{ comment, onCancel: () => setEditing(false) }}
+          editing={{ comment, onCancel: () => setEditing(false), typed: own.typed, onTyped: own.onTyped }}
           onSend={async (written) => {
             const result = await own.onSave(written)
             if (result.ok) setEditing(false)
@@ -497,6 +522,14 @@ function eventIdOf(uri: string): string | null {
   }
 }
 
+/** The one edit box open in the column, and what is typed in it, held there so a sign-in ending can put both back (AUT-5). */
+interface OpenEdit {
+  id: string | null
+  open: (id: string | null) => void
+  typed: () => JSONContent | null
+  onTyped: (body: JSONContent) => void
+}
+
 /** A thread as a card in the column. Clicking it finds its place in the text; open, it takes a reply. */
 function ThreadCard({
   thread,
@@ -514,6 +547,7 @@ function ThreadCard({
   onReact,
   onEdit,
   onDelete,
+  edits,
 }: {
   thread: Thread
   where: Where
@@ -531,6 +565,7 @@ function ThreadCard({
   onReact?: OnReact
   onEdit: (comment: CommentItem, written: Written) => Promise<WriteResult>
   onDelete: (comment: CommentItem) => Promise<WriteResult>
+  edits: OpenEdit
 }) {
   const own = useMemo(() => commentsOf(thread), [thread])
   const scope = useMemo(() => ({ here: own, rest: page.filter((c) => !own.includes(c)) }), [own, page])
@@ -542,7 +577,18 @@ function ThreadCard({
   const deleted = !thread.root
   const actionsOn = (c: CommentItem): OwnActions | undefined =>
     offersEditAndDelete({ viewer, author: c.by })
-      ? { people, scope, onSave: (written) => onEdit(c, written), onDelete: () => onDelete(c), reply: c !== thread.root, replies: c === thread.root ? thread.replies.length : 0 }
+      ? {
+          people,
+          scope,
+          onSave: (written) => onEdit(c, written),
+          onDelete: () => onDelete(c),
+          reply: c !== thread.root,
+          replies: c === thread.root ? thread.replies.length : 0,
+          editing: edits.id === c.id,
+          onEditing: (open) => edits.open(open ? c.id : null),
+          typed: edits.typed,
+          onTyped: edits.onTyped,
+        }
       : undefined
   const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
   return (
@@ -584,11 +630,14 @@ const anchorOf = (t: Thread): CommentAnchor | null => (t.blocks ? { id: t.id, bl
 
 /**
  * Where a comment was being written when the sign-in ended (AUT-5): the words or blocks it is on, and the thread whose
- * reply box was open. The box's words already live in the draft store; this puts them back on the same place.
+ * reply box was open. The box's words already live in the draft store; this puts them back on the same place. An open
+ * edit box is held here whole, words included.
  */
 interface HeldComments {
   draft: Anchor | null
   active: string | null
+  /** Your comment whose edit box was open, and the words in it then: the package's edit mode keeps no draft. */
+  editing: { id: string; body: JSONContent | null } | null
 }
 const commentsHoldKey = (address: string | undefined) => (address ? `comments:${address}` : undefined)
 export const heldComments = (address: string | undefined) => heldFields<HeldComments>(commentsHoldKey(address))
@@ -610,9 +659,29 @@ export interface CommentsColumnProps {
 export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
   const { showToast } = useToast()
-  const [active, setActive] = useState<string | null>(() => heldComments(doc.address)?.active ?? null)
+  const [held] = useState(() => heldComments(doc.address))
+  const [active, setActive] = useState<string | null>(held?.active ?? null)
+  const [editingId, setEditingId] = useState<string | null>(held?.editing?.id ?? null)
+  const typed = useRef<JSONContent | null>(held?.editing?.body ?? null)
+  const edits = useMemo<OpenEdit>(
+    () => ({
+      id: editingId,
+      open: (id) => {
+        typed.current = null
+        setEditingId(id)
+      },
+      typed: () => typed.current,
+      onTyped: (body) => {
+        typed.current = body
+      },
+    }),
+    [editingId],
+  )
   const holdKey = commentsHoldKey(doc.address)
-  useHeldTyping(holdKey, () => (draft || active ? JSON.stringify({ draft, active } satisfies HeldComments) : undefined))
+  useHeldTyping(holdKey, () => {
+    const editing = editingId ? { id: editingId, body: typed.current } : null
+    return draft || active || editing ? JSON.stringify({ draft, active, editing } satisfies HeldComments) : undefined
+  })
   // Taken once it is back (the page took its draft as it drew): a place left open must not come back on the next visit.
   useEffect(() => {
     if (holdKey) releaseHeld(holdKey)
@@ -765,6 +834,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       onReact={viewer ? toggleReaction : undefined}
       onEdit={edit}
       onDelete={remove}
+      edits={edits}
     />
   )
 
