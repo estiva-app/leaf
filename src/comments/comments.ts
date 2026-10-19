@@ -102,7 +102,7 @@ export interface Threads {
  * comment's place. Gone with no deletion, it is outside this read, and has no
  * card.
  *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-thread-belongs-to-what-it-is-about.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
  */
 export async function readThreads(doc: Commented): Promise<Threads> {
