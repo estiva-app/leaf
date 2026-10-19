@@ -180,6 +180,24 @@ describe("a document's threads", () => {
     ])
   })
 
+  it('does not mark a comment edited when its edit saved the same words', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    relay.events = [root, event(40003, [['h', FOLDER], ['e', root.id], ['ts', '1']], 'Too long?')]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.body, t.root?.edited])).toEqual([['Too long?', false]])
+  })
+
+  it('keeps a resolved thread resolved when its comment is deleted', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    relay.events = [
+      reply(root, [['block', 'b1']], 'Cut it'),
+      event(9101, [['h', FOLDER], ['e', root.id], ['t', 'resolution'], ['action', 'resolved']]),
+      event(5, [['e', root.id]], '', AUTHOR),
+    ]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root, t.blocks, t.resolved])).toEqual([[null, ['b1'], true]])
+  })
+
   it('keeps a deleted comment whose replies copied no place, with no place', async () => {
     const root = comment([['block', 'b1']], 'Too long?')
     relay.events = [reply(root, [], 'Cut it'), event(5, [['e', root.id]], '', AUTHOR)]

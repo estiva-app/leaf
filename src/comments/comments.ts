@@ -92,7 +92,12 @@ export async function readThreads(doc: Commented): Promise<Threads> {
   const on = roots.filter((e) => isCommentOn(e, doc.address))
   const deleted = missingRoots.length ? await deletedRoots(missingRoots, replies) : []
   const all = [...on, ...[...on.map((root) => root.id), ...deleted].flatMap((id) => replies[id] ?? [])]
-  const decorations = all.length ? await decorationsOf(all.map((e) => ({ id: e.id, at: e.created_at })), query) : null
+  // The body lets an edit that changed nothing stay unmarked. A deleted comment is a target too, for its thread's resolution.
+  const targets = [
+    ...all.map((e) => ({ id: e.id, at: e.created_at, body: e.content })),
+    ...deleted.map((id) => ({ id, at: replies[id]?.[0]?.created_at ?? 0 })),
+  ]
+  const decorations = targets.length ? await decorationsOf(targets, query) : null
   const item = (event: SignedEvent): CommentItem => {
     const edit = decorations?.byId[event.id]?.edit
     return {
@@ -111,7 +116,8 @@ export async function readThreads(doc: Commented): Promise<Threads> {
     const placed = root ?? answers.find((e) => blockRunOf(e))
     const blocks = placed ? blockRunOf(placed) : undefined
     const quote = placed && blocks ? quoteOf(placed) : undefined
-    const last = root ? decorations?.byId[id]?.resolutions.at(-1) : undefined
+    // A resolved thread stays resolved when its comment is deleted.
+    const last = decorations?.byId[id]?.resolutions.at(-1)
     return {
       id,
       ...(blocks ? { blocks } : {}),
