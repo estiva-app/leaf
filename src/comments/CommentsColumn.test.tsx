@@ -29,6 +29,13 @@ vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => signedIn.pubkey,
 }))
 
+/* A file's bytes on the relay: the upload answers with its imeta or a reason, and a read with an object URL. Their own contract is `blobs.test.ts`. */
+const blobs = vi.hoisted(() => ({
+  upload: vi.fn<(file: File) => Promise<{ ok: true; file: Record<string, unknown> } | { ok: false; reason: string }>>(),
+  read: vi.fn<(url: string) => Promise<string>>(async () => 'blob:leaf/1'),
+}))
+vi.mock('../relay/blobs', () => ({ uploadFile: blobs.upload, blobObjectUrl: blobs.read }))
+
 /* Files another app owns, by reference: interop's projection of one needs its app's manifest, which is interop's own contract and tested there. */
 const files = vi.hoisted(() => ({ known: {} as Record<string, unknown> }))
 vi.mock('@estiva-app/interop', async (importOriginal) => {
@@ -226,13 +233,12 @@ describe('the comments column', () => {
     expect(e.content).toMatch(/^nostr:nevent1/)
   })
 
-  it("offers Ship's / rows in the box: Mention, Urgent and Reference, and no File", async () => {
+  it("offers Ship's / rows in the box: File, Mention, Urgent and Reference", async () => {
     await open([])
     write('Comment on this document…', '/')
     await screen.findAllByRole('option')
     const rows = screen.getAllByRole('option').map((o) => o.textContent ?? '')
-    for (const row of ['Mention', 'Urgent', 'Reference']) expect(rows.some((r) => r.includes(row))).toBe(true)
-    expect(rows.some((r) => /^File/.test(r))).toBe(false)
+    for (const row of ['File', 'Mention', 'Urgent', 'Reference']) expect(rows.some((r) => r.includes(row))).toBe(true)
   })
 
   it('sends with Ctrl+Enter as with Enter', async () => {
@@ -785,5 +791,64 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     act(() => void page().editor.emit('commentSelect', { id: own.id }))
     await waitFor(() => expect(card.getAttribute('data-active')).toBe('true'))
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
+  })
+})
+
+describe('attaching a file to a comment (COMM-6)', () => {
+  const PNG = { url: 'https://relay.test/media/' + '1'.repeat(64) + '.png', m: 'image/png', x: '1'.repeat(64), size: 7909, filename: 'shot.png' }
+  const PDF = { url: 'https://relay.test/media/' + '2'.repeat(64) + '.pdf', m: 'application/pdf', x: '2'.repeat(64), size: 193, filename: 'plan.pdf' }
+  // The box around the editor: the nearest ancestor holding its file picker.
+  const footBox = () => {
+    let at: HTMLElement | null = box('Comment on this document…')
+    while (at && !at.querySelector('input[type=file]')) at = at.parentElement
+    expect(at, 'the box offers files').not.toBeNull()
+    return at!
+  }
+  const pick = (file: File) => act(() => void fireEvent.change(footBox().querySelector('input[type=file]')!, { target: { files: [file] } }))
+  afterEach(() => blobs.upload.mockReset())
+
+  it('uploads a picked picture and a dropped PDF, and the comment names both by imeta once they are on the relay', async () => {
+    blobs.upload.mockImplementation(async (file) => ({ ok: true, file: file.name === 'shot.png' ? PNG : PDF }))
+    await open([])
+    await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
+    write('Comment on this document…', 'See these')
+    pick(new File(['png'], 'shot.png', { type: 'image/png' }))
+    act(() => void fireEvent.drop(footBox(), { dataTransfer: { files: [new File(['pdf'], 'plan.pdf', { type: 'application/pdf' })] } }))
+    await waitFor(() => expect(blobs.upload).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(within(footBox()).getByText('plan.pdf')).toBeTruthy())
+    sendWithEnter('Comment on this document…')
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content]).toEqual([1111, 'See these'])
+    expect(e.tags.filter((t) => t[0] === 'imeta')).toEqual([
+      expect.arrayContaining([`url ${PNG.url}`, 'm image/png', `x ${PNG.x}`, 'filename shot.png']),
+      expect.arrayContaining([`url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'filename plan.pdf']),
+    ])
+  })
+
+  it('says why a file did not upload, keeps the words in the box, and sends nothing', async () => {
+    blobs.upload.mockResolvedValue({ ok: false, reason: 'Too large' })
+    await open([])
+    await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
+    write('Comment on this document…', 'Here is the deck')
+    pick(new File(['big'], 'deck.pdf', { type: 'application/pdf' }))
+    await waitFor(() => expect(within(footBox()).getByText('Too large')).toBeTruthy())
+    expect(box('Comment on this document…').editor.getText()).toBe('Here is the deck')
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it("draws a comment's picture and PDF under its words, fetched as the reader", async () => {
+    const imeta = (f: typeof PNG) => ['imeta', `url ${f.url}`, `m ${f.m}`, `x ${f.x}`, `size ${f.size}`, `filename ${f.filename}`]
+    const posted = comment([['block', PARAGRAPH], imeta(PNG), imeta(PDF)], 'See these')
+    await open([posted])
+    const card = await waitFor(() => {
+      // The column's line, not the page's highlight of the same comment.
+      const c = document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${posted.id}"]`)
+      expect(c).not.toBeNull()
+      return c!
+    })
+    await waitFor(() => expect(within(card).getByText('plan.pdf')).toBeTruthy())
+    await waitFor(() => expect(within(card).getByRole('img', { name: 'shot.png' })).toBeTruthy())
+    expect(blobs.read).toHaveBeenCalledWith(PNG.url)
   })
 })

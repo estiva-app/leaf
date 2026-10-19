@@ -36,6 +36,12 @@ export function viewerPubkey(): string | null {
   return bridge()?.pubkey ?? null
 }
 
+/** The relay's origin and the signed-in signer, for a request the bridge does not make itself (a file's bytes, `blobs.ts`); `null` signed out. */
+export function relaySigner(): { relayUrl: string; signer: Signer; pubkey: string } | null {
+  const b = bridge()
+  return b && RELAY_URL ? { relayUrl: RELAY_URL, signer: b.signer, pubkey: b.pubkey } : null
+}
+
 /**
  * A filter query, as interop's resolvers take it. Throws when the relay
  * refused or could not be reached, so "nothing here" and "could not read"

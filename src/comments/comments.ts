@@ -16,7 +16,7 @@ import {
   urgentTagsFor,
   type ReactionEvent,
 } from '@estiva-app/conversation'
-import { blockRunOf, blockRunTag, buildDeletion, buildEdit, buildReaction, buildResolution, quoteOf, quoteTag, type Quote, type SignedEvent } from '@estiva-app/protocol'
+import { blockRunOf, blockRunTag, buildDeletion, buildEdit, buildReaction, buildResolution, imetaOf, quoteOf, quoteTag, type Imeta, type Quote, type SignedEvent } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A document as its comments name it: its address, its Folder (the `h` every comment carries) and its author. */
@@ -35,6 +35,8 @@ export interface CommentItem {
   body: string
   /** An edit changed the body. */
   edited: boolean
+  /** Its files now: its own `imeta`, replaced by the latest edit carrying any (SPEC §6.8). */
+  files: Imeta[]
   event: SignedEvent
   /** Its reactions, one per person and emoji, oldest first (SPEC §6.6). */
   reactions: ReactionEvent[]
@@ -106,6 +108,7 @@ export async function readThreads(doc: Commented): Promise<Threads> {
       at: event.created_at,
       body: edit?.body ?? event.content,
       edited: edit?.edited ?? false,
+      files: edit?.attachments ?? imetaOf(event),
       event,
       reactions: decorations?.byId[event.id]?.reactions ?? [],
     }
@@ -163,10 +166,12 @@ export interface Anchor {
   quote?: Quote
 }
 
-/** What the comment box writes: the body's marker text, and whom it names urgently (`composerText`). */
+/** What the comment box writes: the body's marker text, whom it names urgently (`composerText`), and the files already on the relay. */
 export interface Written {
   text: string
   urgent?: readonly string[]
+  /** Uploaded before the send: the relay refuses a comment naming a file it does not hold. An edit leaves a comment's files as they are. */
+  files?: readonly Imeta[]
 }
 
 /**
@@ -195,7 +200,7 @@ export function postComment(doc: Commented, written: Written, anchor?: Anchor): 
   const pubkey = viewerPubkey()
   const place = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
   const tags = [...place, ...earnedTags(written, { address: doc.address })]
-  return send(pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, tags }) : null, NOT_SENT, SIGNED_OUT)
+  return send(pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }) : null, NOT_SENT, SIGNED_OUT)
 }
 
 /**
@@ -212,7 +217,7 @@ export function postReply(doc: Commented, thread: Thread, written: Written): Pro
   const tags = earnedTags(written, { address: doc.address, event: thread.id })
   return send(
     pubkey
-      ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder: doc.folder, body: written.text, tags })
+      ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder: doc.folder, body: written.text, files: written.files, tags })
       : null,
     NOT_SENT,
     SIGNED_OUT,
@@ -225,7 +230,8 @@ const NOT_SAVED = 'it did not go through'
 /**
  * Your comment or reply, reworded: the `kind:40003` Peek and Ship write (SPEC
  * §6.8), in the Folder the comment was filed in. It carries no `block` or
- * `quote`, so the comment stays where it is.
+ * `quote`, so the comment stays where it is, and no `imeta`, so its files stay
+ * as they are, as Ship's edit does.
  */
 export function editComment(comment: CommentItem, written: Written): Promise<WriteResult> {
   const pubkey = viewerPubkey()
