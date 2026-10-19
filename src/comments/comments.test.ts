@@ -70,6 +70,12 @@ describe('a comment from the column', () => {
     expect(e.tags.filter((t) => t[0] === 'h')).toEqual([['h', elsewhere]])
   })
 
+  it("is a reply in the document's Folder when its comment carries no Folder", async () => {
+    const root = event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['a', ADDRESS], ['k', '30842'], ['p', AUTHOR]], 'No h')
+    await postReply(DOC, { id: root.id, root: itemOf(root), replies: [], resolved: false }, { text: 'Seen' })
+    expect(sent().tags.filter((t) => t[0] === 'h')).toEqual([['h', FOLDER]])
+  })
+
   it('resolves a thread with the 9101 Peek writes, in the document\'s Folder', async () => {
     const root = comment([], 'x')
     await setResolved(DOC, { id: root.id, root: itemOf(root), replies: [], resolved: false }, true)
