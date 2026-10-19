@@ -1,6 +1,7 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import { Button, DialogShell, EmptyState, Field, Form, Select, Textarea, TextInput } from '@estiva-app/ui'
 import { useId, useState } from 'react'
+import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { SummaryCount } from '../document/SummaryCount'
 import { SUMMARY_LIMIT, summaryLength, summaryText } from '../document/summary'
 
@@ -14,7 +15,10 @@ export function NewDocumentDialog({
   defaultFolder,
   onCreate,
   onClose,
+  holdKey,
 }: {
+  /** Where its unsaved fields are held when the sign-in ends while it is open (AUT-5); the app reopens it from there. */
+  holdKey?: string
   /** The Folders a document can go in. */
   folders: FolderSummary[]
   /** Which one starts chosen: the Folder of the file open in the tree, when there is one. */
@@ -23,12 +27,20 @@ export function NewDocumentDialog({
   onCreate: (title: string, folder: string, summary: string) => Promise<boolean>
   onClose: () => void
 }) {
-  const [title, setTitle] = useState('')
-  const [summary, setSummary] = useState('')
+  // What was typed here when the sign-in last ended, back after the passkey tap (AUT-5).
+  const [held] = useState(() => heldFields<{ title: string; summary: string; folder: string }>(holdKey))
+  const [title, setTitle] = useState(held?.title ?? '')
+  const [summary, setSummary] = useState(held?.summary ?? '')
   const long = summaryLength(summary) > SUMMARY_LIMIT
-  const [folder, setFolder] = useState(() =>
-    defaultFolder && folders.some((f) => f.id === defaultFolder) ? defaultFolder : (folders[0]?.id ?? ''),
-  )
+  const [folder, setFolder] = useState(() => {
+    const first = held?.folder ?? defaultFolder
+    return first && folders.some((f) => f.id === first) ? first : (folders[0]?.id ?? '')
+  })
+  useHeldTyping(holdKey, () => (title.trim() || summary.trim() ? JSON.stringify({ title, summary, folder }) : undefined))
+  const close = () => {
+    if (holdKey) releaseHeld(holdKey)
+    onClose()
+  }
   const [creating, setCreating] = useState(false)
   const formId = useId()
   const trimmed = title.trim()
@@ -40,16 +52,16 @@ export function NewDocumentDialog({
     setCreating(true)
     const done = await onCreate(trimmed, folder, summaryText(summary))
     setCreating(false)
-    if (done) onClose()
+    if (done) close()
   }
 
   return (
     <DialogShell
       title="New document"
-      onClose={onClose}
+      onClose={close}
       footer={
         <>
-          <Button variant="muted" onClick={onClose}>
+          <Button variant="muted" onClick={close}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form={formId} disabled={!ready || creating}>

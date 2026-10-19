@@ -1,11 +1,21 @@
-import { decideBoot, type ShellReason, type ShellState } from '@estiva-app/identity'
+import {
+  decideAfterRenewal,
+  decideBoot,
+  type BootAction,
+  type BootObservation,
+  type Renewal,
+  type ShellReason,
+  type ShellState,
+} from '@estiva-app/identity'
 import {
   beginSignIn,
   callbackParams,
+  canRenew,
   clearQuery,
   completeSignIn,
   currentToken,
   guardAttemptedAt,
+  renewInPlace,
   signInAvailable,
   startRenewal,
   stashShellReason,
@@ -24,16 +34,39 @@ export type BootResult = { kind: 'app' } | { kind: 'shell'; state: ShellState } 
 export async function bootAuth(): Promise<BootResult> {
   if (!signInAvailable) return { kind: 'app' }
 
-  const callback = callbackParams()
-  const action = decideBoot({
-    callback,
+  const observation: BootObservation = {
+    callback: callbackParams(),
     hasValidToken: currentToken() !== null,
+    canRenew: canRenew(),
     guardAttemptedAt: guardAttemptedAt(),
     enteredThisPageLoad: false,
     now: Date.now(),
-  })
+  }
+  return act(decideBoot(observation), observation)
+}
 
+/**
+ * How long the boot waits on a renewal before entering on what it holds: a
+ * network that neither answers nor fails would otherwise hold a blank page. The
+ * schedule finishes the same renewal once it answers. Ship's and Peek's
+ * `RENEWAL_WAIT_MS`.
+ */
+export const RENEWAL_WAIT_MS = 3_000
+
+async function act(action: BootAction, observation: BootObservation): Promise<BootResult> {
+  const callback = observation.callback
   switch (action.do) {
+    case 'renew': {
+      // An expired access token and a refresh token to spend: renew here and stay on the page asked for, with no trip
+      // to Estiva ID (AUT-5, as Ship's AUT-4). A refusal asks for the passkey on this page; no answer enters.
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<Renewal>((resolve) => {
+        timer = setTimeout(() => resolve({ outcome: 'unreachable' }), RENEWAL_WAIT_MS)
+      })
+      const outcome = await Promise.race([renewInPlace(), late]).then((r) => r.outcome)
+      clearTimeout(timer)
+      return act(decideAfterRenewal(outcome, observation), observation)
+    }
     case 'enter':
       startRenewal()
       return { kind: 'app' }

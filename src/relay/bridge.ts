@@ -1,6 +1,6 @@
-import { estivaIdSigner } from '@estiva-app/identity'
+import { estivaIdSigner, SignRefused } from '@estiva-app/identity'
 import { Relay, type PublishResult, type SignedEvent, type Signer, type UnsignedEvent } from '@estiva-app/protocol'
-import { currentToken, renewToken } from '../auth/estivaId'
+import { heldToken, renew, sessionEnded } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
 
 /**
@@ -12,7 +12,9 @@ import { ID_CONFIG, RELAY_URL } from '../config'
  * before sign-in, so there is nothing to ask.
  */
 function bridge(): Held | null {
-  const token = currentToken()
+  // The held token, expired or not: in its last minute, or while a renewal is out, the page is still this person's,
+  // and the signer renews on `/sign`'s 401 (AUT-5, as Ship's `api/store.ts`).
+  const token = heldToken()
   if (!RELAY_URL || !ID_CONFIG || !token) return null
   if (held?.pubkey === token.pubkey) return held
   const signer = estivaIdSigner({
@@ -20,8 +22,8 @@ function bridge(): Held | null {
     pubkey: token.pubkey,
     // A reader, not the token: a renewal replaces the stored one, and a captured
     // string would go stale with it (identity 0.2.2).
-    token: () => currentToken()?.accessToken,
-    renew: renewToken,
+    token: () => heldToken()?.accessToken,
+    renew,
   })
   held = { relay: new Relay(RELAY_URL, signer), signer, pubkey: token.pubkey }
   return held
@@ -52,12 +54,30 @@ export async function query(filters: Record<string, unknown>[]): Promise<SignedE
 export async function publish(unsigned: UnsignedEvent): Promise<PublishResult> {
   const b = bridge()
   if (!b) return { ok: false, reason: 'Not signed in to a relay.' }
+  let signed: SignedEvent
   try {
-    const signed = await b.signer.sign(unsigned)
-    return await b.relay.publish(signed)
+    signed = await b.signer.sign(unsigned)
   } catch (error) {
     // Estiva ID's own words name kinds and ceilings; the console keeps them, the person gets what to do.
     console.warn('[relay] could not sign', error)
-    return { ok: false, reason: 'Leaf could not sign this. Sign in again, then try again.' }
+    return { ok: false, reason: signingFailure(error) }
   }
+  try {
+    return await b.relay.publish(signed)
+  } catch (error) {
+    console.warn('[relay] could not publish', error)
+    return { ok: false, reason: 'Leaf could not reach the workspace. Try again.' }
+  }
+}
+
+/**
+ * What a person reads when Estiva ID did not sign. "Sign in again" only when the
+ * sign-in has ended, which the passkey screen also says: a refusal of this one
+ * event, or no answer, leaves them signed in (AUT-5).
+ */
+export function signingFailure(error: unknown): string {
+  if (sessionEnded()) return 'Your sign-in ended. Sign in again, then try again.'
+  if (error instanceof SignRefused && error.status === 403) return 'Your Estiva account is not active, so Leaf cannot save as you.'
+  if (error instanceof SignRefused) return 'Estiva ID would not sign this for Leaf.'
+  return 'Leaf could not reach Estiva ID. Try again.'
 }

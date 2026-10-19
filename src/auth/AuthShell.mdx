@@ -1,0 +1,43 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as AuthShellStories from './AuthShell.stories'
+
+<Meta of={AuthShellStories} />
+
+# AuthShell
+
+What Leaf shows while nobody is signed in: Leaf's name, one line saying why,
+and at most one button. The screen is the package's **EntryShell**, the one
+Peek and Ship draw, so a sign-in ending looks the same in every app.
+
+## When
+
+- On a cold load that cannot enter (`main.tsx`, from `bootAuth`'s shell state):
+  waiting, a passkey to ask for, or a reason that cannot be cleared.
+- When the sign-in ends while Leaf is open (`SessionGate`, AUT-5): a renewal
+  Estiva ID refused, or another tab signing out. It takes the page's place, and
+  the address left in the bar is where Continue comes back to.
+
+## When not
+
+- Never over a mounted page: a signed-out page left under it stays readable.
+  `SessionGate` draws it instead of the app.
+- Never with words of its own: the line is `SHELL_COPY[reason]` from
+  `@estiva-app/identity`, so the apps agree on what entry says.
+
+## How
+
+```tsx
+import { AuthShell } from './AuthShell'
+
+<AuthShell state={{ phase: 'authenticating', reason: 'session_expired' }} onContinue={() => void enterFromShell()} />
+```
+
+- `checking`, `entering` and `ready` draw a busy screen with no words.
+- `authenticating` says "Continue with passkey"; `failed` says "Try again".
+- An unrecoverable reason (`identity_inactive`, `token_rejected`) gets no
+  button: authenticating cannot clear it.
+
+## What it owns
+
+Only Leaf's name at the top and which words and button each state gets. The
+layout, type and button are **EntryShell**'s.

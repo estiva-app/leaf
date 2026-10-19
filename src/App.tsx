@@ -13,7 +13,8 @@ import {
 } from '@estiva-app/ui'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { beginSignOut, currentToken, whoAmI } from './auth/estivaId'
+import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
+import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { NewDocumentDialog } from './folders/NewDocumentDialog'
 import { findFile, groupsOf } from './folders/tree'
@@ -40,9 +41,12 @@ export function App() {
   )
 }
 
+/** Where New document holds its fields through a passkey trip (AUT-5). */
+const NEW_DOCUMENT_HOLD = 'new-document'
+
 /** The frame: the package's AppShell in its inset manner, the Folders tree in the sidebar, and the page open. */
 function Frame() {
-  const signedIn = currentToken() !== null
+  const signedIn = heldToken() !== null
   const [me, setMe] = useState<Identity>({})
   const relayState = useRelayState()
   const route = routeOf(usePathname())
@@ -79,6 +83,8 @@ function Frame() {
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
+  // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
+  useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(true))
   /*
     Once the Folders are read: the linked one, if a document can go in it here. A read that failed refuses
     nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
@@ -179,7 +185,7 @@ function Frame() {
         {main}
       </AppShell>
       {(making || handoffFolder) && (
-        <NewDocumentDialog folders={takers} defaultFolder={handoffFolder?.id ?? open?.folder.folder.id} onCreate={make} onClose={closeNew} />
+        <NewDocumentDialog folders={takers} defaultFolder={handoffFolder?.id ?? open?.folder.folder.id} onCreate={make} onClose={closeNew} holdKey={NEW_DOCUMENT_HOLD} />
       )}
     </AppProvider>
   )

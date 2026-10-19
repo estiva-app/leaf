@@ -47,6 +47,7 @@ import { FilePage } from '../pages/FilePage'
 import { LiveDocument } from '../document/LiveDocument'
 import { CommentsColumn } from './CommentsColumn'
 import type { Anchor } from './comments'
+import { holdTyping, holdTypingFor } from '../auth/heldTyping'
 import { useRef, useState } from 'react'
 
 /** The page's two halves, with a block's Comment already chosen: what the handle's row does (jsdom has no layout to hover). */
@@ -450,6 +451,51 @@ describe('a comment on a selection (LEAF-7)', () => {
     const e = publish.mock.calls[0][0]
     expect(e.tags).toContainEqual(['block', FIRST, SECOND])
     expect(e.tags.some((t) => t[0] === 'quote')).toBe(false)
+  })
+
+  /* The passkey screen takes the page's place when the sign-in ends (AUT-5): the page unmounts, and draws again after the tap. */
+  it('keeps a comment on selected words on those words through a sign-in ending, and sends it on them after the tap', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await open([], PAGE)
+    await commentOnSelection('wrote this')
+    write('Comment on these words…', 'Which draft?')
+    act(() => {
+      holdTypingFor(ME)
+      holdTyping()
+    })
+    cleanup()
+
+    await open([], PAGE)
+    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On “wrote this”'))
+    expect(box('Comment on these words…').editor.getText()).toBe('Which draft?')
+    sendWithEnter('Comment on these words…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.tags).toContainEqual(['block', FIRST])
+    expect(e.tags).toContainEqual(['quote', 'wrote this'])
+    expect(e.content).toBe('Which draft?')
+  })
+
+  it('keeps a reply box open on its thread through a sign-in ending, and the reply goes to that thread after the tap', async () => {
+    const onFirst = comment([['block', FIRST]], 'Too long?')
+    await open([onFirst], PAGE)
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    act(() => void page().editor.emit('commentSelect', { id: onFirst.id }))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    write('Reply…', 'Shorter now')
+    act(() => {
+      holdTypingFor(ME)
+      holdTyping()
+    })
+    cleanup()
+
+    await open([onFirst], PAGE)
+    await waitFor(() => expect(box('Reply…').editor.getText()).toBe('Shorter now'))
+    sendWithEnter('Reply…')
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    const e = publish.mock.calls[0][0]
+    expect(e.tags).toContainEqual(['e', onFirst.id])
+    expect(e.content).toBe('Shorter now')
   })
 })
 

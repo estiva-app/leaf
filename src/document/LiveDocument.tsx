@@ -43,6 +43,20 @@ import {
 import { EditorLineCards, ReferenceChip, ReferencesProvider, useEditorReferences } from './references'
 import { REFERENCE_COPY, referenceSections, subscribeReferences } from './referencePicker'
 import type { ChangedBy } from './useLiveDocument'
+import { sessionEnded } from '../auth/estivaId'
+import { heldText, releaseHeld, useHeldTyping } from '../auth/heldTyping'
+
+/** The editor's own document held for this place when the sign-in ended (AUT-5), block ids and all; `null` when none. */
+function heldDocument(key: string | undefined): EditorDocument | null {
+  const text = key ? heldText(key) : undefined
+  if (!text) return null
+  try {
+    const doc = JSON.parse(text) as EditorDocument
+    return doc?.type === 'doc' ? doc : null
+  } catch {
+    return null
+  }
+}
 
 /** `/`: the package's Format section, then Leaf's own rows under Insert — the heading every app's own section takes, as in Ship. */
 const SLASH_SECTIONS: SlashSection[] = [
@@ -72,6 +86,7 @@ const SLASH_SECTIONS: SlashSection[] = [
  */
 export function LiveDocument({
   value,
+  holdKey,
   format,
   changedBy,
   onCommit,
@@ -80,6 +95,8 @@ export function LiveDocument({
   onCommentOn,
 }: {
   value: string
+  /** Where its unsaved text is held when the sign-in ends while it is open (AUT-5): the document's address. */
+  holdKey?: string
   format: ContentFormat
   /** Who saved the text last, when it was not you. */
   changedBy: ChangedBy | null
@@ -112,8 +129,17 @@ export function LiveDocument({
   useEffect(() => {
     latest.current = { value, format }
   }, [value, format])
+  // What was typed here when the sign-in last ended, back after the passkey tap and not yet saved (AUT-5).
+  // Not when it is what the page already has (a save that was out as the sign-in ended went through), or nothing would
+  // ever take the page's later changes: only a save clears `restored`, and a save of what is saved sends nothing.
+  const [held] = useState(() => {
+    const doc = heldDocument(holdKey)
+    return doc && publishableFromEditor(doc).value !== value ? doc : null
+  })
+  // Until it is saved it is your unsaved text: someone else's save waits behind it, as behind a refused one.
+  const [restored, setRestored] = useState(held !== null)
   // The text as last typed. Saving on the way out reads this, not the editor, which may already be torn down.
-  const typed = useRef<EditorDocument | null>(null)
+  const typed = useRef<EditorDocument | null>(held)
   const again = useRef(false)
   const left = useRef(false)
 
@@ -139,21 +165,30 @@ export function LiveDocument({
           shown.current = next.value
           setSuperseded(replaced)
           setBase(next.value)
+          setRestored(false)
+          // A save that was out as the sign-in ended: what was held then may hold more than this, typed since.
+          if (holdKey && !sessionEnded()) releaseHeld(holdKey)
         }
         if (left.current) {
-          if (!ok) onLeftUnsaved()
+          // Refused because the sign-in ended: the text is held for after the tap, not lost (AUT-5).
+          if (!ok && !sessionEnded()) onLeftUnsaved()
         } else setFailed(!ok)
       } finally {
         committing.current = false
         setSaving(false)
         if (again.current) {
           again.current = false
-          void latestSave.current(typed.current)
+          // After an ending it is held for after the tap, and /sign would only refuse it.
+          if (!sessionEnded()) void latestSave.current(typed.current)
         }
       }
     },
-    [onCommit, onLeftUnsaved],
+    [onCommit, onLeftUnsaved, holdKey],
   )
+  useHeldTyping(holdKey, () => {
+    const doc = typed.current
+    return doc && publishableFromEditor(doc).value !== saved.current ? JSON.stringify(doc) : undefined
+  })
   // The latest `save`, for the editor's `onBlur` (created once) and the unmount below.
   const latestSave = useRef(save)
   useEffect(() => {
@@ -195,7 +230,7 @@ export function LiveDocument({
         CommentHighlights,
       ],
       // Built once. A value coming back must not rebuild the editor under the caret; see the effect below.
-      content: toEditorDocument(documentForEditing(value, format)),
+      content: held ?? toEditorDocument(documentForEditing(value, format)),
       editorProps: {
         attributes: { 'aria-label': 'Document', role: 'textbox', 'aria-multiline': 'true', class: richTextClassName('default', 'outline-none') },
         handleKeyDown: (view, event) => {
@@ -231,8 +266,8 @@ export function LiveDocument({
     says so. Never over a save that is still out.
   */
   const arrived = value !== base && value !== superseded
-  if (arrived && !focused && !saving && !failed) setBase(value)
-  const waiting = arrived && (focused || failed)
+  if (arrived && !focused && !saving && !failed && !restored) setBase(value)
+  const waiting = arrived && (focused || failed || restored)
 
   // The text the editor should hold, set into it when it changes — never under your own typing, which `shown` already holds.
   useEffect(() => {
@@ -251,11 +286,12 @@ export function LiveDocument({
     setFailed(false)
   }
 
-  // Opening another file unmounts this: save on the way out.
+  // Opening another file unmounts this: save on the way out. Not when the sign-in ended: the save would be refused and
+  // reported as lost over the passkey screen, and the text is held on the device instead (AUT-5).
   useEffect(
     () => () => {
       left.current = true
-      void latestSave.current(typed.current)
+      if (!sessionEnded()) void latestSave.current(typed.current)
     },
     [],
   )

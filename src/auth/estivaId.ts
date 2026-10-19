@@ -1,5 +1,6 @@
-import { createEstivaId, type ShellReason, type StoredToken } from '@estiva-app/identity'
+import { createEstivaId, type Renewal, type ShellReason, type StoredToken } from '@estiva-app/identity'
 import { ID_CONFIG } from '../config'
+import { forgetHeldTyping, holdTyping, holdTypingFor } from './heldTyping'
 
 /**
  * Signing in with Estiva ID, the way Ship does: `@estiva-app/identity` holds the
@@ -9,7 +10,30 @@ import { ID_CONFIG } from '../config'
  *   compares it exactly against the one address registered for the app.
  * - The session lives in localStorage, so it outlives a tab; a sign-in's
  *   single-use credentials in sessionStorage, per tab.
+ * - Since AUT-5 (Ship's AUT-4) a sign-in that ends while Leaf is open asks for
+ *   the passkey on the page, and two tabs share one renewal.
  */
+const KEY_PREFIX = 'leaf.estiva-id'
+const TOKEN_KEY = `${KEY_PREFIX}.token`
+/** When a tab last signed out, so another tab can tell a sign-out from a refused renewal: both clear the token. */
+const SIGNED_OUT_KEY = `${KEY_PREFIX}.signed-out`
+
+/** When this page loaded: a sign-out after it is this page's. */
+const loadedAt = Date.now()
+
+/**
+ * Whether a tab signed out since this page loaded. Not "in the last few seconds":
+ * a frozen background tab hears the token go long after, and its typing must not
+ * be held past a sign-out.
+ */
+function signedOutSinceLoad(): boolean {
+  try {
+    return Number(localStorage.getItem(SIGNED_OUT_KEY) ?? 0) >= loadedAt
+  } catch {
+    return false
+  }
+}
+
 const client = ID_CONFIG
   ? createEstivaId({
       base: ID_CONFIG.base,
@@ -17,34 +41,133 @@ const client = ID_CONFIG
       redirectUri: () => `${window.location.origin}/`,
       storage: () => (typeof localStorage === 'undefined' ? null : localStorage),
       pendingStore: () => (typeof sessionStorage === 'undefined' ? null : sessionStorage),
-      keyPrefix: 'leaf.estiva-id',
+      keyPrefix: KEY_PREFIX,
       navigate: (url) => window.location.assign(url),
     })
   : null
 
 export const signInAvailable = client !== null
 
+/** A token that is present and usable for another minute, or `null`: what the boot asks. */
 export function currentToken(): StoredToken | null {
   return client?.validToken(Date.now() + 60_000) ?? null
 }
 
 /**
- * Renew the token once, when `/sign` says it expired: the signer's safety net
- * for a renewal that was late in a background tab. `null` when it failed.
+ * The session this page holds, expired or not: whose page it is, and the bearer
+ * the signers present. Not {@link currentToken}: in its last minute, or while a
+ * renewal is still out, that one is `null`, and a signer given nothing treats it
+ * as an expiry without renewing (as Ship's `api/store.ts`, AUT-4).
  */
-export async function renewToken(): Promise<string | null> {
-  return (await client?.refreshAccessToken())?.accessToken ?? null
+export function heldToken(): StoredToken | null {
+  return client?.storedToken() ?? null
 }
 
+let schedule: { cancel: () => void } | null = null
+
+/**
+ * Renew before the token expires, and when the tab is shown again or the network
+ * comes back (identity 0.3.0, under a Web Lock, so two tabs spend one refresh
+ * token). A refusal ends the sign-in on this page: {@link SessionGate} draws the
+ * passkey screen in its place. Idempotent: a second schedule would spend a
+ * refresh token the first had just been given.
+ */
 export function startRenewal(): void {
-  client?.scheduleRenewal()
+  schedule?.cancel()
+  schedule = client?.scheduleRenewal({ onEnded: () => endSession('session_expired') }) ?? null
+}
+
+/**
+ * Whether this page's sign-in has ended, and why: a renewal Estiva ID refused,
+ * or another tab signing out. The one thing `SessionGate` subscribes to.
+ */
+let ended: ShellReason | null = null
+const endedListeners = new Set<() => void>()
+
+function endSession(given: ShellReason): void {
+  if (ended) return
+  // A renewal refused because another tab signed out while it was out is that sign-out, whichever this tab hears first.
+  const reason = given === 'session_expired' && signedOutSinceLoad() ? 'no_session' : given
+  // Before the screen takes the page's place, while what was typed is still there to read; not for a sign-out.
+  if (reason === 'session_expired') holdTyping()
+  ended = reason
+  schedule?.cancel()
+  for (const listener of endedListeners) listener()
+}
+
+export function sessionEnded(): ShellReason | null {
+  return ended
+}
+
+export function subscribeSessionEnded(listener: () => void): () => void {
+  endedListeners.add(listener)
+  return () => endedListeners.delete(listener)
+}
+
+/**
+ * Follow the other tabs, which share the session in localStorage:
+ *
+ * - **another tab renewed:** nothing to do; the schedule and the signers read
+ *   the stored token when they next need it;
+ * - **another tab signed out, or its renewal was refused:** the token is gone,
+ *   and this tab draws the sign-in screen at once, not at its next save;
+ * - **somebody else signed in, or a session came back after this page lost
+ *   it:** reload, since everything under this page was read as the last person.
+ */
+export function followOtherTabs(): () => void {
+  if (!client || typeof window === 'undefined') return () => {}
+  const person = client.storedToken()?.pubkey
+  holdTypingFor(person)
+  const follow = (event: StorageEvent) => {
+    if (event.storageArea !== window.localStorage || (event.key !== TOKEN_KEY && event.key !== null)) return
+    const token = client.storedToken()
+    if (token === null) endSession(event.key === null ? 'no_session' : 'session_expired')
+    else if (ended || token.pubkey !== person) window.location.reload()
+  }
+  window.addEventListener('storage', follow)
+  return () => window.removeEventListener('storage', follow)
+}
+
+/** Whether an expired access token can be renewed here without leaving the page, for `decideBoot`. */
+export function canRenew(): boolean {
+  return client?.storedToken()?.refreshToken !== undefined
+}
+
+/** Spend the stored refresh token once, for the boot's `renew` step. */
+export async function renewInPlace(): Promise<Renewal> {
+  if (!client) return { outcome: 'none' }
+  const renewal = await client.renew()
+  if (renewal.outcome === 'refused') endSession('session_expired')
+  return renewal
+}
+
+/**
+ * For the signers' `renew`, so a 401 from `/sign` is an invisible retry. A
+ * refusal ends the sign-in on this page too; `null` when there is no new token.
+ */
+export async function renew(): Promise<string | null> {
+  if (!client) return null
+  const renewal = await client.renew()
+  if (renewal.outcome === 'refused') endSession('session_expired')
+  return renewal.outcome === 'renewed' ? renewal.token.accessToken : null
 }
 
 export async function beginSignIn(options: { silent?: boolean } = {}): Promise<void> {
-  await client?.beginSignIn(`${window.location.pathname}${window.location.search}`, options)
+  await client?.beginSignIn(`${window.location.pathname}${window.location.search}${window.location.hash}`, options)
 }
 
+/**
+ * Leave for Estiva ID to end the session there; nothing held from an ending stays on the device. The comment box's
+ * drafts still do, until the next stage, "Sign-out means out".
+ */
 export function beginSignOut(): void {
+  forgetHeldTyping()
+  // Before the token goes, so the other tabs read its removal as a sign-out and hold nothing.
+  try {
+    localStorage.setItem(SIGNED_OUT_KEY, String(Date.now()))
+  } catch {
+    // Blocked storage: the other tabs hear nothing either.
+  }
   client?.beginSignOut()
 }
 
@@ -89,7 +212,7 @@ export function guardAttemptedAt(): number | null {
  * answer also proves Estiva ID accepted the sign-in.
  */
 export async function whoAmI(): Promise<{ name?: string; email?: string } | null> {
-  const token = currentToken()
+  const token = heldToken()
   if (!ID_CONFIG || !token) return null
   const response = await fetch(`${ID_CONFIG.base}/directory/${token.pubkey}`, { headers: { Authorization: `Bearer ${token.accessToken}` } })
   if (!response.ok) return null
