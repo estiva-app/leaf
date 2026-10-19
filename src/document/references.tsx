@@ -36,8 +36,10 @@ export function useReferences(uris: readonly string[]): Resolved {
     for (const read of elsewhere) {
       void read.finally(() => {
         if (!live) return
-        if (all.some((uri) => !(uri in known))) retry()
-        else landed()
+        // Its read failed: read again on the same backoff as a read of this one's own.
+        if (all.some((uri) => !(uri in known))) {
+          if (attempt < RETRIES) again = setTimeout(retry, RETRY_MS * 2 ** attempt)
+        } else landed()
       })
     }
     if (missing.length === 0) return () => void (live = false)

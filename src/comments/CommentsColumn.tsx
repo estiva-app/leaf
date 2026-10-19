@@ -59,7 +59,7 @@ import { nameOf } from '../document/save'
 import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
 import { CarriedCards, PlacedObject, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
 import { linksIn, placeComment, referenceOfValue, ROW_BLOCK, type RowLine } from './commentLines'
-import { askLinks, knownBlockOf, knownLinkValue, linkReferenceOf, linksChanged, useKnownLinks } from './links'
+import { askLinks, knownBlockOf, knownLinkValue, linkReferenceOf, linksChanged, MAX_LINKS_ASKED, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
 import { deleteComment, editComment, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
@@ -181,7 +181,7 @@ function boxUnder(here: string | undefined): BoxUnder {
   return {
     read: (body) => {
       const links = boxReadOf(body as EditorDocument, { resolveLink: knownLinkValue, blockOf: knownBlockOf, here })
-      void askLinks(links.urls).catch(() => {})
+      void askLinks(links.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
       const uri = links.card ? referenceOfValue(links.card) : undefined
       return {
         card: links.card && uri ? { value: links.card, view: <PlacedObject uri={uri} layout="detailed" /> } : undefined,
@@ -459,9 +459,10 @@ function CommentLine({
   // What its app links name, asked once and drawn again as the answers land: a card or part named only by a URL waits for them.
   const here = useContext(PageHere)
   const resolveLink = useKnownLinks()
+  // Asked again on each change to the answers, so a read that failed is retried; one already answered or out costs nothing.
   useEffect(() => {
-    void askLinks(linksIn(blocks)).catch(() => {})
-  }, [blocks])
+    void askLinks(linksIn(blocks).slice(0, MAX_LINKS_ASKED)).catch(() => {})
+  }, [blocks, resolveLink])
   const placed = useMemo(() => placeComment(blocks, comment.event, { here, resolveLink }), [blocks, comment, here, resolveLink])
   const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
   const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />

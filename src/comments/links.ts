@@ -59,10 +59,22 @@ async function answerOf(url: string): Promise<Answer> {
   return hit.block ? { value: address, block: { address, block: hit.block } } : { value: address }
 }
 
+/** How many URLs one box or one comment asks about, the first ones — as `LinkChips`' `limit`: each answer can cost a relay query. */
+export const MAX_LINKS_ASKED = 24
+/** A failed read is asked again this many times, after 5, 10 and 20 seconds, by whoever still draws from it. */
+const RETRIES = 3
+const RETRY_MS = 5000
+
 const asked = new Map<string, Promise<void>>()
 const known = new Map<string, Answer>()
+const failures = new Map<string, number>()
 const listeners = new Set<() => void>()
 let answered = 0
+
+function changed() {
+  answered += 1
+  for (const listener of listeners) listener()
+}
 
 function ask(url: string): Promise<void> {
   let pending = asked.get(url)
@@ -70,11 +82,14 @@ function ask(url: string): Promise<void> {
     pending = answerOf(url).then(
       (answer) => {
         known.set(url, answer)
-        answered += 1
-        for (const listener of listeners) listener()
+        changed()
       },
       () => {
         asked.delete(url)
+        // Said as a change after a wait, so a comment drawn from it asks again rather than stay without its card.
+        const failed = failures.get(url) ?? 0
+        failures.set(url, failed + 1)
+        if (failed < RETRIES) setTimeout(changed, RETRY_MS * 2 ** failed)
       },
     )
     asked.set(url, pending)

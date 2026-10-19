@@ -964,6 +964,21 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     expect(named(e.tags, 'embed')).toEqual([])
   })
 
+  it('a URL whose id two authors hold names nothing: no card under the box, and the comment carries none', async () => {
+    const SHARED_D = '55555555-5555-4555-8555-555555555555'
+    const SHARED = `30851:${SHIP}:${SHARED_D}`
+    files.known[uriOf(SHARED)] = object(SHARED, 'Shared id')
+    // Somebody else publishes the same kind and d: the link must not put either one's card under it.
+    await open([...EVENTS, file(30851, SHIP, SHARED_D), { ...file(30851, QA2, SHARED_D), id: `${SHARED_D.replace(/-/g, '').slice(0, 30)}${'0'.repeat(33)}1` }])
+    write(BOX, `see https://ship.example/issue/shared-${SHARED_D} and ${ISSUE_URL} `)
+    // The one issue named alone gets its card; the shared id counts for nothing, not as a second file.
+    await waitFor(() => expect(asked(SHARED_D)).toBe(true))
+    await waitFor(() => expect(within(under()!).getByText('Fix it')).toBeTruthy())
+    expect(within(under()!).queryByText('Shared id')).toBeNull()
+    const e = await sent()
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+  })
+
   it('a link to a block of another page shows that block live under the box and no card, and the comment carries its part', async () => {
     await open(EVENTS)
     write(BOX, `see ${ISSUE_URL} and ${PART_URL} `)
@@ -976,12 +991,13 @@ describe('the card and the live parts under the box (COMM-8)', () => {
 
   it('a link to another block of this page shows nothing under the box, and the comment carries no part and no card', async () => {
     await open(EVENTS)
-    write(BOX, `see ${OWN_BLOCK_URL} `)
+    // With a block of another page beside it: only that one's part shows and goes out.
+    write(BOX, `see ${OWN_BLOCK_URL} and ${PART_URL} `)
     await waitFor(() => expect(asked(PAGE_D)).toBe(true))
-    await settleLinks()
-    expect(under()).toBeNull()
+    await waitFor(() => expect(under()?.querySelectorAll('[data-part-address]')).toHaveLength(1))
+    expect(under()!.querySelector('[data-part-address]')?.getAttribute('data-part-address')).toBe(TWO_ADDRESS)
     const e = await sent()
-    expect(named(e.tags, 'part')).toEqual([])
+    expect(named(e.tags, 'part')).toEqual([['part', TWO_ADDRESS, TWO_BLOCK]])
     expect(named(e.tags, 'embed')).toEqual([])
   })
 
@@ -993,11 +1009,17 @@ describe('the card and the live parts under the box (COMM-8)', () => {
   })
 
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {
-    await open([...EVENTS, comment([['part', ADDRESS, PARAGRAPH]], `see ${OWN_BLOCK_URL}`), comment([['part', TWO_ADDRESS, TWO_BLOCK]], 'the link was edited out')])
-    await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(2))
-    await waitFor(() => expect(asked(PAGE_D)).toBe(true))
-    await settleLinks()
-    expect(document.querySelector('[data-part]')).toBeNull()
+    await open([
+      ...EVENTS,
+      comment([['part', ADDRESS, PARAGRAPH]], `see ${OWN_BLOCK_URL}`),
+      comment([['part', TWO_ADDRESS, TWO_BLOCK]], 'the link was edited out'),
+      // The one that draws, so the two that do not are told apart from parts never drawn.
+      comment([['part', TWO_ADDRESS, TWO_BLOCK]], `still ${PART_URL}`),
+    ])
+    await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(3))
+    await waitFor(() => expect(document.querySelectorAll('[data-part-address]')).toHaveLength(1))
+    const drawn = document.querySelector('[data-part-address]')!.closest('[data-comment-id]')!
+    expect(drawn.textContent).toContain('still')
   })
 })
 

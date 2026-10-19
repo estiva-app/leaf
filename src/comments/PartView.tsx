@@ -37,8 +37,12 @@ function usePart(pointer: PartPointer): PartRead {
   const [read, setRead] = useState<PartRead>({ state: 'loading' })
   useEffect(() => {
     let live = true
+    let reading = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    // One read at a time: the tab coming back while one is out waits for it, so there is only ever one chain of re-reads.
     const once = () => {
+      if (reading) return
+      reading = true
       clearTimeout(timer)
       void readPart({ address, block })
         .then((next) => {
@@ -46,6 +50,7 @@ function usePart(pointer: PartPointer): PartRead {
         })
         .catch(() => {})
         .finally(() => {
+          reading = false
           if (live && document.visibilityState === 'visible') timer = setTimeout(once, PART_REFRESH_MS)
         })
     }
@@ -71,8 +76,13 @@ function usePart(pointer: PartPointer): PartRead {
 export function PartView({ pointer }: { pointer: PartPointer }) {
   const read = usePart(pointer)
   const kind = thingKindOf(Number(pointer.address.split(':')[0]))
-  if (read.state === 'loading') return <PartCard state="loading" kind={kind} />
-  if (read.state === 'unavailable') return <PartCard state="unavailable" kind={kind} noun={kind.charAt(0).toUpperCase() + kind.slice(1)} />
+  if (read.state === 'loading' || read.state === 'unavailable') {
+    return (
+      <div data-part={read.state} data-part-address={pointer.address}>
+        {read.state === 'loading' ? <PartCard state="loading" kind={kind} /> : <PartCard state="unavailable" kind={kind} noun={kind.charAt(0).toUpperCase() + kind.slice(1)} />}
+      </div>
+    )
+  }
   const opener = read.object.openUrl && /^https?:\/\//i.test(read.object.openUrl) ? read.object.openUrl : undefined
   return (
     <div data-part={read.state} data-part-address={pointer.address} data-part-block={pointer.block}>
