@@ -16,7 +16,24 @@ import {
   urgentTagsFor,
   type ReactionEvent,
 } from '@estiva-app/conversation'
-import { blockRunOf, blockRunTag, buildDeletion, buildEdit, buildReaction, buildResolution, imetaOf, quoteOf, quoteTag, type Imeta, type Quote, type SignedEvent } from '@estiva-app/protocol'
+import {
+  blockRunOf,
+  blockRunTag,
+  buildDeletion,
+  buildEdit,
+  buildReaction,
+  buildResolution,
+  embedTagsOf,
+  imetaOf,
+  partTag,
+  quoteOf,
+  quoteTag,
+  type Embed,
+  type Imeta,
+  type PartPointer,
+  type Quote,
+  type SignedEvent,
+} from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A document as its comments name it: its address, its Folder (the `h` every comment carries) and its author. */
@@ -172,7 +189,14 @@ export interface Written {
   urgent?: readonly string[]
   /** Uploaded before the send: the relay refuses a comment naming a file it does not hold. An edit leaves a comment's files as they are. */
   files?: readonly Imeta[]
+  /** The card shown under the box as it was sent (`embed`, §13.6.2): none after ✕. A new comment's only. */
+  cards?: readonly Embed[]
+  /** The block links' live parts (`part`, §13.6.1). A new comment's only: an edit carries no `part`. */
+  parts?: readonly PartPointer[]
 }
+
+/** The `embed` and `part` tags a new comment carries for what showed under the box as it was sent. */
+const underTags = (written: Written): string[][] => [...embedTagsOf(written.cards ?? []), ...(written.parts ?? []).map((part) => partTag(part.address, part.block))]
 
 /**
  * The tags a body earns, as Ship and Peek write them (SPEC §13.1): a `p` per
@@ -199,7 +223,7 @@ const SIGNED_OUT = 'you are signed out'
 export function postComment(doc: Commented, written: Written, anchor?: Anchor): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const place = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
-  const tags = [...place, ...earnedTags(written, { address: doc.address })]
+  const tags = [...place, ...earnedTags(written, { address: doc.address }), ...underTags(written)]
   return send(pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }) : null, NOT_SENT, SIGNED_OUT)
 }
 
@@ -214,7 +238,7 @@ export function postReply(doc: Commented, thread: Thread, written: Written): Pro
   const pubkey = viewerPubkey()
   const root = thread.root
   if (!root) return Promise.resolve({ ok: false, reason: 'the comment was deleted' })
-  const tags = earnedTags(written, { address: doc.address, event: thread.id })
+  const tags = [...earnedTags(written, { address: doc.address, event: thread.id }), ...underTags(written)]
   return send(
     pubkey
       ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder: doc.folder, body: written.text, files: written.files, tags })

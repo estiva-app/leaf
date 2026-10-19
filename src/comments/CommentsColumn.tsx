@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { Extension } from '@tiptap/core'
 import type { Editor, JSONContent } from '@tiptap/react'
 import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconMessage, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
 import {
+  boxReadOf,
   composerDocument,
   composerDraft,
   composerText,
   createDraftStore,
   draftKeys,
+  embedsToSend,
   groupReactions,
   offersEditAndDelete,
   REACTION_EMOJI,
@@ -41,19 +43,24 @@ import {
   commentBoxRows,
   commentElement,
   commentPlace,
+  LinkChips,
   quoteText,
   setCommentAnchors,
   type CommentAnchor,
   type CommentPlace,
   type BoxFile,
+  type BoxSentUnder,
+  type BoxUnder,
   type MentionPerson,
   type SendAnswer,
   type UploadAnswer,
 } from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
 import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
-import { CarriedCards, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
-import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
+import { CarriedCards, PlacedObject, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
+import { linksIn, placeComment, referenceOfValue, ROW_BLOCK, type RowLine } from './commentLines'
+import { askLinks, knownBlockOf, knownLinkValue, linkReferenceOf, linksChanged, MAX_LINKS_ASKED, useKnownLinks } from './links'
+import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
 import { deleteComment, editComment, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
@@ -155,6 +162,37 @@ function draftStore(): DraftStore {
   return drafts
 }
 
+/** The page the column's comments are on: its file gets no card under a comment, and its blocks no part (Miky, 2026-10-19). */
+const PageHere = createContext<string | undefined>(undefined)
+
+/** A pasted app URL becomes its file's chip, as in Peek (`LinkChips`, §7.7). */
+const linkChips = () => LinkChips.configure({ referenceOf: linkReferenceOf, ask: askLinks })
+
+/**
+ * What shows under the box while a new comment is written (COMM-8): the one
+ * file it names, as the card it will be sent with, and the live part of each
+ * block link — read as Peek reads its box (`boxReadOf`), from what each app
+ * link names as answered so far. Each read asks about the links not answered
+ * yet; an answer coming back reads again.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
+ */
+function boxUnder(here: string | undefined): BoxUnder {
+  return {
+    read: (body) => {
+      const links = boxReadOf(body as EditorDocument, { resolveLink: knownLinkValue, blockOf: knownBlockOf, here })
+      void askLinks(links.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
+      const uri = links.card ? referenceOfValue(links.card) : undefined
+      return {
+        card: links.card && uri ? { value: links.card, view: <PlacedObject uri={uri} layout="detailed" /> } : undefined,
+        parts: links.parts.map((part) => ({ key: `${part.address}#${part.block}`, view: <PartView pointer={part} /> })),
+        names: [...links.values, ...links.parts.map((part) => part.address)],
+      }
+    },
+    changed: linksChanged,
+  }
+}
+
 /** What a box needs from the column: who `@` offers, and whom a key names. */
 interface BoxPeople {
   people: readonly MentionPerson[]
@@ -198,9 +236,21 @@ function Box({
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
-  const send = async (body: JSONContent, files: readonly BoxFile[] = []): Promise<SendAnswer> => {
+  const here = useContext(PageHere)
+  // An edit carries no `part`, and Leaf does not fold an edit's `embed` set yet, so the edit box shows nothing under it.
+  const isEdit = !!editing
+  const under = useMemo(() => (isEdit ? undefined : boxUnder(here)), [isEdit, here])
+  const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
     const attached = filesOf(files)
-    const written = { ...composerText(body as EditorDocument), ...(attached.length ? { files: attached } : {}) }
+    // What was under the box as it was sent: the card unless ✕ took it off, and the parts as they read now.
+    const parts = under ? boxReadOf(body as EditorDocument, { resolveLink: knownLinkValue, blockOf: knownBlockOf, here }).parts : []
+    const cards = under ? embedsToSend({ card: shown.card }, new Set()) : []
+    const written = {
+      ...composerText(body as EditorDocument),
+      ...(attached.length ? { files: attached } : {}),
+      ...(cards.length ? { cards } : {}),
+      ...(parts.length ? { parts } : {}),
+    }
     const result = await onSend(written)
     return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
@@ -209,18 +259,21 @@ function Box({
     editing ? (editing.typed?.() ?? (composerDocument(editing.comment.body, { personLabel: knownName }, urgentOf(editing.comment)) as JSONContent)) : undefined,
   )
   // The package's edit mode keeps no draft: this tells the column each change, for the ending to hold.
-  const [keepTyped] = useState(() => {
+  const [extensions] = useState(() => {
     const onTyped = editing?.onTyped
-    return onTyped
-      ? [
-          Extension.create({
-            name: 'keepTypedEdit',
-            onUpdate() {
-              onTyped(this.editor.getJSON())
-            },
-          }),
-        ]
-      : undefined
+    return [
+      linkChips(),
+      ...(onTyped
+        ? [
+            Extension.create({
+              name: 'keepTypedEdit',
+              onUpdate() {
+                onTyped(this.editor.getJSON())
+              },
+            }),
+          ]
+        : []),
+    ]
   })
   const edit = editing && opened ? { body: opened, onCancel: editing.onCancel, onSave: (body: JSONContent) => send(body) } : undefined
   return (
@@ -234,9 +287,10 @@ function Box({
       insert={INSERT}
       draft={edit ? undefined : draft}
       edit={edit}
-      extensions={keepTyped}
+      extensions={extensions}
       upload={upload}
       send={send}
+      under={under}
       autoFocus={autoFocus || !!edit}
       onSent={onSent ? () => onSent() : undefined}
     />
@@ -402,7 +456,14 @@ function CommentLine({
   const urgent = useMemo(() => urgentOf(comment), [comment])
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   // Where each line draws, as Peek draws a message (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md).
-  const placed = useMemo(() => placeComment(blocks, comment.event), [blocks, comment])
+  // What its app links name, asked once and drawn again as the answers land: a card or part named only by a URL waits for them.
+  const here = useContext(PageHere)
+  const resolveLink = useKnownLinks()
+  // Asked again on each change to the answers, so a read that failed is retried; one already answered or out costs nothing.
+  useEffect(() => {
+    void askLinks(linksIn(blocks).slice(0, MAX_LINKS_ASKED)).catch(() => {})
+  }, [blocks, resolveLink])
+  const placed = useMemo(() => placeComment(blocks, comment.event, { here, resolveLink }), [blocks, comment, here, resolveLink])
   const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
   const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />
   return (
@@ -449,6 +510,13 @@ function CommentLine({
             }}
           />
           <CarriedCards cards={placed.cards} />
+          {placed.parts.length > 0 && (
+            <div className="mt-2 flex flex-col gap-2" data-comment-parts={placed.parts.length}>
+              {placed.parts.map((part) => (
+                <PartView key={`${part.address}#${part.block}`} pointer={part} />
+              ))}
+            </div>
+          )}
         </>
       )}
       {/* Under the edit box too: an edit leaves a comment's files as they are. */}
@@ -856,77 +924,79 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   )
 
   return (
-    <ReferencesProvider value={references}>
-      <Panel
-        title={
-          <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-body-2-strong text-text-primary">Comments</p>
-            {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
-          </div>
-        }
-        bodyRef={setColumnBody}
-        bodyClassName="flex flex-col gap-3 p-3"
-        footer={
-          <div className="flex flex-col gap-2 p-3">
-            {draft && (
-              <div className="flex items-center gap-2">
-                <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
-                  <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
-                </WithTooltip>
-                <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
-                  <IconX size={16} stroke={1.5} />
-                </IconButton>
-              </div>
-            )}
-            {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
-            <Box
-              key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
-              placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
-              draftKey={draftKeys.object(address ?? '')}
-              scope={pageScope}
-              people={people}
-              onSend={send}
-              // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
-              onSent={() => onDraft(null)}
-              autoFocus={!!draft}
-            />
-          </div>
-        }
-      >
-        {threads === null ? (
-          failed ? (
-            <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+    <PageHere.Provider value={doc.address}>
+      <ReferencesProvider value={references}>
+        <Panel
+          title={
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-body-2-strong text-text-primary">Comments</p>
+              {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
+            </div>
+          }
+          bodyRef={setColumnBody}
+          bodyClassName="flex flex-col gap-3 p-3"
+          footer={
+            <div className="flex flex-col gap-2 p-3">
+              {draft && (
+                <div className="flex items-center gap-2">
+                  <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
+                    <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
+                  </WithTooltip>
+                  <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
+                    <IconX size={16} stroke={1.5} />
+                  </IconButton>
+                </div>
+              )}
+              {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
+              <Box
+                key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
+                placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
+                draftKey={draftKeys.object(address ?? '')}
+                scope={pageScope}
+                people={people}
+                onSend={send}
+                // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
+                onSent={() => onDraft(null)}
+                autoFocus={!!draft}
+              />
+            </div>
+          }
+        >
+          {threads === null ? (
+            failed ? (
+              <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+            ) : (
+              <SkeletonList rows={2} />
+            )
+          ) : all.length === 0 ? (
+            <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
           ) : (
-            <SkeletonList rows={2} />
-          )
-        ) : all.length === 0 ? (
-          <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
-        ) : (
-          <>
-            {open.map(card)}
-            {apart.map(card)}
-            {deleted.length > 0 && (
-              <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                {deleted.map(card)}
-              </CollapsibleSection>
-            )}
-            {resolved.length > 0 && (
-              <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                {resolved.map(card)}
-              </CollapsibleSection>
-            )}
-            {(reactionsOmitted > 0 || reactionsCut) && (
-              // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
-              <p className="shrink-0 text-caption text-text-muted">
-                {reactionsOmitted > 0 &&
-                  `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
-                {reactionsOmitted > 0 && reactionsCut && ' '}
-                {reactionsCut && 'Some reactions may be missing.'}
-              </p>
-            )}
-          </>
-        )}
-      </Panel>
-    </ReferencesProvider>
+            <>
+              {open.map(card)}
+              {apart.map(card)}
+              {deleted.length > 0 && (
+                <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                  {deleted.map(card)}
+                </CollapsibleSection>
+              )}
+              {resolved.length > 0 && (
+                <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                  {resolved.map(card)}
+                </CollapsibleSection>
+              )}
+              {(reactionsOmitted > 0 || reactionsCut) && (
+                // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
+                <p className="shrink-0 text-caption text-text-muted">
+                  {reactionsOmitted > 0 &&
+                    `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
+                  {reactionsOmitted > 0 && reactionsCut && ' '}
+                  {reactionsCut && 'Some reactions may be missing.'}
+                </p>
+              )}
+            </>
+          )}
+        </Panel>
+      </ReferencesProvider>
+    </PageHere.Provider>
   )
 }

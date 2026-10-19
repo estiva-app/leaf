@@ -17,18 +17,34 @@ const known: Resolved = {}
 const RETRIES = 3
 const RETRY_MS = 5000
 
+/** The reads out now, by reference: a second chip or card asking for a file already being read waits for that read. */
+const reading = new Map<string, Promise<void>>()
+
 /** The files a page's references name, read once per tab and shared by every chip and card. */
 export function useReferences(uris: readonly string[]): Resolved {
   const key = [...new Set(uris)].sort().join('\n')
   const [, landed] = useReducer((n: number) => n + 1, 0)
   const [attempt, retry] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
-    const missing = key ? key.split('\n').filter((uri) => !(uri in known)) : []
-    if (missing.length === 0) return
+    const all = key ? key.split('\n') : []
+    const missing = all.filter((uri) => !(uri in known))
+    // Another chip or card's read: this one draws when it lands too, or reads again if it failed.
+    const elsewhere = [...new Set(all.flatMap((uri) => (missing.includes(uri) ? [] : (reading.get(uri) ?? []))))]
+    if (missing.length === 0 && elsewhere.length === 0) return
     let live = true
     let again: ReturnType<typeof setTimeout> | undefined
+    for (const read of elsewhere) {
+      void read.finally(() => {
+        if (!live) return
+        // Its read failed: read again on the same backoff as a read of this one's own.
+        if (all.some((uri) => !(uri in known))) {
+          if (attempt < RETRIES) again = setTimeout(retry, RETRY_MS * 2 ** attempt)
+        } else landed()
+      })
+    }
+    if (missing.length === 0) return () => void (live = false)
     for (const uri of missing) known[uri] = undefined
-    void resolveForeignObjects(missing, query, people.viaRelay(query), manifests)
+    const read = resolveForeignObjects(missing, query, people.viaRelay(query), manifests)
       .then((found) => {
         for (const uri of missing) known[uri] = found[uri] ?? null
       })
@@ -38,8 +54,10 @@ export function useReferences(uris: readonly string[]): Resolved {
         if (live && attempt < RETRIES) again = setTimeout(retry, RETRY_MS * 2 ** attempt)
       })
       .finally(() => {
+        for (const uri of missing) if (reading.get(uri) === read) reading.delete(uri)
         if (live) landed()
       })
+    for (const uri of missing) reading.set(uri, read)
     return () => {
       live = false
       clearTimeout(again)
@@ -55,6 +73,17 @@ const References = createContext<Resolved>({})
 export const ReferencesProvider = References.Provider
 
 /**
+ * The file one reference names: from the page's read when it holds it, else
+ * read here, so a chip a pasted link became or the card under the comment box
+ * still finds its file (COMM-8).
+ */
+function useFile(uri: string): ForeignObject | null | undefined {
+  const page = useContext(References)
+  const own = useReferences(uri in page ? [] : [uri])
+  return uri in page ? page[uri] : own[uri]
+}
+
+/**
  * A `nostr:` reference where it was written (SPEC §13.1), as Katerina's
  * prototype and Peek's `Reference` draw one: the package's InlineChip, the
  * kind's icon, the name cut at 24ch and the whole of it on hover. Anything
@@ -62,7 +91,7 @@ export const ReferencesProvider = References.Provider
  * while writing: a click on a chip opens its menu (Open, and its card).
  */
 export function ReferenceChip({ uri }: ReferenceViewProps) {
-  const file = useContext(References)[uri]
+  const file = useFile(uri)
   if (file && !file.unreachable) {
     const name = titleOf(file)
     return (
@@ -146,8 +175,8 @@ export function CarriedCards({ cards }: { cards: readonly ReferenceCard[] }) {
 }
 
 /** A file a comment draws in a row or a card of its own: a placeholder while it is read, "not available" when it cannot be. */
-function PlacedObject({ uri, layout }: { uri: string; layout: ReferenceCard['layout'] }) {
-  const file = useContext(References)[uri]
+export function PlacedObject({ uri, layout }: { uri: string; layout: ReferenceCard['layout'] }) {
+  const file = useFile(uri)
   if (file === undefined) return <SkeletonBar className="h-10 w-full" />
   if (file === null || file.unreachable) {
     const noun = file?.noun ?? 'File'

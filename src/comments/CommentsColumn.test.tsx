@@ -47,6 +47,11 @@ vi.mock('@estiva-app/interop', async (importOriginal) => {
       const found = others.length ? await (real.resolveForeignObjects as (...a: unknown[]) => Promise<Record<string, unknown>>)(others, ...rest) : {}
       return { ...found, ...Object.fromEntries(uris.filter((uri) => uri in files.known).map((uri) => [uri, files.known[uri]])) }
     },
+    // One file read again on its own: a live part's (COMM-8).
+    resolveForeignObject: async (naddr: string, ...rest: unknown[]) => {
+      const uri = naddr.startsWith('nostr:') ? naddr : `nostr:${naddr}`
+      return uri in files.known ? files.known[uri] : (real.resolveForeignObject as (...a: unknown[]) => Promise<unknown>)(naddr, ...rest)
+    },
   }
 })
 
@@ -54,6 +59,7 @@ import { FilePage } from '../pages/FilePage'
 import { LiveDocument } from '../document/LiveDocument'
 import { CommentsColumn } from './CommentsColumn'
 import type { Anchor } from './comments'
+import { query } from '../relay/bridge'
 import { holdTyping, holdTypingFor } from '../auth/heldTyping'
 import { useRef, useState } from 'react'
 
@@ -89,7 +95,9 @@ afterEach(() => {
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const AUTHOR = 'b'.repeat(64)
-const ADDRESS = `30842:${AUTHOR}:d1`
+// A uuid, as a page's `d` is: an app URL names it by its last five groups (COMM-8).
+const PAGE_D = '11111111-1111-4111-8111-111111111111'
+const ADDRESS = `30842:${AUTHOR}:${PAGE_D}`
 const BODY = descriptionTextToBlockDocument('# Plan\n\nQA-2 wrote this paragraph.')
 const PARAGRAPH = blockIds(BODY)[1]
 
@@ -858,5 +866,159 @@ describe('attaching a file to a comment (COMM-6)', () => {
     await waitFor(() => expect(within(card).getByText('plan.pdf')).toBeTruthy())
     await waitFor(() => expect(within(card).getByRole('img', { name: 'shot.png' })).toBeTruthy())
     expect(blobs.read).toHaveBeenCalledWith(PNG.url)
+  })
+})
+
+describe('the card and the live parts under the box (COMM-8)', () => {
+  const SHIP = 'e'.repeat(64)
+  // The apps' manifests, as Ship and Leaf publish them: what makes a URL name a file (§7.7).
+  const manifest = (d: string, pattern: string, kind: number): SignedEvent => ({
+    id: `${d.padEnd(63, '0')}9`,
+    pubkey: SHIP,
+    created_at: 1_760_000_000,
+    kind: 31990,
+    tags: [['d', d], ['k', String(kind)], ['urls', pattern, String(kind)]],
+    content: '',
+    sig: '',
+  })
+  const MANIFESTS = [manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851), manifest('leaf', 'https://leaf.example/p/<slug>-<d>#block-<block>', 30842)]
+  const file = (kind: number, pubkey: string, d: string): SignedEvent => ({ id: `${d.padEnd(62, '0')}77`, pubkey, created_at: 1_760_000_000, kind, tags: [['d', d]], content: '', sig: '' })
+
+  const ISSUE_D = '22222222-2222-4222-8222-222222222222'
+  const OTHER_ISSUE_D = '33333333-3333-4333-8333-333333333333'
+  const TWO_D = '44444444-4444-4444-8444-444444444444'
+  const ISSUE = `30851:${SHIP}:${ISSUE_D}`
+  const OTHER_ISSUE = `30851:${SHIP}:${OTHER_ISSUE_D}`
+  const ISSUE_URL = `https://ship.example/issue/fix-it-${ISSUE_D}`
+  const OTHER_ISSUE_URL = `https://ship.example/issue/other-issue-${OTHER_ISSUE_D}`
+  const TWO = descriptionTextToBlockDocument('# Two\n\nThe block that stays live.')
+  const TWO_BLOCK = blockIds(TWO)[1]
+  const TWO_ADDRESS = `30842:${AUTHOR}:${TWO_D}`
+  const PART_URL = `https://leaf.example/p/two-${TWO_D}#block-${TWO_BLOCK}`
+  const OWN_BLOCK_URL = `https://leaf.example/p/plan-${PAGE_D}#block-${PARAGRAPH}`
+  const uriOf = (address: string) => {
+    const [kind, pubkey, identifier] = address.split(':')
+    return `nostr:${encodeNaddr({ kind: Number(kind), pubkey, identifier, relays: [] })}`
+  }
+  const object = (address: string, title: string, body?: BlockDocument) =>
+    ({
+      ref: 'r',
+      kind: Number(address.split(':')[0]),
+      eventId: 'e',
+      widget: 'card',
+      meta: [],
+      actions: [],
+      viaRecommendation: false,
+      address,
+      folder: FOLDER,
+      slots: { title: { value: title }, ...(body ? { [BODY_SLOT]: { value: serializeBlockDocument(body), format: 'blocks' } } : {}) },
+    }) as unknown as ForeignObject
+
+  const EVENTS = [...MANIFESTS, file(30851, SHIP, ISSUE_D), file(30851, SHIP, OTHER_ISSUE_D), file(30842, AUTHOR, TWO_D), file(30842, AUTHOR, PAGE_D)]
+  beforeAll(() => {
+    files.known[uriOf(ISSUE)] = object(ISSUE, 'Fix it')
+    files.known[uriOf(OTHER_ISSUE)] = object(OTHER_ISSUE, 'Other issue')
+    files.known[uriOf(TWO_ADDRESS)] = object(TWO_ADDRESS, 'Two', TWO)
+  })
+
+  const BOX = 'Comment on this document…'
+  const under = () => document.querySelector<HTMLElement>('[data-box-under]')
+  const asked = (d: string) => vi.mocked(query).mock.calls.some(([filters]) => filters.some((f) => (f['#d'] as string[] | undefined)?.includes(d)))
+  const sent = async () => {
+    sendWithEnter(BOX)
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    return publish.mock.calls[0][0]
+  }
+  const named = (tags: string[][], name: string) => tags.filter((t) => t[0] === name)
+
+  it('a comment naming one issue by its URL shows its chip in the box and its card under it, and goes out as the URL carrying the card', async () => {
+    await open(EVENTS)
+    write(BOX, `see ${ISSUE_URL} `)
+    await waitFor(() => expect(within(under()!).getByText('Fix it')).toBeTruthy())
+    // The chip is the file's, read as the card is, and the link stays the URL a person wrote.
+    await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
+    const e = await sent()
+    expect(e.content).toBe(`see ${ISSUE_URL}`)
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+  })
+
+  it('✕ takes the card off, and the comment goes out with no card', async () => {
+    await open(EVENTS)
+    write(BOX, `see ${ISSUE_URL} `)
+    await waitFor(() => expect(under()).not.toBeNull())
+    act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove card' })))
+    expect(under()).toBeNull()
+    const e = await sent()
+    expect(named(e.tags, 'embed')).toEqual([])
+  })
+
+  it('two issues named, one on words, show no card, and the comment carries none', async () => {
+    await open(EVENTS)
+    write(BOX, `see ${ISSUE_URL} and `)
+    await waitFor(() => expect(under()).not.toBeNull())
+    await act(() => void box(BOX).editor.chain().focus('end').insertContent({ type: 'text', text: 'this one', marks: [{ type: 'link', attrs: { href: OTHER_ISSUE_URL } }] }).run())
+    await waitFor(() => expect(asked(OTHER_ISSUE_D)).toBe(true))
+    await waitFor(() => expect(under()).toBeNull())
+    const e = await sent()
+    expect(e.content).toBe(`see ${ISSUE_URL} and [this one](${OTHER_ISSUE_URL})`)
+    expect(named(e.tags, 'embed')).toEqual([])
+  })
+
+  it('a URL whose id two authors hold names nothing: no card under the box, and the comment carries none', async () => {
+    const SHARED_D = '55555555-5555-4555-8555-555555555555'
+    const SHARED = `30851:${SHIP}:${SHARED_D}`
+    files.known[uriOf(SHARED)] = object(SHARED, 'Shared id')
+    // Somebody else publishes the same kind and d: the link must not put either one's card under it.
+    await open([...EVENTS, file(30851, SHIP, SHARED_D), { ...file(30851, QA2, SHARED_D), id: `${SHARED_D.replace(/-/g, '').slice(0, 30)}${'0'.repeat(33)}1` }])
+    write(BOX, `see https://ship.example/issue/shared-${SHARED_D} and ${ISSUE_URL} `)
+    // The one issue named alone gets its card; the shared id counts for nothing, not as a second file.
+    await waitFor(() => expect(asked(SHARED_D)).toBe(true))
+    await waitFor(() => expect(within(under()!).getByText('Fix it')).toBeTruthy())
+    expect(within(under()!).queryByText('Shared id')).toBeNull()
+    const e = await sent()
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+  })
+
+  it('a link to a block of another page shows that block live under the box and no card, and the comment carries its part', async () => {
+    await open(EVENTS)
+    write(BOX, `see ${ISSUE_URL} and ${PART_URL} `)
+    await waitFor(() => expect(within(under()!).getByText('The block that stays live.')).toBeTruthy())
+    expect(within(under()!).queryByText('Fix it')).toBeNull()
+    const e = await sent()
+    expect(named(e.tags, 'part')).toEqual([['part', TWO_ADDRESS, TWO_BLOCK]])
+    expect(named(e.tags, 'embed')).toEqual([])
+  })
+
+  it('a link to another block of this page shows nothing under the box, and the comment carries no part and no card', async () => {
+    await open(EVENTS)
+    // With a block of another page beside it: only that one's part shows and goes out.
+    write(BOX, `see ${OWN_BLOCK_URL} and ${PART_URL} `)
+    await waitFor(() => expect(asked(PAGE_D)).toBe(true))
+    await waitFor(() => expect(under()?.querySelectorAll('[data-part-address]')).toHaveLength(1))
+    expect(under()!.querySelector('[data-part-address]')?.getAttribute('data-part-address')).toBe(TWO_ADDRESS)
+    const e = await sent()
+    expect(named(e.tags, 'part')).toEqual([['part', TWO_ADDRESS, TWO_BLOCK]])
+    expect(named(e.tags, 'embed')).toEqual([])
+  })
+
+  it("draws a sent comment's card named only by its URL, and a block of another page live under it", async () => {
+    await open([...EVENTS, comment([['embed', ISSUE, 'detailed']], `see ${ISSUE_URL}`), comment([['part', TWO_ADDRESS, TWO_BLOCK]], `see ${PART_URL}`)])
+    await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(2))
+    const text = (c: Element) => c.textContent ?? ''
+    await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
+  })
+
+  it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {
+    await open([
+      ...EVENTS,
+      comment([['part', ADDRESS, PARAGRAPH]], `see ${OWN_BLOCK_URL}`),
+      comment([['part', TWO_ADDRESS, TWO_BLOCK]], 'the link was edited out'),
+      // The one that draws, so the two that do not are told apart from parts never drawn.
+      comment([['part', TWO_ADDRESS, TWO_BLOCK]], `still ${PART_URL}`),
+    ])
+    await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(3))
+    await waitFor(() => expect(document.querySelectorAll('[data-part-address]')).toHaveLength(1))
+    const drawn = document.querySelector('[data-part-address]')!.closest('[data-comment-id]')!
+    expect(drawn.textContent).toContain('still')
   })
 })
