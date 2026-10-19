@@ -7,14 +7,16 @@ import {
   KIND_ASSERTION,
   KIND_COMMENT,
   KIND_DELETION,
+  KIND_EDIT,
   KIND_REACTION,
   mentionTagsFor,
+  placeOf,
   quoteTagsFor,
   referenceTagsFor,
   urgentTagsFor,
   type ReactionEvent,
 } from '@estiva-app/conversation'
-import { blockRunOf, blockRunTag, buildDeletion, buildReaction, buildResolution, quoteOf, quoteTag, type Quote, type SignedEvent } from '@estiva-app/protocol'
+import { blockRunOf, blockRunTag, buildDeletion, buildEdit, buildReaction, buildResolution, quoteOf, quoteTag, type Quote, type SignedEvent } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A document as its comments name it: its address, its Folder (the `h` every comment carries) and its author. */
@@ -29,7 +31,10 @@ export interface CommentItem {
   by: string
   /** Unix seconds. */
   at: number
+  /** What it says now: its latest edit's body, else its own (SPEC §6.8). */
   body: string
+  /** An edit changed the body. */
+  edited: boolean
   event: SignedEvent
   /** Its reactions, one per person and emoji, oldest first (SPEC §6.6). */
   reactions: ReactionEvent[]
@@ -38,11 +43,15 @@ export interface CommentItem {
 /** A top-level comment and its replies: one card in the column. */
 export interface Thread {
   id: string
-  /** The run of blocks it is on (SPEC §13.6), or absent: the whole document. */
+  /**
+   * The run of blocks it is on (SPEC §13.6), or absent: the whole document —
+   * or, for a deleted comment, a place none of its replies remembers.
+   */
   blocks?: string[]
   /** The words it quotes, when it is on a selection (LEAF-7) rather than whole blocks. */
   quote?: Quote
-  root: CommentItem
+  /** The top-level comment; `null` once it was deleted and its replies stay (SPEC §6.5). */
+  root: CommentItem | null
   replies: CommentItem[]
   /** The last resolution says resolved. */
   resolved: boolean
@@ -65,39 +74,76 @@ export interface Threads {
  * `A`, roots and replies alike), grouped by NIP-22, each root's resolutions
  * (`9101`), and every comment's and reply's reactions (`7`), read as Peek
  * reads them. Whatever Folder a comment was filed in, it is this document's:
- * reads go by anchor and are never bounded by Folder. A reply whose root is
- * gone has no card: there is no top-level comment to draw it under.
+ * reads go by anchor and are never bounded by Folder. Each one shows its
+ * latest edit (SPEC §6.8).
+ *
+ * A reply whose top-level comment is gone keeps its card only when the relay
+ * holds a deletion of that comment by its author (SPEC §6.5): the comment is
+ * then `null`, and the thread is placed by its earliest reply that copied the
+ * comment's place. Gone with no deletion, it is outside this read, and has no
+ * card.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-thread-belongs-to-what-it-is-about.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
  */
 export async function readThreads(doc: Commented): Promise<Threads> {
   const events = await query([{ kinds: [KIND_COMMENT], '#A': [doc.address], limit: 500 }])
-  const { roots, replies } = groupThreads(events.filter((e) => e.kind === KIND_COMMENT))
+  const { roots, replies, missingRoots } = groupThreads(events.filter((e) => e.kind === KIND_COMMENT))
   const on = roots.filter((e) => isCommentOn(e, doc.address))
-  const all = on.flatMap((root) => [root, ...(replies[root.id] ?? [])])
-  const decorations = all.length ? await decorationsOf(all.map((e) => ({ id: e.id, at: e.created_at })), query) : null
-  const item = (event: SignedEvent): CommentItem => ({
-    id: event.id,
-    by: event.pubkey,
-    at: event.created_at,
-    body: event.content,
-    event,
-    reactions: decorations?.byId[event.id]?.reactions ?? [],
-  })
-  const threads = on.map((root) => {
-    const blocks = blockRunOf(root)
-    const quote = blocks ? quoteOf(root) : undefined
-    const last = decorations?.byId[root.id]?.resolutions.at(-1)
+  const deleted = missingRoots.length ? await deletedRoots(missingRoots, replies) : []
+  const all = [...on, ...[...on.map((root) => root.id), ...deleted].flatMap((id) => replies[id] ?? [])]
+  // The body lets an edit that changed nothing stay unmarked. A deleted comment is a target too, for its thread's resolution.
+  const targets = [
+    ...all.map((e) => ({ id: e.id, at: e.created_at, body: e.content })),
+    ...deleted.map((id) => ({ id, at: replies[id]?.[0]?.created_at ?? 0 })),
+  ]
+  const decorations = targets.length ? await decorationsOf(targets, query) : null
+  const item = (event: SignedEvent): CommentItem => {
+    const edit = decorations?.byId[event.id]?.edit
     return {
-      id: root.id,
+      id: event.id,
+      by: event.pubkey,
+      at: event.created_at,
+      body: edit?.body ?? event.content,
+      edited: edit?.edited ?? false,
+      event,
+      reactions: decorations?.byId[event.id]?.reactions ?? [],
+    }
+  }
+  const thread = (id: string, root: SignedEvent | null): Thread => {
+    const answers = replies[id] ?? []
+    // Its comment's place while it is readable, else the earliest reply's that copied it.
+    const placed = root ?? answers.find((e) => blockRunOf(e))
+    const blocks = placed ? blockRunOf(placed) : undefined
+    const quote = placed && blocks ? quoteOf(placed) : undefined
+    // A resolved thread stays resolved when its comment is deleted.
+    const last = decorations?.byId[id]?.resolutions.at(-1)
+    return {
+      id,
       ...(blocks ? { blocks } : {}),
       ...(quote ? { quote } : {}),
-      root: item(root),
-      replies: (replies[root.id] ?? []).map(item),
+      root: root ? item(root) : null,
+      replies: answers.map(item),
       resolved: last?.action === 'resolved',
     }
-  })
+  }
+  const threads = [...on.map((root) => thread(root.id, root)), ...deleted.map((id) => thread(id, null))]
   return { threads, reactionsOmitted: decorations?.reactionTargetsOmitted ?? 0, reactionsCut: decorations?.reactionEventsCut ?? false }
+}
+
+/**
+ * Of the top-level comments replies point at and the read did not return, the
+ * ones the relay holds a `kind:5` for, signed by the comment's author as its
+ * replies name them (their first `p`, before any mention's); a deletion by
+ * anyone else deletes nothing. Replies that name no author take any deletion
+ * as the proof.
+ */
+async function deletedRoots(missing: string[], replies: Record<string, SignedEvent[]>): Promise<string[]> {
+  const deletions = await query([{ kinds: [KIND_DELETION], '#e': missing, limit: 500 }]).catch(() => [])
+  return missing.filter((id) => {
+    const authors = new Set((replies[id] ?? []).flatMap((r) => r.tags.find((t) => t[0] === 'p' && t[1])?.[1] ?? []))
+    return deletions.some((d) => d.tags.some((t) => t[0] === 'e' && t[1] === id) && (authors.size === 0 || authors.has(d.pubkey)))
+  })
 }
 
 async function send(unsigned: Parameters<typeof publish>[0] | null, refused: string, signedOut = 'Sign in to comment.'): Promise<WriteResult> {
@@ -152,15 +198,46 @@ export function postComment(doc: Commented, written: Written, anchor?: Anchor): 
   return send(pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, tags }) : null, NOT_SENT, SIGNED_OUT)
 }
 
-/** A reply in a thread. It names the top-level comment and carries no `block`: it inherits the thread's place (SPEC §13.6). */
+/**
+ * A reply in a thread. It names the top-level comment and copies its `block`
+ * and `quote`, so the thread keeps its place if the comment is deleted (SPEC
+ * §13.6). A thread whose comment was deleted takes no reply.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
+ */
 export function postReply(doc: Commented, thread: Thread, written: Written): Promise<WriteResult> {
   const pubkey = viewerPubkey()
+  const root = thread.root
+  if (!root) return Promise.resolve({ ok: false, reason: 'the comment was deleted' })
   const tags = earnedTags(written, { address: doc.address, event: thread.id })
   return send(
-    pubkey ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: thread.root.by }, folder: doc.folder, body: written.text, tags }) : null,
+    pubkey
+      ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder: doc.folder, body: written.text, tags })
+      : null,
     NOT_SENT,
     SIGNED_OUT,
   )
+}
+
+// The edit box says this after "Not saved:".
+const NOT_SAVED = 'it did not go through'
+
+/**
+ * Your comment or reply, reworded: the `kind:40003` Peek and Ship write (SPEC
+ * §6.8), in the Folder the comment was filed in. It carries no `block` or
+ * `quote`, so the comment stays where it is.
+ */
+export function editComment(comment: CommentItem, written: Written): Promise<WriteResult> {
+  const pubkey = viewerPubkey()
+  const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
+  if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
+  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body: written.text }) : null, NOT_SAVED, SIGNED_OUT)
+}
+
+/** Delete your comment or reply: a `kind:5` naming it, as Peek's and Ship's Delete do. Its replies stay (SPEC §6.5). */
+export function deleteComment(comment: CommentItem): Promise<WriteResult> {
+  const pubkey = viewerPubkey()
+  return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: comment.id }) : null, 'Could not delete it. Try again.', SIGNED_OUT)
 }
 
 /**
@@ -169,7 +246,7 @@ export function postReply(doc: Commented, thread: Thread, written: Written): Pro
  */
 export function setResolved(doc: Commented, thread: Thread, resolved: boolean): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  const folder = thread.root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
+  const folder = thread.root?.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
   return send(
     pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened' }) : null,
     resolved ? 'Could not resolve it. Try again.' : 'Could not reopen it. Try again.',
@@ -194,5 +271,5 @@ export function unreact(reactionId: string): Promise<WriteResult> {
   return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: reactionId }) : null, NOT_REACTED, SIGNED_OUT)
 }
 
-/** The kinds that change what the column shows: a comment, a reply, a resolution, a reaction and its taking back. */
-export const COMMENT_KINDS: number[] = [KIND_COMMENT, KIND_ASSERTION, KIND_REACTION, KIND_DELETION]
+/** The kinds that change what the column shows: a comment, a reply, an edit, a resolution, a reaction, and a deletion of a comment or a reaction. */
+export const COMMENT_KINDS: number[] = [KIND_COMMENT, KIND_EDIT, KIND_ASSERTION, KIND_REACTION, KIND_DELETION]
