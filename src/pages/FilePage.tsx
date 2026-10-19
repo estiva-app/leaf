@@ -4,7 +4,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { Divider, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
-import { CommentsColumn } from '../comments/CommentsColumn'
+import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
@@ -106,7 +106,8 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
     const caret = TextSelection.findFrom(editor.state.doc.resolve(0), 1, true)
     if (caret) editor.view.dispatch(editor.state.tr.setSelection(caret))
   }
-  const [draft, setDraft] = useState<Anchor | null>(null)
+  // A comment being written on words or blocks when the sign-in ended is back on them after the tap (AUT-5).
+  const [draft, setDraft] = useState<Anchor | null>(() => heldComments(opened.address)?.draft ?? null)
   const docBody = useRef<HTMLDivElement | null>(null)
   // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
   const addressable = !body?.value || body.format === 'blocks'

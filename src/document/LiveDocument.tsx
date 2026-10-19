@@ -130,7 +130,12 @@ export function LiveDocument({
     latest.current = { value, format }
   }, [value, format])
   // What was typed here when the sign-in last ended, back after the passkey tap and not yet saved (AUT-5).
-  const [held] = useState(() => heldDocument(holdKey))
+  // Not when it is what the page already has (a save that was out as the sign-in ended went through), or nothing would
+  // ever take the page's later changes: only a save clears `restored`, and a save of what is saved sends nothing.
+  const [held] = useState(() => {
+    const doc = heldDocument(holdKey)
+    return doc && publishableFromEditor(doc).value !== value ? doc : null
+  })
   // Until it is saved it is your unsaved text: someone else's save waits behind it, as behind a refused one.
   const [restored, setRestored] = useState(held !== null)
   // The text as last typed. Saving on the way out reads this, not the editor, which may already be torn down.
@@ -161,7 +166,8 @@ export function LiveDocument({
           setSuperseded(replaced)
           setBase(next.value)
           setRestored(false)
-          if (holdKey) releaseHeld(holdKey)
+          // A save that was out as the sign-in ended: what was held then may hold more than this, typed since.
+          if (holdKey && !sessionEnded()) releaseHeld(holdKey)
         }
         if (left.current) {
           // Refused because the sign-in ended: the text is held for after the tap, not lost (AUT-5).
@@ -172,7 +178,8 @@ export function LiveDocument({
         setSaving(false)
         if (again.current) {
           again.current = false
-          void latestSave.current(typed.current)
+          // After an ending it is held for after the tap, and /sign would only refuse it.
+          if (!sessionEnded()) void latestSave.current(typed.current)
         }
       }
     },

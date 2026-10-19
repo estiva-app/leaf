@@ -102,6 +102,75 @@ describe("a page's text when the sign-in ends", () => {
     expect(saveAfter).not.toHaveBeenCalled()
   })
 
+  it("takes someone else's later save when what was held went through as the sign-in ended", async () => {
+    store()
+    const tab = await freshTab()
+    let answer: (ok: boolean) => void = () => {}
+    let sent = ''
+    const onCommit = vi.fn((value: string) => {
+      sent = value
+      return new Promise<boolean>((resolve) => (answer = resolve))
+    })
+    render(
+      <tab.SessionGate>
+        <tab.LiveDocument value="The plan" holdKey={PAGE} format="marker" changedBy={null} onCommit={onCommit} onLeftUnsaved={vi.fn()} />
+      </tab.SessionGate>,
+    )
+    const box = await ready()
+    act(() => {
+      box.editor.commands.focus('end')
+      fireEvent.focus(box)
+      box.editor.chain().insertContent(' is to ship').run()
+    })
+    act(() => void fireEvent.blur(box))
+    refuse()
+    await act(async () => void (await tab.id.renew()))
+    await act(async () => answer(true))
+
+    // After the tap the relay has those very words; then QA-2 saves a change, which the page takes.
+    cleanup()
+    store()
+    const after = await freshTab()
+    const props = { holdKey: PAGE, format: 'blocks' as const, changedBy: { pubkey: 'c4'.repeat(32), name: 'QA-2' }, onCommit: vi.fn(async () => true), onLeftUnsaved: vi.fn() }
+    const { rerender } = render(<after.LiveDocument value={sent} {...props} />)
+    await ready()
+    const theirs = sent.replace('The plan is to ship', 'The plan is to ship on Friday')
+    rerender(<after.LiveDocument value={theirs} {...props} />)
+    await waitFor(() => expect(page().editor.getText()).toBe('The plan is to ship on Friday'))
+  })
+
+  it('keeps the words typed during a save that goes through as the sign-in ends', async () => {
+    store()
+    const tab = await freshTab()
+    let answer: (ok: boolean) => void = () => {}
+    const onCommit = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)))
+    render(
+      <tab.SessionGate>
+        <tab.LiveDocument value="The plan" holdKey={PAGE} format="marker" changedBy={null} onCommit={onCommit} onLeftUnsaved={vi.fn()} />
+      </tab.SessionGate>,
+    )
+    const box = await ready()
+    act(() => {
+      box.editor.commands.focus('end')
+      fireEvent.focus(box)
+      box.editor.chain().insertContent(' is to ship').run()
+    })
+    act(() => void fireEvent.blur(box))
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    // Typed while that save is out, then the sign-in ends, then the save comes back accepted.
+    act(() => void box.editor.chain().focus('end').insertContent(' on Friday').run())
+    refuse()
+    await act(async () => void (await tab.id.renew()))
+    await act(async () => answer(true))
+    expect(onCommit).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    store()
+    const after = await freshTab()
+    render(<after.LiveDocument value="The plan is to ship" holdKey={PAGE} format="marker" changedBy={null} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} />)
+    expect((await ready()).editor.getText()).toBe('The plan is to ship on Friday')
+  })
+
   it('is not given to somebody else who signs in next on this device', async () => {
     store()
     const tab = await freshTab()
@@ -120,6 +189,59 @@ describe("a page's text when the sign-in ends", () => {
     const other = await freshTab()
     render(<other.LiveDocument value="The plan" holdKey={PAGE} format="marker" changedBy={null} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} />)
     expect((await ready()).editor.getText()).toBe('The plan')
+  })
+})
+
+describe("a page's text when another tab signs out", () => {
+  const SIGNED_OUT = 'leaf.estiva-id.signed-out'
+  /** The page open with words not yet saved, under the gate. */
+  async function typing() {
+    store()
+    const tab = await freshTab()
+    render(
+      <tab.SessionGate>
+        <tab.LiveDocument value="The plan" holdKey={PAGE} format="marker" changedBy={null} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} />
+      </tab.SessionGate>,
+    )
+    const box = await ready()
+    act(() => void box.editor.chain().focus('end').insertContent(' is secret').run())
+    return tab
+  }
+  /** The next sign-in on this device, as the same person: nothing typed before the sign-out comes back. */
+  async function nextSignIn() {
+    cleanup()
+    store()
+    const after = await freshTab()
+    render(<after.LiveDocument value="The plan" holdKey={PAGE} format="marker" changedBy={null} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} />)
+    return (await ready()).editor.getText()
+  }
+
+  it('keeps nothing on the device when this tab hears of the sign-out late, as a frozen background tab does', async () => {
+    await typing()
+    localStorage.setItem(SIGNED_OUT, String(Date.now()))
+    localStorage.removeItem(KEY)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(Date.now() + 30_000)
+      act(() => void window.dispatchEvent(new StorageEvent('storage', { key: KEY, storageArea: localStorage })))
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(screen.getByRole('button', { name: 'Continue with passkey' })).toBeTruthy()
+    expect(await nextSignIn()).toBe('The plan')
+  })
+
+  it('keeps nothing on the device when a renewal out at the time comes back refused before the sign-out is heard', async () => {
+    const tab = await typing()
+    // The other tab signs out while this tab's /token call is out.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      localStorage.setItem(SIGNED_OUT, String(Date.now()))
+      localStorage.removeItem(KEY)
+      return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) } as Response
+    })
+    await act(async () => void (await tab.id.renew()))
+    expect(screen.getByRole('button', { name: 'Continue with passkey' })).toBeTruthy()
+    expect(await nextSignIn()).toBe('The plan')
   })
 })
 

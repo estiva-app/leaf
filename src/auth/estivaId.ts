@@ -18,9 +18,17 @@ const TOKEN_KEY = `${KEY_PREFIX}.token`
 /** When a tab last signed out, so another tab can tell a sign-out from a refused renewal: both clear the token. */
 const SIGNED_OUT_KEY = `${KEY_PREFIX}.signed-out`
 
-function signedOutJustNow(): boolean {
+/** When this page loaded: a sign-out after it is this page's. */
+const loadedAt = Date.now()
+
+/**
+ * Whether a tab signed out since this page loaded. Not "in the last few seconds":
+ * a frozen background tab hears the token go long after, and its typing must not
+ * be held past a sign-out.
+ */
+function signedOutSinceLoad(): boolean {
   try {
-    return Date.now() - Number(localStorage.getItem(SIGNED_OUT_KEY) ?? 0) < 10_000
+    return Number(localStorage.getItem(SIGNED_OUT_KEY) ?? 0) >= loadedAt
   } catch {
     return false
   }
@@ -76,8 +84,10 @@ export function startRenewal(): void {
 let ended: ShellReason | null = null
 const endedListeners = new Set<() => void>()
 
-function endSession(reason: ShellReason): void {
+function endSession(given: ShellReason): void {
   if (ended) return
+  // A renewal refused because another tab signed out while it was out is that sign-out, whichever this tab hears first.
+  const reason = given === 'session_expired' && signedOutSinceLoad() ? 'no_session' : given
   // Before the screen takes the page's place, while what was typed is still there to read; not for a sign-out.
   if (reason === 'session_expired') holdTyping()
   ended = reason
@@ -111,7 +121,7 @@ export function followOtherTabs(): () => void {
   const follow = (event: StorageEvent) => {
     if (event.storageArea !== window.localStorage || (event.key !== TOKEN_KEY && event.key !== null)) return
     const token = client.storedToken()
-    if (token === null) endSession(event.key === null || signedOutJustNow() ? 'no_session' : 'session_expired')
+    if (token === null) endSession(event.key === null ? 'no_session' : 'session_expired')
     else if (ended || token.pubkey !== person) window.location.reload()
   }
   window.addEventListener('storage', follow)
@@ -146,7 +156,10 @@ export async function beginSignIn(options: { silent?: boolean } = {}): Promise<v
   await client?.beginSignIn(`${window.location.pathname}${window.location.search}${window.location.hash}`, options)
 }
 
-/** Leave for Estiva ID to end the session there; nothing typed stays on the device. */
+/**
+ * Leave for Estiva ID to end the session there; nothing held from an ending stays on the device. The comment box's
+ * drafts still do, until the next stage, "Sign-out means out".
+ */
 export function beginSignOut(): void {
   forgetHeldTyping()
   // Before the token goes, so the other tabs read its removal as a sign-out and hold nothing.

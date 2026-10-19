@@ -39,6 +39,7 @@ import { placeComment, ROW_BLOCK, type RowLine } from './commentLines'
 import { exactly, whenOf } from '../home/recent'
 import { postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
+import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
 
@@ -453,6 +454,17 @@ function scrollWithin(box: HTMLElement | null, el: Element | null) {
 
 const anchorOf = (t: Thread): CommentAnchor | null => (t.blocks ? { id: t.id, blocks: t.blocks, ...(t.quote ? { quote: t.quote } : {}) } : null)
 
+/**
+ * Where a comment was being written when the sign-in ended (AUT-5): the words or blocks it is on, and the thread whose
+ * reply box was open. The box's words already live in the draft store; this puts them back on the same place.
+ */
+interface HeldComments {
+  draft: Anchor | null
+  active: string | null
+}
+const commentsHoldKey = (address: string | undefined) => (address ? `comments:${address}` : undefined)
+export const heldComments = (address: string | undefined) => heldFields<HeldComments>(commentsHoldKey(address))
+
 /** The column's props: the document, its editor, and the block a handle's Comment started a comment on. */
 export interface CommentsColumnProps {
   doc: Partial<Commented>
@@ -470,7 +482,13 @@ export interface CommentsColumnProps {
 export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
   const { showToast } = useToast()
-  const [active, setActive] = useState<string | null>(null)
+  const [active, setActive] = useState<string | null>(() => heldComments(doc.address)?.active ?? null)
+  const holdKey = commentsHoldKey(doc.address)
+  useHeldTyping(holdKey, () => (draft || active ? JSON.stringify({ draft, active } satisfies HeldComments) : undefined))
+  // Taken once it is back (the page took its draft as it drew): a place left open must not come back on the next visit.
+  useEffect(() => {
+    if (holdKey) releaseHeld(holdKey)
+  }, [holdKey])
   const [columnBody, setColumnBody] = useState<HTMLDivElement | null>(null)
   // Every change to the text re-reads where each comment is: someone else's save as much as your typing.
   const [version, setVersion] = useState(0)
