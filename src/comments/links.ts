@@ -16,27 +16,12 @@
  */
 import { useMemo, useSyncExternalStore } from 'react'
 import { matchObjectUrl, urlPatternsOf } from '@estiva-app/interop'
-import type { LinkResolver, PartPointer, SignedEvent } from '@estiva-app/protocol'
+import type { LinkResolver, PartPointer } from '@estiva-app/protocol'
 import { query } from '../relay/bridge'
+import { declaredManifests } from '../relay/manifests'
 import { referenceOfValue } from './commentLines'
 
 const EVENT_ID = /^[0-9a-f]{64}$/i
-
-/** The manifests apps publish (kind 31990), read once per tab; an empty or failed read is asked again next time. */
-let manifests: Promise<SignedEvent[]> | null = null
-function declaredManifests(): Promise<SignedEvent[]> {
-  manifests ??= query([{ kinds: [31990], limit: 500 }]).then(
-    (found) => {
-      if (found.length === 0) manifests = null
-      return found
-    },
-    (error: unknown) => {
-      manifests = null
-      throw error
-    },
-  )
-  return manifests
-}
 
 /** What one link names: an address or a message's event id, and the block when it links to one. */
 interface Answer {

@@ -94,6 +94,19 @@ export function findFile(
   return null
 }
 
+/** Find a file anywhere in the workspace by its address, `<kind>:<pubkey>:<d>`: what another app's path names. */
+export function findFileAt(
+  folders: WorkspaceFolder[] | null,
+  children: Workspace['children'],
+  address: string,
+): { file: ForeignObject; folder: WorkspaceFolder } | null {
+  for (const folder of folders ?? []) {
+    const file = filesIn(folder, children).find((f) => f.address === address && !f.unreachable)
+    if (file) return { file, folder }
+  }
+  return null
+}
+
 /** A Folder's files: its listing, then the rows read under them. */
 function filesIn(folder: WorkspaceFolder, children: Workspace['children']): ForeignObject[] {
   const listed = folder.contents?.files ?? []
