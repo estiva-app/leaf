@@ -95,4 +95,12 @@ describe('the path Leaf shows for another app’s file', () => {
     expect(ownerPathOf(issue, [planted, SHIP])).toBe(`/issue/plan-the-launch-${D}`)
     expect(ownerPathOf({ ...issue, openUrl: 'https://unknown.example/o/naddr1x' }, [planted, SHIP])).toBeUndefined()
   })
+
+  it.each([
+    ['Leaf’s own page word, which would read every such file as not found', 'https://ship.estiva.app/document/<slug>-<d>'],
+    ['a word the URL parser takes for another origin', 'https://ship.estiva.app/\\evil.example/<slug>-<d>'],
+  ])('is not written to the bar when the opener’s manifest names %s', (_, pattern) => {
+    const opener = manifest(MALLORY, [['d', 'x'], ['k', '30851'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', pattern, '30851']])
+    expect(ownerPathOf(issue, [opener])).toBeUndefined()
+  })
 })

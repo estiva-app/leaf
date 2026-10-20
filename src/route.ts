@@ -26,6 +26,11 @@ export type Route =
 /** Leaf's own first segments, which are never another app's word. */
 const OWN = new Set(['f', 'document', 'new', 'app'])
 
+/** Whether `word` can be another app's type word on Leaf's host: the grammar {@link routeOf} reads, and none of Leaf's own. */
+export function isOtherAppsWord(word: string): boolean {
+  return /^[a-z][a-z0-9-]*$/.test(word) && !OWN.has(word)
+}
+
 /** The place a path names. Anything Leaf does not know is Home. */
 export function routeOf(pathname: string): Route {
   const file = /^\/f\/([a-z0-9]+)\/?$/.exec(pathname)
@@ -34,8 +39,8 @@ export function routeOf(pathname: string): Route {
   const document = /^\/document\/([^/]+)\/?$/.exec(pathname)
   const d = document ? identifierFromRef(decodeRef(document[1])) : null
   if (d) return { page: 'document', d }
-  const other = /^\/([a-z][a-z0-9-]*)\/([^/]+)\/?$/.exec(pathname)
-  if (other && !OWN.has(other[1])) return { page: 'path', word: other[1], ref: decodeRef(other[2]) }
+  const other = /^\/([^/]+)\/([^/]+)\/?$/.exec(pathname)
+  if (other && isOtherAppsWord(other[1])) return { page: 'path', word: other[1], ref: decodeRef(other[2]) }
   return { page: 'home' }
 }
 

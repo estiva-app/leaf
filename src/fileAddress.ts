@@ -16,6 +16,7 @@ import { eventIdFromRef, identifierFromRef, matchObjectUrl, objectRef, urlPatter
 import { encodeNaddr } from '@estiva-app/protocol'
 import { query } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
+import { isOtherAppsWord } from './route'
 
 /** A published `kind:31990`, as far as words are concerned. */
 export interface Manifest {
@@ -133,7 +134,14 @@ function manifestOfLink<M extends Manifest>(url: string, manifests: readonly M[]
 export function ownerPathOf(file: Pick<ForeignObject, 'kind' | 'address' | 'openUrl' | 'slots'>, manifests: readonly Manifest[]): string | undefined {
   if (!file.address || !file.openUrl) return undefined
   const owner = manifestOfLink(file.openUrl, manifests)
-  const shape = owner && fileShapesOf(owner).find((s) => s.kind === file.kind && s.pattern.split('?')[0].includes('<d>') && !s.pattern.includes('#/'))
+  /*
+    Only a word Leaf's own route reads back as another app's: a manifest anyone may publish could otherwise name
+    `document` (Leaf's page route, so every such file reads as not found) or `\evil.example`, which the URL parser
+    takes for another origin and `replaceState` refuses with a throw.
+  */
+  const shape =
+    owner &&
+    fileShapesOf(owner).find((s) => s.kind === file.kind && isOtherAppsWord(s.word) && s.pattern.split('?')[0].includes('<d>') && !s.pattern.includes('#/'))
   if (!shape) return undefined
   const d = file.address.split(':').slice(2).join(':')
   return `/${shape.word}/${objectRef(d, file.slots.title?.value)}`
