@@ -17,13 +17,15 @@ import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
 import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { NewDocumentDialog } from './folders/NewDocumentDialog'
-import { fileKey, findDocument, findFile, groupsOf, isDocument } from './folders/tree'
+import { naddrOf } from './fileAddress'
+import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { useFileByAddress } from './pages/useFileByAddress'
+import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
@@ -79,21 +81,37 @@ function Frame() {
     () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
     [folders, children, opened, setOpen, setFolderOpen],
   )
+  // Another app's address for a file, with Leaf's host (`/issue/<slug>-<d>`): the manifests say which file it names.
+  const named = usePathAddress(route.page === 'path' ? route : null)
   const open =
-    route.page === 'file' ? findFile(folders, children, route.naddr) : route.page === 'document' ? findDocument(folders, children, route.d) : null
-  /*
-    A document opened by its old `/f/<naddr>` link: its own link takes the old one's place, block included, so the
-    address bar holds the link every app reads (SPEC §7.7).
-  */
-  const relink = route.page === 'file' && open && isDocument(open.file) ? pagePath({ ...open.file, title: open.file.slots.title?.value }) : null
-  useEffect(() => {
-    if (relink) replace(`${relink}${window.location.hash}`)
-  }, [relink])
+    route.page === 'file'
+      ? findFile(folders, children, route.naddr)
+      : route.page === 'document'
+        ? findDocument(folders, children, route.d)
+        : route.page === 'path' && named.address
+          ? findFileAt(folders, children, named.address)
+          : null
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   // A file no listing holds, opened by its address: read on its own once the tree has been read without it.
-  const byAddress = useFileByAddress(route.page === 'file' && !open && !reading ? route.naddr : null)
+  const naddr = route.page === 'file' ? route.naddr : named.address ? naddrOf(named.address) : null
+  const byAddress = useFileByAddress(naddr && !open && !reading ? naddr : null)
+  /*
+    The address bar holds the link every app reads (SPEC §7.7). A document opened by its old `/f/<naddr>` link gets
+    its own link, block included; another app's file gets its own app's path on Leaf's host, slug refreshed, so
+    swapping the host opens it there (RFC 0.5 §7.7 rule 4).
+  */
+  const shown = route.page === 'file' || route.page === 'path' ? (open?.file ?? byAddress.file) : null
+  const elsewhere = shown && !shown.unreachable && !isDocument(shown) ? shown : null
+  const ownerPath = useOwnerPath(elsewhere)
+  const relink =
+    open && shown === open.file && isDocument(open.file) ? pagePath({ ...open.file, title: open.file.slots.title?.value }) : elsewhere ? ownerPath : null
+  useEffect(() => {
+    if (!relink || relink === window.location.pathname) return
+    if (shown?.address) rememberPath(relink, shown.address)
+    replace(`${relink}${window.location.hash}`)
+  }, [relink, shown])
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
   useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(true))
@@ -170,7 +188,7 @@ function Frame() {
         action={{ label: 'Try again', onClick: () => void relist(unlisted) }}
       />
     ) : (
-      <FilePage file={open?.file ?? byAddress.file} loading={reading || byAddress.loading} />
+      <FilePage file={open?.file ?? byAddress.file} loading={reading || named.loading || byAddress.loading} />
     )
 
   return (

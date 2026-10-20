@@ -8,10 +8,23 @@ import { KIND } from '@estiva-app/protocol'
  * declares in `urls` (SPEC §7.7), so every app reads it as the page's chip and
  * `#block-<id>` as one of its blocks; the word is Miky's (the issue
  * conversation, 2026-10-19). The `/f/` link of a document still opens it, and
- * is replaced by the document's own link once the page is found. Kept to the
- * History API: three routes need no router.
+ * is replaced by the document's own link once the page is found.
+ *
+ * Any other `/<word>/<ref>` is another app's address for a file, with Leaf's
+ * host in front: `/issue/<slug>-<d>` is the Ship issue `ship.estiva.app` shows
+ * at that path, and the manifests say what the word is (`fileAddress.ts`). Kept
+ * to the History API: four routes need no router.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
-export type Route = { page: 'home' } | { page: 'file'; naddr: string } | { page: 'document'; d: string }
+export type Route =
+  | { page: 'home' }
+  | { page: 'file'; naddr: string }
+  | { page: 'document'; d: string }
+  | { page: 'path'; word: string; ref: string }
+
+/** Leaf's own first segments, which are never another app's word. */
+const OWN = new Set(['f', 'document', 'new', 'app'])
 
 /** The place a path names. Anything Leaf does not know is Home. */
 export function routeOf(pathname: string): Route {
@@ -20,7 +33,10 @@ export function routeOf(pathname: string): Route {
   // The slug is decoration and may be stale after a rename: only the `d` names the page (SPEC §7.7).
   const document = /^\/document\/([^/]+)\/?$/.exec(pathname)
   const d = document ? identifierFromRef(decodeRef(document[1])) : null
-  return d ? { page: 'document', d } : { page: 'home' }
+  if (d) return { page: 'document', d }
+  const other = /^\/([a-z][a-z0-9-]*)\/([^/]+)\/?$/.exec(pathname)
+  if (other && !OWN.has(other[1])) return { page: 'path', word: other[1], ref: decodeRef(other[2]) }
+  return { page: 'home' }
 }
 
 function decodeRef(ref: string): string {

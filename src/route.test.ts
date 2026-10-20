@@ -24,6 +24,21 @@ describe('ownPath, the place sign-in returns to', () => {
   })
 })
 
+describe("another app's path on Leaf's host", () => {
+  const D = 'a1b2c3d4-0000-4000-8000-00000000000a'
+
+  it('is a file page for the word the manifests will name, not Home', () => {
+    expect(routeOf(`/issue/plan-the-launch-${D}`)).toEqual({ page: 'path', word: 'issue', ref: `plan-the-launch-${D}` })
+    expect(routeOf(`/topic/${D}/`)).toEqual({ page: 'path', word: 'topic', ref: D })
+  })
+
+  it("never takes Leaf's own pages for another app's word", () => {
+    expect(routeOf('/document/no-identity')).toEqual({ page: 'home' })
+    expect(routeOf(`/app/${D}`)).toEqual({ page: 'home' })
+    expect(routeOf('/new')).toEqual({ page: 'home' })
+  })
+})
+
 describe("a document's link", () => {
   const D = 'a1b2c3d4-0000-4000-8000-00000000000a'
 
