@@ -265,12 +265,12 @@ describe('the comments column', () => {
     expect(e.content).toMatch(/^nostr:nevent1/)
   })
 
-  it("offers Ship's / rows in the box: File, Mention, Urgent and Reference", async () => {
+  it("offers Ship's / rows in the box: Upload, Mention, Urgent and Reference", async () => {
     await open([])
     write('Comment on this document…', '/')
     await screen.findAllByRole('option')
     const rows = screen.getAllByRole('option').map((o) => o.textContent ?? '')
-    for (const row of ['File', 'Mention', 'Urgent', 'Reference']) expect(rows.some((r) => r.includes(row))).toBe(true)
+    for (const row of ['Upload', 'Mention', 'Urgent', 'Reference']) expect(rows.some((r) => r.includes(row))).toBe(true)
   })
 
   it('sends with Ctrl+Enter as with Enter', async () => {

@@ -83,7 +83,7 @@ export function useLinkedBlock(value: string, format: ContentFormat): [missing: 
       for (const type of PERSON) window.removeEventListener(type, stop, true)
     }
     const timer = setInterval(() => {
-      const element = document.querySelector(`[data-document="editing"] [data-block-id="${CSS.escape(id)}"]`)
+      const element = document.querySelector(`[data-document-editor] [data-block-id="${CSS.escape(id)}"]`)
       // Stopped once the same block is still there a tick later: the editor can draw its text afresh as it settles.
       if (element && element === scrolled) return stop()
       if (element) {

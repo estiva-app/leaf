@@ -17,6 +17,8 @@ vi.mock('../config', () => ({
   RELAY_URL: 'https://estiva.estiva.app',
 }))
 vi.mock('../document/referencePicker', async (original) => ({ ...(await original()), subscribeReferences: () => () => {} }))
+// `@`'s people are a relay read of their own, which these sign-in endings are not about.
+vi.mock('../comments/people', async (original) => ({ ...(await original()), useMentionPeople: () => ({ people: [], nameOf: () => undefined }) }))
 
 const KEY = 'leaf.estiva-id.token'
 const PERSON = 'b3'.repeat(32)
@@ -107,7 +109,7 @@ describe("a page's text when the sign-in ends", () => {
     const tab = await freshTab()
     let answer: (ok: boolean) => void = () => {}
     let sent = ''
-    const onCommit = vi.fn((value: string) => {
+    const onCommit = vi.fn(({ content: value }: { content: string }) => {
       sent = value
       return new Promise<boolean>((resolve) => (answer = resolve))
     })

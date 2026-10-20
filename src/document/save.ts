@@ -1,6 +1,6 @@
 import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
 import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
-import { byOrder } from '@estiva-app/conversation'
+import { byOrder, mentionAddsFor, type FileText } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -111,4 +111,30 @@ export async function saveField(
   // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] save refused', result)
   return { ok: false, reason: 'Could not save. Your text is still here.' }
+}
+
+/**
+ * Save a file's text, and add each person it names whom the text it was
+ * edited from did not, as the Add button does (SPEC §11.8). The save carries
+ * no `p`: a typo fix names nobody new, so it adds nobody, and someone who left
+ * stays out. `refused` is who could not be added, after a save that went through.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-mention-in-a-files-text-adds-the-person-with-no-unread.md
+ */
+export async function saveText(
+  file: Pick<ForeignObject, 'address' | 'folder'>,
+  saved: FileText & { content: string },
+  editedFrom: FileText,
+): Promise<{ ok: true; refused: string[] } | { ok: false; reason: string }> {
+  const result = await saveField(file, 'description', saved.content, saved.format)
+  const pubkey = viewerPubkey()
+  if (!result.ok || !pubkey || !file.address || !file.folder) return result.ok ? { ok: true, refused: [] } : result
+  const adds = mentionAddsFor(pubkey, Date.now(), { file: file.address, folder: file.folder, saved, editedFrom })
+  const refused: string[] = []
+  for (const add of adds) {
+    const answer = await publish(add)
+    if (answer.ok) continue
+    console.warn('[relay] mention add refused', answer)
+    refused.push(add.tags.find((tag) => tag[0] === 'field')?.[1]?.replace(/^member:/, '') ?? '')
+  }
+  return { ok: true, refused: refused.filter(Boolean) }
 }

@@ -8,13 +8,10 @@ import * as Stories from './ReferenceChip.stories'
 A `nostr:` reference to a file where it was written: the package's InlineChip
 with the file's kind icon and its name, the whole name on hover.
 
-**Seen in**: a `[` pick in a page's text, and a file named in a comment in the
-comments column.
+**Seen in**: a file named in a comment in the comments column.
 
 ## When
 
-- A file a page's text names: the editor's reference node draws it
-  (`referenceView`).
 - A file a comment names: the column's card draws it, and so does the comment
   box for a reference it holds.
 
@@ -22,7 +19,7 @@ comments column.
 
 - A person → an `@Name` chip, InlineChip's `person` (or `urgent`) tone.
 - One of this page's comments, named by `[` → its author and opening words.
-- The card under a line that holds only a link → **LineCards**.
+- A link in the page's own text → `PageLink`, the kit's chip, row or card where it sits.
 
 ## How
 

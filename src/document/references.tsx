@@ -1,9 +1,8 @@
 import { createContext, useContext, useEffect, useReducer } from 'react'
-import { createPortal } from 'react-dom'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { createPeopleCache, createProjectionCache, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
 import { Card, InlineChip, KindIcon, LinkUnavailable, SkeletonBar, WithTooltip, thingKindOf } from '@estiva-app/ui'
-import { useReferenceCards, type ReferenceCard, type ReferenceViewProps } from '@estiva-app/ui/editor'
+import type { ReferenceCard, ReferenceViewProps } from '@estiva-app/ui/editor'
 import { query } from '../relay/bridge'
 import { titleOf, typeOf } from '../folders/tree'
 import { writtenOpenerOf } from '../comments/links'
@@ -78,7 +77,7 @@ export const ReferencesProvider = References.Provider
  * read here, so a chip a pasted link became or the card under the comment box
  * still finds its file (COMM-8).
  */
-function useFile(uri: string): ForeignObject | null | undefined {
+export function useFile(uri: string): ForeignObject | null | undefined {
   const page = useContext(References)
   const own = useReferences(uri in page ? [] : [uri])
   return uri in page ? page[uri] : own[uri]
@@ -143,21 +142,6 @@ function ReferenceObject({ file, layout, opensAt }: { file: ForeignObject; layou
   )
 }
 
-/** The cards one line asks for, under it: a placeholder while a file is read, nothing for one that cannot be. */
-export function LineCards({ cards, resolved }: { cards: readonly ReferenceCard[]; resolved: Resolved }) {
-  if (cards.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-col gap-2" data-line-cards={cards.length}>
-      {cards.map((card, i) => {
-        const file = resolved[card.uri]
-        if (file === undefined) return <SkeletonBar key={`${card.uri}-${i}`} className="h-12 w-full" />
-        if (file === null || file.unreachable) return null
-        return <ReferenceObject key={`${card.uri}-${i}`} file={file} layout={card.layout} />
-      })}
-    </div>
-  )
-}
-
 /**
  * A file alone on a comment's line, drawn as its row in place (SPEC §13.2):
  * the page's compact card, a placeholder while it is read, and its chip when
@@ -213,13 +197,4 @@ export function useEditorReferences(editor: Editor | null): Resolved {
     },
   })
   return useReferences(key ? key.split('\n') : [])
-}
-
-/** The cards each line asks for, drawn into the slot `ReferenceCards` leaves after it (SPEC §13.3), as Ship's description does. */
-export function EditorLineCards({ editor, resolved }: { editor: Editor | null; resolved: Resolved }) {
-  const slots = useReferenceCards(editor)
-  const own = useReferences(slots.flatMap((slot) => slot.cards.map((card) => card.uri)))
-  const all = { ...own, ...resolved }
-  // @estiva-escape(no-rebuilt-behaviour): not a layer over the page — the cards go into the slot `ReferenceCards` leaves in the document after their line, as Ship's `EditorLineCards` does.
-  return <>{slots.map((slot) => createPortal(<LineCards cards={slot.cards} resolved={all} />, slot.element, slot.key))}</>
 }
