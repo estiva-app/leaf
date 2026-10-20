@@ -1028,6 +1028,26 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
   })
 
+  it('a sent comment’s card for an issue’s path on Leaf’s host opens Leaf at that address, not where the issue opens (LTX-6)', async () => {
+    const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
+    const was = files.known[uriOf(ISSUE)]
+    files.known[uriOf(ISSUE)] = { ...object(ISSUE, 'Fix it'), openUrl: `https://ship.example/o/${ISSUE}` } as ForeignObject
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    try {
+      await open([...EVENTS, comment([['embed', ISSUE, 'detailed']], `see\n${leafUrl}`)])
+      const card = await waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-reference-card="detailed"]')
+        expect(found?.textContent).toContain('Fix it')
+        return found!
+      })
+      fireEvent.click(card)
+      expect(opened).toHaveBeenCalledWith(leafUrl, '_blank', 'noopener')
+    } finally {
+      opened.mockRestore()
+      files.known[uriOf(ISSUE)] = was
+    }
+  })
+
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {
     await open([
       ...EVENTS,

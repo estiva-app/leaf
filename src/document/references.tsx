@@ -6,6 +6,7 @@ import { Card, InlineChip, KindIcon, LinkUnavailable, SkeletonBar, WithTooltip, 
 import { useReferenceCards, type ReferenceCard, type ReferenceViewProps } from '@estiva-app/ui/editor'
 import { query } from '../relay/bridge'
 import { titleOf, typeOf } from '../folders/tree'
+import { writtenOpenerOf } from '../comments/links'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
 export type Resolved = Record<string, ForeignObject | null | undefined>
@@ -110,8 +111,8 @@ export function ReferenceChip({ uri }: ReferenceViewProps) {
 }
 
 /** One file a reference names, as the card its writer chose: a row (compact) or a card with its type (detailed). */
-function ReferenceObject({ file, layout }: { file: ForeignObject; layout: ReferenceCard['layout'] }) {
-  const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
+function ReferenceObject({ file, layout, opensAt }: { file: ForeignObject; layout: ReferenceCard['layout']; /** The URL a comment wrote for it: opened as written, on a host an app declares (LTX-6). */ opensAt?: string }) {
+  const opener = writtenOpenerOf(opensAt, file.openUrl) ?? (file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined)
   return (
     // Opened beside Leaf, as "Open in" does: a click on a card never takes the page away.
     <Card
@@ -163,19 +164,19 @@ export function ReferenceRow({ uri }: { uri: string }) {
  * for it, so one that cannot be read still says so rather than vanish, as
  * Peek's card under a message does.
  */
-export function CarriedCards({ cards }: { cards: readonly ReferenceCard[] }) {
+export function CarriedCards({ cards }: { cards: readonly (ReferenceCard & { opensAt?: string })[] }) {
   if (cards.length === 0) return null
   return (
     <div className="mt-2 flex flex-col gap-2" data-line-cards={cards.length}>
       {cards.map((card, i) => (
-        <PlacedObject key={`${card.uri}-${i}`} uri={card.uri} layout={card.layout} />
+        <PlacedObject key={`${card.uri}-${i}`} uri={card.uri} layout={card.layout} opensAt={card.opensAt} />
       ))}
     </div>
   )
 }
 
 /** A file a comment draws in a row or a card of its own: a placeholder while it is read, "not available" when it cannot be. */
-export function PlacedObject({ uri, layout }: { uri: string; layout: ReferenceCard['layout'] }) {
+export function PlacedObject({ uri, layout, opensAt }: { uri: string; layout: ReferenceCard['layout']; opensAt?: string }) {
   const file = useFile(uri)
   if (file === undefined) return <SkeletonBar className="h-10 w-full" />
   if (file === null || file.unreachable) {
@@ -186,7 +187,7 @@ export function PlacedObject({ uri, layout }: { uri: string; layout: ReferenceCa
       </span>
     )
   }
-  return <ReferenceObject file={file} layout={layout} />
+  return <ReferenceObject file={file} layout={layout} opensAt={opensAt} />
 }
 
 /** Every reference in the editor's document, so each chip and card has its file read. */

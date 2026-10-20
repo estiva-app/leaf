@@ -30,8 +30,18 @@ interface Answer {
 }
 
 /** Throws when the relay could not be asked. */
+/** Every host an app declares its paths on (SPEC §7.7), as the manifests read for a link said. */
+const declaredOrigins = new Set<string>()
+
 async function answerOf(url: string): Promise<Answer> {
   const shapes = (await declaredManifests()).flatMap((manifest) => urlPatternsOf(manifest))
+  for (const shape of shapes) {
+    try {
+      declaredOrigins.add(new URL(shape.pattern).origin)
+    } catch {
+      // A shape that is not a URL declares no host.
+    }
+  }
   const hit = matchObjectUrl(url, shapes)
   if (!hit) return { value: null }
   if (hit.by === 'id') return { value: EVENT_ID.test(hit.identifier) ? hit.identifier.toLowerCase() : null }
@@ -89,6 +99,25 @@ export const knownLinkValue: LinkResolver = (url) => known.get(url)?.value ?? un
 
 /** The file and block a link to one block names, from what has come back. */
 export const knownBlockOf = (url: string): PartPointer | undefined => known.get(url)?.block
+
+/**
+ * Where a card written as a URL opens: the address as written, in the app it
+ * names (SPEC §7.7, LTX-6), so `leaf.estiva.app/issue/…` opens Leaf, not Ship.
+ * Undefined for anything but https and for a host that is neither Leaf's, the
+ * one its file opens on (`opens`), nor one an app declares: a card that draws
+ * one file never opens a site no app serves from (WBM-11 security review).
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
+ */
+export function writtenOpenerOf(url: string | undefined, opens: string | undefined, origin = window.location.origin, declared: ReadonlySet<string> = declaredOrigins): string | undefined {
+  if (!url || !/^https:\/\//i.test(url)) return undefined
+  try {
+    const at = new URL(url).origin
+    const opensAt = opens ? new URL(opens, origin).origin : undefined
+    return at === origin || at === opensAt || declared.has(at) ? url : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** The chip a pasted app URL becomes (`LinkChips`' `referenceOf`): its file's, a block link's too. Leaf draws files, not another app's messages. */
 export function linkReferenceOf(url: string): string | undefined {
