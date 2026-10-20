@@ -1094,10 +1094,54 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       })
       fireEvent.click(card)
       expect(opened).toHaveBeenCalledWith(issueOpens, '_blank', 'noopener')
+      // Its chip in the sentence is no link to the URL it was written as either.
+      const links = [...card.closest('[data-comment-id]')!.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))
+      expect(links).not.toContain(otherUrl)
     } finally {
       opened.mockRestore()
       delete files.known[uriOf(FRESH)]
     }
+  })
+
+  describe('an app URL in a sent comment, as Peek and Ship draw it (LTX-6)', () => {
+    const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
+    const sentComment = () => waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+
+    it('draws an issue’s URL in a sentence, on Leaf’s host or Ship’s, as the issue’s chip, which opens the URL as written', async () => {
+      await open([...EVENTS, comment([], `see ${leafUrl} and ${ISSUE_URL} now`)])
+      const sent = await sentComment()
+      await waitFor(() => expect(within(sent).getAllByText('Fix it')).toHaveLength(2))
+      expect(sent.textContent).not.toContain('https://')
+      expect(within(sent).getAllByText('Fix it').map((chip) => chip.closest('a')?.getAttribute('href'))).toEqual([leafUrl, ISSUE_URL])
+      expect(sent.querySelector('[data-reference-card]')).toBeNull()
+    })
+
+    it('keeps the same path on a host no app declares as the URL it was written as', async () => {
+      const lookalike = `https://lookalike.example/issue/fix-it-${ISSUE_D}`
+      await open([...EVENTS, comment([], `see ${lookalike} and ${leafUrl} now`)])
+      const sent = await sentComment()
+      await waitFor(() => expect(within(sent).getByText('Fix it')).toBeTruthy())
+      expect(sent.textContent).toContain(lookalike)
+      expect(within(sent).getAllByText('Fix it')).toHaveLength(1)
+    })
+
+    it('draws an issue’s URL alone on its line, with no card carried, as the issue’s row, which opens the URL as written', async () => {
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+      try {
+        await open([...EVENTS, comment([], `see\n${leafUrl}`)])
+        const sent = await sentComment()
+        const row = await waitFor(() => {
+          const found = sent.querySelector<HTMLElement>('[data-reference-card="compact"]')
+          expect(found?.textContent).toContain('Fix it')
+          return found!
+        })
+        expect(sent.textContent).not.toContain('https://')
+        fireEvent.click(row)
+        expect(opened).toHaveBeenCalledWith(leafUrl, '_blank', 'noopener')
+      } finally {
+        opened.mockRestore()
+      }
+    })
   })
 
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {

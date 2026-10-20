@@ -45,7 +45,8 @@ function root(kind: number, pubkey: string, d: string): SignedEvent {
   return { id: `${kind}${pubkey}`.slice(0, 64), sig: '0'.repeat(128), pubkey, kind, created_at: 1, tags: [['d', d]], content: '' }
 }
 
-const { addressOfPath, ownerPathOf } = await import('./fileAddress')
+const { addressOfPath, ownerBlockLinker, ownerPathOf } = await import('./fileAddress')
+const { matchObjectUrl, urlPatternsOf } = await import('@estiva-app/interop')
 
 beforeEach(() => {
   held = []
@@ -102,6 +103,29 @@ describe('the path Leaf shows for another app’s file', () => {
   ])('is not written to the bar when the opener’s manifest names %s', (_, pattern) => {
     const opener = manifest(MALLORY, [['d', 'x'], ['k', '30851'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', pattern, '30851']])
     expect(ownerPathOf(issue, [opener])).toBeUndefined()
+  })
+})
+
+describe('Leaf’s link to a block of another app’s file (LTX-6)', () => {
+  const issue = { kind: 30851, address: `30851:${MIKY}:${D}`, openUrl: 'https://ship.estiva.app/o/naddr1x' }
+  const topic = { kind: 30840, address: `30840:${MIKY}:${D}`, openUrl: 'https://peek.estiva.app/o/naddr1x' }
+
+  it('is the block shape its own app declares, on Leaf’s host, and reads back as that block of that file', () => {
+    const link = ownerBlockLinker(issue, [SHIP, PEEK], 'https://leaf.estiva.app')?.('fc63d59107f0', 'Plan the launch')
+    expect(link).toBe(`https://leaf.estiva.app/issue/plan-the-launch-${D}#block-fc63d59107f0`)
+    // Read back as any app reads it: Leaf's host is one an app declares (its own manifest), Ship's shape names the path.
+    const leaf = manifest('d'.repeat(64), [['d', 'estiva-leaf'], ['k', '30842'], ['web', 'https://leaf.estiva.app/f/<bech32>', 'naddr'], ['urls', 'https://leaf.estiva.app/document/<slug>-<d>#block-<block>', '30842']])
+    expect(matchObjectUrl(link!, [SHIP, PEEK, leaf].flatMap((m) => urlPatternsOf(m)))).toMatchObject({ identifier: D, block: 'fc63d59107f0' })
+  })
+
+  it('is none for a file whose app declares no block shape for its kind', () => {
+    expect(ownerBlockLinker(topic, [SHIP, PEEK], 'https://leaf.estiva.app')).toBeUndefined()
+  })
+
+  it('takes the shape from the app its "Open in" goes to, not from another manifest claiming the kind', () => {
+    const planted = manifest(MALLORY, [['d', 'x'], ['k', '30851'], ['web', 'https://elsewhere.example/o/<bech32>', 'naddr'], ['urls', 'https://elsewhere.example/ticket/<slug>-<d>#block-<block>', '30851']])
+    expect(ownerBlockLinker(issue, [planted, SHIP], 'https://leaf.estiva.app')?.('fc63d59107f0')).toBe(`https://leaf.estiva.app/issue/${D}#block-fc63d59107f0`)
+    expect(ownerBlockLinker({ ...issue, openUrl: 'https://unknown.example/o/naddr1x' }, [planted, SHIP], 'https://leaf.estiva.app')).toBeUndefined()
   })
 })
 

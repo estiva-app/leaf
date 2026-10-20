@@ -15,6 +15,7 @@ import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
 import { OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
+import { useOwnerBlockLinker } from './usePathAddress'
 
 /**
  * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
@@ -128,9 +129,11 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const docBody = useRef<HTMLDivElement | null>(null)
   // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
   const addressable = !body?.value || body.format === 'blocks'
-  // Leaf gives a link to a part of its own pages only; another app's file opens in that app (project Later list).
+  // Another app's file: Leaf's address for its block, from the block shape its own app declares (LTX-6); none for an app that declares none.
+  const ownerBlockLink = useOwnerBlockLinker(own ? null : file)
+  const linksBlocks = own || !!ownerBlockLink
   function copyBlockLink(block: string) {
-    const link = blockLinkOf(file, block)
+    const link = own ? blockLinkOf(file, block) : ownerBlockLink?.(block, file.slots.title?.value)
     if (link) void copyLink(link, (label) => showToast({ label }))
   }
   // Opened at `#block-<id>`: scrolled to it, or told it is gone (Ship's issue page says the same).
@@ -182,7 +185,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               onLeftUnsaved={leftUnsaved}
               onEditor={setEditor}
               onCommentOn={addressable ? setDraft : undefined}
-              onCopyLink={addressable && own ? copyBlockLink : undefined}
+              onCopyLink={addressable && linksBlocks ? copyBlockLink : undefined}
             />
           </div>
         </Panel>
