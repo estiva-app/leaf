@@ -3,7 +3,7 @@
  * opened at `/f/<naddr>` gets that address in the bar, so swapping the host opens it in Ship.
  */
 import type { FolderContents, FolderSummary, ForeignObject } from '@estiva-app/interop'
-import type { PublishResult, SignedEvent } from '@estiva-app/protocol'
+import { encodeNaddr, type PublishResult, type SignedEvent } from '@estiva-app/protocol'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MIKY, shipIssue } from './pages/fixtures/shipFiles'
@@ -50,7 +50,10 @@ vi.mock('./folders/workspace', async () => {
   }
 })
 
-const { naddrOf } = await import('./fileAddress')
+function naddrOf(address: string): string {
+  const [kind, pubkey, d] = address.split(':')
+  return encodeNaddr({ kind: Number(kind), pubkey, identifier: d, relays: [] })
+}
 const issue: ForeignObject = { ...shipIssue(), address: ISSUE, naddr: naddrOf(ISSUE), openUrl: `https://ship.estiva.app/o/${naddrOf(ISSUE)}` }
 const topic: ForeignObject = {
   ...shipIssue(),
