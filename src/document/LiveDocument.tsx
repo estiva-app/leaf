@@ -94,8 +94,11 @@ export function LiveDocument({
   onEditor,
   onCommentOn,
   onCopyLink,
+  readOnly = false,
 }: {
   value: string
+  /** Read only, as an archived file's text is (SPEC §6.5): nothing is typed or saved, and comments stay open. */
+  readOnly?: boolean
   /** Where its unsaved text is held when the sign-in ends while it is open (AUT-5): the document's address. */
   holdKey?: string
   format: ContentFormat
@@ -148,7 +151,8 @@ export function LiveDocument({
 
   const save = useCallback(
     async (doc: EditorDocument | null) => {
-      if (!doc) return
+      // Read only: a box ticked in a node view is not a save.
+      if (!doc || readOnly) return
       // A change made while a save is out goes next, not nowhere.
       if (committing.current) {
         again.current = true
@@ -186,7 +190,7 @@ export function LiveDocument({
         }
       }
     },
-    [onCommit, onLeftUnsaved, holdKey],
+    [onCommit, onLeftUnsaved, holdKey, readOnly],
   )
   useHeldTyping(holdKey, () => {
     const doc = typed.current
@@ -234,6 +238,7 @@ export function LiveDocument({
       ],
       // Built once. A value coming back must not rebuild the editor under the caret; see the effect below.
       content: held ?? toEditorDocument(documentForEditing(value, format)),
+      editable: !readOnly,
       editorProps: {
         attributes: { 'aria-label': 'Document', role: 'textbox', 'aria-multiline': 'true', class: richTextClassName('default', 'outline-none') },
         handleKeyDown: (view, event) => {
@@ -281,6 +286,11 @@ export function LiveDocument({
     typed.current = null
   }, [editor, base])
 
+  // Archived or unarchived while open: the editor follows, without being built again.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && editor.isEditable === readOnly) editor.setEditable(!readOnly, false)
+  }, [editor, readOnly])
+
   const empty = useEditorState({ editor, selector: ({ editor: ed }) => !ed || ed.isEmpty })
 
   // "Load it": theirs replaces what you have not saved.
@@ -327,12 +337,12 @@ export function LiveDocument({
           <EditorTableControls editor={editor}>
             <EditorContent editor={editor} className="-mx-2 cursor-text px-2 py-1" data-document="editing" />
           </EditorTableControls>
-          {empty && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Type / for headings and lists.</span>}
+          {empty && !readOnly && <span aria-hidden className="pointer-events-none absolute left-0 top-1 text-body-2 text-text-muted">Type / for headings and lists.</span>}
         </EditorBlockHandle>
         <EditorLineCards editor={editor} resolved={references} />
         <SelectionToolbar
           editor={editor}
-          marks={['bold', 'italic', 'underline', 'code']}
+          marks={readOnly ? [] : ['bold', 'italic', 'underline', 'code']}
           actions={
             onCommentOn
               ? [

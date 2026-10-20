@@ -23,6 +23,7 @@ import { createDocument, listDocument, takesNewDocuments } from './folders/works
 import { useReferencePage } from './document/referencePicker'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
+import { useFileByAddress } from './pages/useFileByAddress'
 import { HomePage } from './pages/HomePage'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
@@ -91,6 +92,8 @@ function Frame() {
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
+  // A file no listing holds, opened by its address: read on its own once the tree has been read without it.
+  const byAddress = useFileByAddress(route.page === 'file' && !open && !reading ? route.naddr : null)
   const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
   useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(true))
@@ -167,7 +170,7 @@ function Frame() {
         action={{ label: 'Try again', onClick: () => void relist(unlisted) }}
       />
     ) : (
-      <FilePage file={open?.file ?? null} loading={reading} />
+      <FilePage file={open?.file ?? byAddress.file} loading={reading || byAddress.loading} />
     )
 
   return (

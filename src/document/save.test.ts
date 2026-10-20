@@ -34,7 +34,7 @@ describe("a document's save", () => {
 
   it('refuses to save a document whose Folder it does not know, rather than publish one readers would ignore', async () => {
     publish.mockClear()
-    expect(await saveField({ address: ADDRESS, folder: undefined }, 'title', 'x')).toEqual({ ok: false, reason: 'This document cannot be saved from here.' })
+    expect(await saveField({ address: ADDRESS, folder: undefined }, 'title', 'x')).toEqual({ ok: false, reason: 'This cannot be saved from here.' })
     expect(publish).not.toHaveBeenCalled()
   })
 })
