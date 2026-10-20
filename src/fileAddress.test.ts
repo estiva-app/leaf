@@ -104,3 +104,25 @@ describe('the path Leaf shows for another app’s file', () => {
     expect(ownerPathOf(issue, [opener])).toBeUndefined()
   })
 })
+
+/*
+  A path two shapes read as different kinds is looked up under exactly those
+  kinds (SPEC §7.7, LTX-6), never every kind the app handles: the one-author
+  rule then decides, and a kind no shape names for the path cannot answer it.
+*/
+describe('the kinds a path read as several kinds is looked up under', () => {
+  const wiki = manifest('d'.repeat(64), [
+    ['d', 'wiki'],
+    ['k', '30851'],
+    ['k', '30023'],
+    ['k', '30842'],
+    ['web', 'https://wiki.example/o/<bech32>', 'naddr'],
+    ['urls', 'https://wiki.example/issue/<slug>-<d>', '30851'],
+    ['urls', 'https://wiki.example/issue/<slug>-<d>', '30023'],
+  ])
+
+  it('asks the kinds the shapes name, not a third the app also handles', async () => {
+    const { lookupFor } = await import('./fileAddress')
+    expect(lookupFor('issue', `plan-${D}`, [wiki])?.kinds.sort()).toEqual([30023, 30851])
+  })
+})

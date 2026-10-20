@@ -873,19 +873,24 @@ describe('attaching a file to a comment (COMM-6)', () => {
 
 describe('the card and the live parts under the box (COMM-8)', () => {
   const SHIP = 'e'.repeat(64)
-  // The apps' manifests, as Ship and Leaf publish them: what makes a URL name a file (§7.7).
+  // The apps' manifests, as Ship and Leaf publish them: what makes a URL name a file (§7.7), on the app's own `web` origin.
   const manifest = (d: string, pattern: string, kind: number): SignedEvent => ({
     id: `${d.padEnd(63, '0')}9`,
     pubkey: SHIP,
     created_at: 1_760_000_000,
     kind: 31990,
-    tags: [['d', d], ['k', String(kind)], ['urls', pattern, String(kind)]],
+    tags: [['d', d], ['k', String(kind)], ['web', `${/^https:\/\/[^/]+/.exec(pattern)![0]}/o/<bech32>`, 'naddr'], ['urls', pattern, String(kind)]],
     content: '',
     sig: '',
   })
   // Leaf's own shape, as its manifest publishes it: a made-up one hid that production declared none (38796b47).
   const LEAF_SHAPE = buildManifest(SHIP, 1_760_000_000_000, 'https://leaf.example/').tags.find((t) => t[0] === 'urls')![1]
-  const MANIFESTS = [manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851), manifest('leaf', LEAF_SHAPE, 30842)]
+  // A wiki reads `/issue/` as its own kind, so on Leaf's host that path may be either (SPEC §7.7).
+  const MANIFESTS = [
+    manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851),
+    manifest('leaf', LEAF_SHAPE, 30842),
+    manifest('wiki', 'https://wiki.example/issue/<slug>-<d>', 30023),
+  ]
   const file = (kind: number, pubkey: string, d: string): SignedEvent => ({ id: `${d.padEnd(62, '0')}77`, pubkey, created_at: 1_760_000_000, kind, tags: [['d', d]], content: '', sig: '' })
 
   const ISSUE_D = '22222222-2222-4222-8222-222222222222'
@@ -943,6 +948,17 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
     const e = await sent()
     expect(e.content).toBe(`see ${ISSUE_URL}`)
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+  })
+
+  it('an issue’s path on Leaf’s host draws as the issue, as its Ship address does, and the comment carries its card (LTX-6)', async () => {
+    const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
+    // Another kind no app reads `/issue/` as holds the same d: the link is looked up under Ship's and the wiki's kinds only.
+    await open([...EVENTS, file(30818, AUTHOR, ISSUE_D)])
+    write(BOX, `see ${leafUrl} `)
+    await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
+    const e = await sent()
+    expect(e.content).toBe(`see ${leafUrl}`)
     expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
   })
 
@@ -1010,6 +1026,56 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(2))
     const text = (c: Element) => c.textContent ?? ''
     await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
+  })
+
+  it('a sent comment’s card for an issue’s path on Leaf’s host opens Leaf at that address, not where the issue opens (LTX-6)', async () => {
+    const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
+    const was = files.known[uriOf(ISSUE)]
+    files.known[uriOf(ISSUE)] = { ...object(ISSUE, 'Fix it'), openUrl: `https://ship.example/o/${ISSUE}` } as ForeignObject
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    try {
+      await open([...EVENTS, comment([['embed', ISSUE, 'detailed']], `see\n${leafUrl}`)])
+      const card = await waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-reference-card="detailed"]')
+        expect(found?.textContent).toContain('Fix it')
+        return found!
+      })
+      fireEvent.click(card)
+      expect(opened).toHaveBeenCalledWith(leafUrl, '_blank', 'noopener')
+    } finally {
+      opened.mockRestore()
+      files.known[uriOf(ISSUE)] = was
+    }
+  })
+
+  it('a sent block comment whose issue chip is written as another file’s Leaf URL: the card opens where the issue opens, not that URL (LTX-6)', async () => {
+    const otherUrl = `https://leaf.example/issue/other-issue-${OTHER_ISSUE_D}`
+    // Only a block document can hold this run: words that are a URL, marked as a reference to a different file.
+    // The plain link after it is asked about, so Leaf knows which hosts the apps declare, as on a real page.
+    // An issue no earlier test has drawn, so the card reads where it opens and not a copy read before.
+    const FRESH_D = '66666666-6666-4666-8666-666666666666'
+    const FRESH = `30851:${SHIP}:${FRESH_D}`
+    const doc = descriptionTextToBlockDocument('see')
+    doc.content[0] = {
+      ...doc.content[0],
+      content: [{ type: 'text', text: 'see ' }, { type: 'text', text: otherUrl, marks: [{ type: 'reference', attrs: { uri: uriOf(FRESH) } }] }, { type: 'text', text: ` and ${OTHER_ISSUE_URL}` }],
+    }
+    const issueOpens = `https://ship.example/o/${FRESH}`
+    files.known[uriOf(FRESH)] = { ...object(FRESH, 'Fresh issue'), openUrl: issueOpens } as ForeignObject
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    try {
+      await open([...EVENTS, file(30851, SHIP, FRESH_D), comment([['embed', FRESH, 'detailed'], ['content-format', 'estiva-blocks-1']], serializeBlockDocument(doc))])
+      const card = await waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-reference-card="detailed"]')
+        expect(found?.textContent).toContain('Fresh issue')
+        return found!
+      })
+      fireEvent.click(card)
+      expect(opened).toHaveBeenCalledWith(issueOpens, '_blank', 'noopener')
+    } finally {
+      opened.mockRestore()
+      delete files.known[uriOf(FRESH)]
+    }
   })
 
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {

@@ -4,7 +4,9 @@ import {
   encodeNaddr,
   lineDrawOf,
   linesOf,
+  linksAsReferences,
   partsOf,
+  referenceOfLink,
   referencesIn,
   valueOfReference,
   valuesIn,
@@ -49,6 +51,8 @@ export interface RowLine {
 export interface CarriedCard {
   uri: string
   layout: Exclude<Embed['layout'], 'none'>
+  /** The first URL the body wrote for its file: the card opens it, as Peek's and Ship's do (LTX-6). */
+  opensAt?: string
 }
 
 /** A paragraph's line that is a row, lifted out as a block of its own, so the row is not drawn inside a `<p>`. */
@@ -118,10 +122,24 @@ export function placeComment(blocks: readonly RenderBlock[], event: { tags: read
     const value = valueOfReference(reference)
     if (value && !written.has(value)) written.set(value, reference)
   }
+  // The first URL written bare for each card's file, as the package reads one for a chip (a link on words keeps its words).
+  // Only a URL that itself names that file: a block comment can mark any URL's text as a reference to another (LTX-6 security review).
+  const writtenUrl = new Map<string, string>()
+  const urlsIn = (bs: readonly RenderBlock[], resolve: LinkResolver) => {
+    for (const block of bs) {
+      for (const run of block.inline ?? []) {
+        const value = run.reference && /^https?:\/\//i.test(run.text) && referenceOfLink(run.text, resolve) === run.reference ? valueOfReference(run.reference) : undefined
+        if (value && !writtenUrl.has(value)) writtenUrl.set(value, run.text)
+      }
+      if (block.children) urlsIn(block.children, resolve)
+    }
+  }
+  if (carried.length && resolveLink) urlsIn(linksAsReferences(blocks, resolveLink), resolveLink)
   const cards = carried.flatMap((card): CarriedCard[] => {
     // Named by its `nostr:` reference, or only by an app link: then its address is written as one.
     const reference = written.get(card.value) ?? referenceOfValue(card.value)
-    return reference && card.layout !== 'none' ? [{ uri: reference, layout: card.layout }] : []
+    const opensAt = writtenUrl.get(card.value)
+    return reference && card.layout !== 'none' ? [{ uri: reference, layout: card.layout, ...(opensAt ? { opensAt } : {}) }] : []
   })
   const drawing = { cards: carried, parts, resolveLink }
 

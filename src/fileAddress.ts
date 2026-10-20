@@ -79,7 +79,7 @@ export function lookupFor(word: string, ref: string, manifests: readonly Manifes
       if (!hit || hit.within) continue
       if (found && (found.by !== hit.by || found.identifier !== hit.identifier)) continue
       found ??= { by: hit.by, identifier: hit.identifier, kinds: [] }
-      if (hit.by === 'd') found.kinds.push(...(hit.kind !== undefined ? [hit.kind] : handledKinds(manifest)))
+      if (hit.by === 'd') found.kinds.push(...(hit.kinds ?? (hit.kind !== undefined ? [hit.kind] : handledKinds(manifest))))
     }
   }
   if (found) return { ...found, kinds: [...new Set(found.kinds)] }
