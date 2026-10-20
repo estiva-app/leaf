@@ -1048,6 +1048,36 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     }
   })
 
+  it('a sent block comment whose issue chip is written as another file’s Leaf URL: the card opens where the issue opens, not that URL (LTX-6)', async () => {
+    const otherUrl = `https://leaf.example/issue/other-issue-${OTHER_ISSUE_D}`
+    // Only a block document can hold this run: words that are a URL, marked as a reference to a different file.
+    // The plain link after it is asked about, so Leaf knows which hosts the apps declare, as on a real page.
+    // An issue no earlier test has drawn, so the card reads where it opens and not a copy read before.
+    const FRESH_D = '66666666-6666-4666-8666-666666666666'
+    const FRESH = `30851:${SHIP}:${FRESH_D}`
+    const doc = descriptionTextToBlockDocument('see')
+    doc.content[0] = {
+      ...doc.content[0],
+      content: [{ type: 'text', text: 'see ' }, { type: 'text', text: otherUrl, marks: [{ type: 'reference', attrs: { uri: uriOf(FRESH) } }] }, { type: 'text', text: ` and ${OTHER_ISSUE_URL}` }],
+    }
+    const issueOpens = `https://ship.example/o/${FRESH}`
+    files.known[uriOf(FRESH)] = { ...object(FRESH, 'Fresh issue'), openUrl: issueOpens } as ForeignObject
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    try {
+      await open([...EVENTS, file(30851, SHIP, FRESH_D), comment([['embed', FRESH, 'detailed'], ['content-format', 'estiva-blocks-1']], serializeBlockDocument(doc))])
+      const card = await waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-reference-card="detailed"]')
+        expect(found?.textContent).toContain('Fresh issue')
+        return found!
+      })
+      fireEvent.click(card)
+      expect(opened).toHaveBeenCalledWith(issueOpens, '_blank', 'noopener')
+    } finally {
+      opened.mockRestore()
+      delete files.known[uriOf(FRESH)]
+    }
+  })
+
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {
     await open([
       ...EVENTS,
