@@ -148,6 +148,28 @@ describe('the comments column', () => {
     expect(screen.getByText('On deleted blocks')).toBeTruthy()
   })
 
+  it('draws a second-level item in a comment nested under the item above it, as the box wrote it', async () => {
+    await open([comment([], '- Agenda\n  - budget\n- Next')])
+    await waitFor(() => expect(document.querySelector('[data-comment-id] li')).not.toBeNull())
+    const card = document.querySelector<HTMLElement>('[data-comment-id]')!
+    // Each item's own words, and how many items it sits inside.
+    const depth = (li: Element) => {
+      let n = 0
+      for (let up = li.parentElement?.closest('li'); up; up = up.parentElement?.closest('li')) n += 1
+      return n
+    }
+    const words = (li: Element) => {
+      const own = li.cloneNode(true) as Element
+      own.querySelectorAll('ul, ol').forEach((list) => list.remove())
+      return own.textContent
+    }
+    expect([...card.querySelectorAll('li')].map((li) => [words(li), depth(li)])).toEqual([
+      ['Agenda', 0],
+      ['budget', 1],
+      ['Next', 0],
+    ])
+  })
+
   it("marks a paragraph's card when its highlight is chosen in the text", async () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
