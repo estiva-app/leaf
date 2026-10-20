@@ -885,7 +885,12 @@ describe('the card and the live parts under the box (COMM-8)', () => {
   })
   // Leaf's own shape, as its manifest publishes it: a made-up one hid that production declared none (38796b47).
   const LEAF_SHAPE = buildManifest(SHIP, 1_760_000_000_000, 'https://leaf.example/').tags.find((t) => t[0] === 'urls')![1]
-  const MANIFESTS = [manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851), manifest('leaf', LEAF_SHAPE, 30842)]
+  // A wiki reads `/issue/` as its own kind, so on Leaf's host that path may be either (SPEC §7.7).
+  const MANIFESTS = [
+    manifest('ship', 'https://ship.example/issue/<slug>-<d>#block-<block>', 30851),
+    manifest('leaf', LEAF_SHAPE, 30842),
+    manifest('wiki', 'https://wiki.example/issue/<slug>-<d>', 30023),
+  ]
   const file = (kind: number, pubkey: string, d: string): SignedEvent => ({ id: `${d.padEnd(62, '0')}77`, pubkey, created_at: 1_760_000_000, kind, tags: [['d', d]], content: '', sig: '' })
 
   const ISSUE_D = '22222222-2222-4222-8222-222222222222'
@@ -948,7 +953,8 @@ describe('the card and the live parts under the box (COMM-8)', () => {
 
   it('an issue’s path on Leaf’s host draws as the issue, as its Ship address does, and the comment carries its card (LTX-6)', async () => {
     const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
-    await open(EVENTS)
+    // Another kind no app reads `/issue/` as holds the same d: the link is looked up under Ship's and the wiki's kinds only.
+    await open([...EVENTS, file(30818, AUTHOR, ISSUE_D)])
     write(BOX, `see ${leafUrl} `)
     await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
     const e = await sent()
