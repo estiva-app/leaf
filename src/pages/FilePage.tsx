@@ -13,7 +13,7 @@ import { readSummary, saveField } from '../document/save'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
-import { OwnerRow } from './OwnerRow'
+import { OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 
 /**
@@ -35,8 +35,7 @@ export function FilePage({ file: listed, loading }: { file: ForeignObject | null
   }
   if (!sharesText(file)) {
     if (reread.loading) return <SkeletonList rows={3} />
-    // The address comes from the app's manifest: only a web address is opened, never a script.
-    const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
+    const opener = openerOf(file)
     return (
       <EmptyState
         scope="page"
@@ -60,8 +59,9 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const { showToast } = useToast()
   const own = isDocument(file)
   const writes = writableFields(file)
-  // Archived, itself or with its project or Folder: its own fields wait for it to be unarchived, its comments stay open (SPEC §6.5).
-  const locked = isArchived(file)
+  // Another app's file archived, itself or with its project or Folder: its fields wait for it to be unarchived in that
+  // app, its comments stay open (SPEC §6.5). Leaf's own pages are as before, with no Unarchive in Leaf (project Later list).
+  const locked = !own && isArchived(file)
   const title = titleOf(file)
   const body = file.slots[BODY_SLOT]
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
@@ -171,7 +171,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               />
             </div>
             {!own && <OwnerRow file={file} />}
-            {locked && <FieldLine tone="helper">{own ? 'Archived.' : `Archived. Unarchive it in ${file.appName ?? 'its app'} to edit.`}</FieldLine>}
+            {locked && <FieldLine tone="helper">{`Archived. Unarchive it in ${file.appName ?? 'its app'} to edit.`}</FieldLine>}
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}

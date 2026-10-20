@@ -4,6 +4,11 @@ import { Button, LinkKey, LinkPickers, type StatusColour } from '@estiva-app/ui'
 
 const COLOURS: readonly StatusColour[] = ['neutral', 'blue', 'green', 'muted']
 
+/** Where "Open in <app>" goes: the address comes from the app's manifest, so only a web address is opened, never a script. */
+export function openerOf(file: ForeignObject): string | undefined {
+  return file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
+}
+
 /**
  * The owning app's row under another app's file's title: its status, then each of its manifest's meta slots in order
  * (Ship: an issue's key and assignee, a project's lead and key), drawn read-only with the link kit's parts, and
@@ -11,8 +16,7 @@ const COLOURS: readonly StatusColour[] = ['neutral', 'blue', 'green', 'muted']
  */
 export function OwnerRow({ file }: { file: ForeignObject }) {
   const status = file.slots.status
-  // The address comes from the app's manifest: only a web address is opened, never a script.
-  const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
+  const opener = openerOf(file)
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-3">
       {status?.value && (
