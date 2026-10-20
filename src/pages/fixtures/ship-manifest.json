@@ -1,0 +1,455 @@
+{
+  "name": "Estiva Ship",
+  "about": "Projects and issues",
+  "records": {
+    "changeKind": 1851,
+    "targetTag": "a",
+    "fieldTag": "field",
+    "valueTag": "value",
+    "order": [
+      "ts",
+      "created_at",
+      "id"
+    ],
+    "rule": "last-write-wins-per-field",
+    "orderingTrust": "Honour `ts` (epoch ms) only when Math.floor(ts/1000) equals created_at exactly; otherwise use created_at*1000. On a tie the highest event id wins (replay oldest first by id, last write wins). The relay validates created_at, so a ts pinned inside that second inherits that check and cannot move an event outside it.",
+    "hiddenWhen": {
+      "field": "archived",
+      "equals": "true"
+    }
+  },
+  "projections": {
+    "30850": {
+      "widget": "card",
+      "noun": "project",
+      "slots": {
+        "title": {
+          "tag": [
+            "name",
+            "title"
+          ],
+          "fold": "title"
+        },
+        "status": {
+          "fold": "status",
+          "map": "statuses",
+          "default": "planned"
+        },
+        "meta": [
+          {
+            "label": "Lead",
+            "fold": "lead",
+            "tag": "lead",
+            "as": "pubkey"
+          },
+          {
+            "label": "Key",
+            "fold": "key",
+            "tag": "key"
+          }
+        ],
+        "list": {
+          "children": {
+            "kind": 30851,
+            "via": "a",
+            "limit": 200,
+            "movedBy": "project"
+          }
+        },
+        "body": {
+          "fold": "description",
+          "tag": "description",
+          "field": "content"
+        }
+      }
+    },
+    "30851": {
+      "widget": "row",
+      "noun": "issue",
+      "slots": {
+        "title": {
+          "fold": "title",
+          "tag": "title"
+        },
+        "status": {
+          "fold": "status",
+          "map": "issueStatuses",
+          "default": "todo"
+        },
+        "meta": [
+          {
+            "fold": "ref",
+            "tag": "ref"
+          },
+          {
+            "label": "Assignee",
+            "fold": "assignee",
+            "as": "pubkey"
+          }
+        ],
+        "body": {
+          "fold": "description",
+          "tag": "description",
+          "field": "content"
+        }
+      }
+    }
+  },
+  "vocabularies": {
+    "statuses": [
+      {
+        "value": "planned",
+        "label": "Planned",
+        "colour": "neutral",
+        "stage": "open"
+      },
+      {
+        "value": "in_progress",
+        "label": "In Progress",
+        "colour": "blue",
+        "stage": "started"
+      },
+      {
+        "value": "completed",
+        "label": "Completed",
+        "colour": "green",
+        "stage": "done"
+      },
+      {
+        "value": "cancelled",
+        "label": "Cancelled",
+        "colour": "muted",
+        "stage": "dropped"
+      }
+    ],
+    "issueStatuses": [
+      {
+        "value": "todo",
+        "label": "Todo",
+        "colour": "neutral",
+        "stage": "open"
+      },
+      {
+        "value": "in_progress",
+        "label": "In Progress",
+        "colour": "blue",
+        "stage": "started"
+      },
+      {
+        "value": "done",
+        "label": "Done",
+        "colour": "green",
+        "stage": "done"
+      },
+      {
+        "value": "cancelled",
+        "label": "Cancelled",
+        "colour": "muted",
+        "stage": "dropped"
+      }
+    ],
+    "archived": [
+      {
+        "value": "",
+        "label": "Active",
+        "colour": "neutral"
+      },
+      {
+        "value": "true",
+        "label": "Archived",
+        "colour": "muted"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "set-issue-status",
+      "label": "Change status",
+      "description": "Move an issue through its lifecycle by setting its status to one of the issueStatuses values. The status is not on the issue — it lives on the change stream — so this is the only way to move it, and every move stays attributable to whoever made it.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "status"
+      },
+      "input": {
+        "type": "string",
+        "enum": "issueStatuses"
+      }
+    },
+    {
+      "id": "assign-issue",
+      "label": "Assign",
+      "description": "Say who is doing an issue, by public key. An empty value clears the assignment. Distinct from a project lead, which is accountability for a whole project rather than for this one issue.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "assignee"
+      },
+      "input": {
+        "type": "pubkey"
+      }
+    },
+    {
+      "id": "set-project-status",
+      "label": "Change status",
+      "description": "Set a whole project’s status to one of the statuses values — use when the project itself starts, finishes or is abandoned. Not for the state of the issues inside it, which each carry their own status.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 1851,
+        "field": "status"
+      },
+      "input": {
+        "type": "string",
+        "enum": "statuses"
+      }
+    },
+    {
+      "id": "assign-project",
+      "label": "Assign",
+      "description": "Say who is accountable for a project, by public key. An empty value clears it. The tag is `lead` rather than `assignee`; they are the same idea at two levels and not interchangeable.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 1851,
+        "field": "lead"
+      },
+      "input": {
+        "type": "pubkey"
+      }
+    },
+    {
+      "id": "comment",
+      "label": "Comment",
+      "description": "Say something about a project or an issue that is not a change to one of its fields. The comment lands in the Folder both apps read, so it appears in that Folder’s conversation as well as on the object.",
+      "effect": "writes",
+      "appliesTo": [
+        "30850",
+        "30851"
+      ],
+      "emits": {
+        "kind": 1111,
+        "scope": "address"
+      },
+      "input": {
+        "type": "string"
+      }
+    },
+    {
+      "id": "add-issue",
+      "label": "Add issue",
+      "description": "File a new issue under a project. Only a title is required; a description is optional and becomes the issue body. Status and assignee are not set here — they are their own actions afterwards, because only what the issue *is* belongs on the root event.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 30851,
+        "setTag": "a",
+        "toAddressOf": "self"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "target": "content",
+            "format": "estiva-blocks-1"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "id": "rename-issue",
+      "label": "Rename",
+      "description": "Give an issue a new title. A change event, so anyone in the Folder may; the issue root keeps the title it was filed with, and every app reading the issue folds the new one over it.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "title"
+      },
+      "input": {
+        "type": "string"
+      }
+    },
+    {
+      "id": "rename-project",
+      "label": "Rename",
+      "description": "Give a whole project a new name. A change event on `title`, whichever of `name` or `title` the project record carries, so anyone in the Folder may, and every app reading the project folds it over the root.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 1851,
+        "field": "title"
+      },
+      "input": {
+        "type": "string"
+      }
+    },
+    {
+      "id": "archive-project",
+      "label": "Archive",
+      "description": "Take a project out of every list once nobody needs to see it, or bring it back: `true` archives, an empty value restores. Nothing is deleted — the project and its issues stay readable, hidden through hiddenWhen.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 1851,
+        "field": "archived"
+      },
+      "input": {
+        "type": "string",
+        "enum": "archived"
+      }
+    },
+    {
+      "id": "archive-issue",
+      "label": "Archive",
+      "description": "Take one issue out of every list once nobody needs to see it, or bring it back: `true` archives, an empty value restores. Nothing is deleted — a link still opens it — and its project stays where it is.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "archived"
+      },
+      "input": {
+        "type": "string",
+        "enum": "archived"
+      }
+    },
+    {
+      "id": "delete-issue",
+      "label": "Delete",
+      "description": "Ask the relay to delete an issue outright. The relay decides — only its author, or the owner of an agent that wrote it, may — and its status changes and comments are separate events that stay.",
+      "effect": "destructive",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 5
+      }
+    },
+    {
+      "id": "describe-issue",
+      "label": "Edit description",
+      "description": "Replace the body of an issue with new text. A change event, so anyone in the Folder may, and every app reading the issue folds it over the body it was filed with; a block document keeps its headings and lists.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "description"
+      },
+      "input": {
+        "type": "string",
+        "format": "estiva-blocks-1"
+      }
+    },
+    {
+      "id": "describe-project",
+      "label": "Edit description",
+      "description": "Replace the description of a whole project — what it is for and what done means. A change event, so anyone in the Folder may, folded over the description the record was created with.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 1851,
+        "field": "description"
+      },
+      "input": {
+        "type": "string",
+        "format": "estiva-blocks-1"
+      }
+    },
+    {
+      "id": "summarize-issue",
+      "label": "Edit summary",
+      "description": "Set the one- or two-sentence summary shown under an issue's title in lists and on cards, about 240 characters of plain text; an empty value clears it. A change event, so anyone in the Folder may.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "summary"
+      },
+      "input": {
+        "type": "string"
+      }
+    },
+    {
+      "id": "summarize-project",
+      "label": "Edit summary",
+      "description": "Set the one- or two-sentence summary shown under a project's name in lists and on cards, about 240 characters of plain text; an empty value clears it. A change event, so anyone in the Folder may.",
+      "effect": "writes",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 1851,
+        "field": "summary"
+      },
+      "input": {
+        "type": "string"
+      }
+    },
+    {
+      "id": "move-issue",
+      "label": "Move to project",
+      "description": "Put an issue under another project, by the project’s address, or under none with an empty value. The issue keeps its Folder, its conversation and its reference; only the project it is listed under changes.",
+      "effect": "writes",
+      "appliesTo": "30851",
+      "emits": {
+        "kind": 1851,
+        "field": "project"
+      },
+      "input": {
+        "type": "string"
+      }
+    },
+    {
+      "id": "add-project",
+      "label": "New project",
+      "description": "Start a project in a Folder: a name, and optionally a description of what it is for and a key. Issues are filed under it afterwards with add-issue; its status and lead are their own actions. The key is 3–6 letters A–Z, the prefix of its issues' refs (KEY-1, KEY-2…), and must be one no project you can see holds; it is fixed once the project exists. Left out, Ship gives the project one the first time it numbers an issue in it.",
+      "effect": "writes",
+      "appliesTo": "39000",
+      "emits": {
+        "kind": 30850,
+        "placement": "buzz-channel",
+        "listed": true
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "id": "delete-project",
+      "label": "Delete",
+      "description": "Ask the relay to delete a project outright, then take it out of every Folder that lists it. The relay decides who may; the issues filed under it are separate events and survive it.",
+      "effect": "destructive",
+      "appliesTo": "30850",
+      "emits": {
+        "kind": 5,
+        "listed": true
+      }
+    }
+  ]
+}

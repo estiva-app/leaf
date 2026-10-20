@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
-import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { Banner, Divider, EmptyState, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { BODY_SLOT, isArchived, type ForeignObject } from '@estiva-app/interop'
+import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -11,18 +11,30 @@ import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
 import { readSummary, saveField } from '../document/save'
 import { useLiveDocument } from '../document/useLiveDocument'
+import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
+import { OwnerRow } from './OwnerRow'
+import { useFileByAddress } from './useFileByAddress'
 
 /**
- * One file, opened from the tree. A document is written in place. Any other file — a Peek topic as much as a
- * Ship issue — says what it is and offers "Open in <its app>", the only place
- * that app's name appears (PRO-24), with no editor.
+ * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
+ * app shares its text — a Ship project or issue — with that app's row under its title. Any other file, such as a
+ * Peek topic, says what it is and offers "Open in <its app>", the only place that app's name appears (PRO-24), with
+ * no editor.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
  */
-export function FilePage({ file, loading }: { file: ForeignObject | null; loading: boolean }) {
-  if (!file) {
+export function FilePage({ file: listed, loading }: { file: ForeignObject | null; loading: boolean }) {
+  // A project's issues come from its row's read, which carries no actions: such a file is read on its own before it
+  // is taken for one Leaf cannot write.
+  const recheck = listed && !listed.unreachable && listed.naddr && !sharesText(listed) ? listed.naddr : null
+  const reread = useFileByAddress(recheck)
+  const file = reread.file && !reread.file.unreachable ? reread.file : listed
+  if (!file || file.unreachable) {
     return loading ? <SkeletonList rows={3} /> : <EmptyState scope="page" message="This could not be found, or you cannot read it." />
   }
-  if (!isDocument(file)) {
+  if (!sharesText(file)) {
+    if (reread.loading) return <SkeletonList rows={3} />
     // The address comes from the app's manifest: only a web address is opened, never a script.
     const opener = file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined
     return (
@@ -46,6 +58,10 @@ export function FilePage({ file, loading }: { file: ForeignObject | null; loadin
 function DocumentView({ opened }: { opened: ForeignObject }) {
   const { file, changedBy } = useLiveDocument(opened)
   const { showToast } = useToast()
+  const own = isDocument(file)
+  const writes = writableFields(file)
+  // Archived, itself or with its project or Folder: its own fields wait for it to be unarchived, its comments stay open (SPEC §6.5).
+  const locked = isArchived(file)
   const title = titleOf(file)
   const body = file.slots[BODY_SLOT]
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
@@ -112,6 +128,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const docBody = useRef<HTMLDivElement | null>(null)
   // A block is found only in a block document (SPEC §13.6); an empty page becomes one with its first save.
   const addressable = !body?.value || body.format === 'blocks'
+  // Leaf gives a link to a part of its own pages only; another app's file opens in that app (project Later list).
   function copyBlockLink(block: string) {
     const link = blockLinkOf(file, block)
     if (link) void copyLink(link, (label) => showToast({ label }))
@@ -132,12 +149,31 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
             <div className="flex flex-col gap-1">
               <h1 className="text-h1 text-text-primary">
                 {/* In place, as Ship's title (ui InlineText, ship#306), at Leaf's own heading size; Enter goes on into the summary. */}
-                <InlineText variant="title" className="text-h1" value={title} placeholder="Untitled" label="Title" onCommit={rename} onEnter={() => summaryEditor.current?.focus('start')} />
+                <InlineText
+                  variant="title"
+                  className="text-h1"
+                  value={title}
+                  placeholder="Untitled"
+                  label="Title"
+                  readOnly={locked || !writes.has('title')}
+                  onCommit={rename}
+                  onEnter={() => summaryEditor.current?.focus('start')}
+                />
               </h1>
               {/* Drawn afresh once the whole of a cut summary is in, so the editor's saved text is the whole one. */}
-              <PageSummary key={wholeNow === null ? 'slot' : 'whole'} ref={summaryEditor} value={summary} onCommit={summarize} onEnter={toText} readOnly={cut && wholeNow === null} />
+              <PageSummary
+                key={wholeNow === null ? 'slot' : 'whole'}
+                ref={summaryEditor}
+                value={summary}
+                onCommit={summarize}
+                onEnter={toText}
+                readOnly={locked || !writes.has('summary') || (cut && wholeNow === null)}
+              />
             </div>
+            {!own && <OwnerRow file={file} />}
+            {locked && <FieldLine tone="helper">{own ? 'Archived.' : `Archived. Unarchive it in ${file.appName ?? 'its app'} to edit.`}</FieldLine>}
             <LiveDocument
+              readOnly={locked}
               value={body?.value ?? ''}
               holdKey={opened.address ? `document:${opened.address}` : undefined}
               format={body?.format ?? 'marker'}
@@ -146,7 +182,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               onLeftUnsaved={leftUnsaved}
               onEditor={setEditor}
               onCommentOn={addressable ? setDraft : undefined}
-              onCopyLink={addressable ? copyBlockLink : undefined}
+              onCopyLink={addressable && own ? copyBlockLink : undefined}
             />
           </div>
         </Panel>

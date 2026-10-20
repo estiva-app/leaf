@@ -9,9 +9,12 @@ export const CHANGE = 1851
 const manifests = createProjectionCache()
 const people = createPeopleCache()
 
-/** One document, read again on its own: what the page shows after a change to it arrives. */
+/**
+ * One file, read again on its own: what the page shows after a change to it arrives, and a file opened by its address.
+ * Archived with its project or Folder counts too, so a file reached directly is read-only as Ship draws it.
+ */
 export function readDocument(naddr: string): Promise<ForeignObject | null> {
-  return resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests)
+  return resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { archivedWith: true })
 }
 
 /**
@@ -99,7 +102,7 @@ export async function saveField(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to save.' }
-  if (!file.address || !file.folder) return { ok: false, reason: 'This document cannot be saved from here.' }
+  if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be saved from here.' }
   const result: PublishResult = await publish(buildChange(pubkey, Date.now(), { target: file.address, field, value, folder: file.folder, contentFormat }))
   if (result.ok) {
     for (const listener of saved) listener()

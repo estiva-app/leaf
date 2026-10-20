@@ -23,6 +23,7 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 const { FilePage } = await import('./FilePage')
+const { shipIssue } = await import('./fixtures/shipFiles')
 const ADDRESS = `30842:${ME}:page-1`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 
@@ -73,6 +74,51 @@ afterEach(() => {
   published.length = 0
   answers = []
   changes = []
+})
+
+describe('a Ship issue opened in Leaf (LEAF-13)', () => {
+  async function documentBox(): Promise<EditorBox> {
+    const box = (await screen.findByRole('textbox', { name: 'Document' })) as EditorBox
+    await waitFor(() => expect(box.editor?.isInitialized).toBe(true))
+    return box
+  }
+
+  it("opens as a page: its text in Leaf's editor, under Ship's row with Open in Ship", async () => {
+    render(<ToastProvider><FilePage file={shipIssue()} loading={false} /></ToastProvider>)
+    const box = await documentBox()
+    expect(box.editor.isEditable).toBe(true)
+    expect(box.textContent).toContain('What changes')
+    expect(screen.getByRole('button', { name: 'Open in Ship' })).toBeTruthy()
+    expect(screen.queryByText(/Archived/)).toBeNull()
+  })
+
+  it('saves its text when you leave it: one block-document change on `description`, at the issue, in its own Folder', async () => {
+    const issue = shipIssue()
+    render(<ToastProvider><FilePage file={issue} loading={false} /></ToastProvider>)
+    const box = await documentBox()
+    write(box, 'Rewritten in Leaf.')
+    leave(box)
+    await waitFor(() => expect(published).toHaveLength(1))
+    const [change] = published
+    expect(change.kind).toBe(1851)
+    expect(tag(change, 'a')).toBe(issue.address)
+    expect(tag(change, 'field')).toBe('description')
+    expect(tag(change, 'content-format')).toBe('estiva-blocks-1')
+    expect(tag(change, 'h')).toBe(issue.folder)
+    expect(tag(change, 'value')).toContain('Rewritten in Leaf.')
+  })
+
+  it('is read-only when archived: its title, summary and text take nothing, and it says where to unarchive it', async () => {
+    render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
+    const box = await documentBox()
+    expect(box.editor.isEditable).toBe(false)
+    expect((await summaryBox()).editor.isEditable).toBe(false)
+    expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
+    write(box, 'Typed into an archived issue.')
+    leave(box)
+    await act(async () => {})
+    expect(published).toHaveLength(0)
+  })
 })
 
 describe("a page's summary, under its title", () => {
