@@ -240,7 +240,8 @@ export function LiveDocument({
       content: held ?? toEditorDocument(documentForEditing(value, format)),
       editable: !readOnly,
       editorProps: {
-        attributes: { 'aria-label': 'Document', role: 'textbox', 'aria-multiline': 'true', class: richTextClassName('default', 'outline-none') },
+        // Focusable when read only too: the selection strip, and so Comment on its words, shows only in a focused view.
+        attributes: { 'aria-label': 'Document', role: 'textbox', 'aria-multiline': 'true', tabindex: '0', class: richTextClassName('default', 'outline-none') },
         handleKeyDown: (view, event) => {
           if (event.key !== 'Escape') return false
           if (isSuggestionOpen() || isReferenceMenuOpen(view.state)) return false
