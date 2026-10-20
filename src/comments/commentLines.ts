@@ -102,14 +102,17 @@ interface Drawing {
   cards: readonly Embed[]
   parts: readonly PartPointer[]
   resolveLink?: LinkResolver
+  here?: string
 }
 
 function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type'>, drawing: Drawing): RowLine | 'nothing' | undefined {
   const drawn = lineDrawOf(line, block, drawing)
   if (drawn.draw === 'nothing') return 'nothing'
   if (drawn.draw === 'unreadable') return { reference: drawn.reference, unreadable: true }
-  // A line that is only an app URL stays the link it was; its card or part, when it has one, draws under the comment.
+  // A URL whose file is not read yet stays the link it was (it reaches here only once read, as a reference); its card or part draws under the comment.
   if (drawn.draw !== 'row' || drawn.url) return undefined
+  // The page the comment is on stays its chip, as Ship keeps it (`stayChip`): a row of the page you are reading says nothing.
+  if (drawing.here && drawn.value.toLowerCase() === drawing.here.toLowerCase()) return undefined
   const run = line.find((r) => r.reference)
   if (!run?.reference) return undefined
   const url = writtenUrlOf(run, drawing.resolveLink)
@@ -134,6 +137,8 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
   const blocks: readonly RenderBlock[] =
     resolveLink && readable
       ? linksAsReferences(body, (url) => {
+          // Only a link its chip can open as written (https, `writtenOpenerOf`): any other stays the link it was.
+          if (!/^https:\/\//i.test(url)) return undefined
           const value = resolveLink(url)
           const reference = value ? referenceOfValue(value) : undefined
           return reference && readable(reference) ? value : undefined
@@ -171,7 +176,7 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
     const opensAt = writtenUrl.get(card.value)
     return reference && card.layout !== 'none' ? [{ uri: reference, layout: card.layout, ...(opensAt ? { opensAt } : {}) }] : []
   })
-  const drawing = { cards: carried, parts, resolveLink }
+  const drawing = { cards: carried, parts, resolveLink, here }
 
   const rows = new Map<object, RowLine>()
   const rowRuns = new Map<RenderInline, RowLine>()

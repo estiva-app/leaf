@@ -18,6 +18,21 @@ describe('an app URL in a sent comment', () => {
     expect(runs(true)).toContainEqual({ text: URL, reference: referenceOfValue(ISSUE) })
   })
 
+  it('alone on its line is its file’s row, but the page the comment is on stays its chip, as Ship keeps it', () => {
+    const lone = (here?: string) => placeComment(toRenderTree(`see\n${URL}`, 'marker'), { tags: [] }, { here, resolveLink, readable: () => true })
+    const elsewhere = lone()
+    expect(elsewhere.rowOf(elsewhere.blocks[1])).toEqual({ reference: referenceOfValue(ISSUE), url: URL })
+    const onIt = lone(ISSUE)
+    expect(onIt.blocks.some((b) => onIt.rowOf(b))).toBe(false)
+    expect(onIt.blocks[0].inline!.some((r) => r.reference === referenceOfValue(ISSUE))).toBe(true)
+  })
+
+  it('stays the URL as written for an http link, which its chip could not open as written', () => {
+    const http = URL.replace('https:', 'http:')
+    const placed = placeComment(toRenderTree(`see ${http} now`, 'marker'), { tags: [] }, { resolveLink: (u) => (u === http ? ISSUE : undefined), readable: () => true })
+    expect(placed.blocks[0].inline!.some((r) => r.reference)).toBe(false)
+  })
+
   it('stays the URL as written while its file is unread or cannot be read', () => {
     expect(runs(false).some((r) => r.reference)).toBe(false)
     expect(runs(false).map((r) => r.text).join('')).toBe(`see ${URL} now`)

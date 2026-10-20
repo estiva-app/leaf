@@ -5,7 +5,7 @@
 import type { FolderContents, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { encodeNaddr, type PublishResult, type SignedEvent } from '@estiva-app/protocol'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { MIKY, shipIssue } from './pages/fixtures/shipFiles'
 
 const D = '7fd6a466-5c02-49e5-8cbc-0ce71ab32221'
@@ -127,7 +127,12 @@ describe("Ship's address for an issue, on Leaf's host", () => {
 
   it('gives Copy link on a block of the issue as Ship’s block address with Leaf’s host (LTX-6)', async () => {
     const copied: string[] = []
+    const was = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => void copied.push(text) } })
+    onTestFinished(() => {
+      if (was) Object.defineProperty(navigator, 'clipboard', was)
+      else delete (navigator as { clipboard?: unknown }).clipboard
+    })
     window.history.replaceState(null, '', `/issue/${slug}-${D}`)
     render(<App />)
     const doc = await screen.findByRole('textbox', { name: 'Document' })
