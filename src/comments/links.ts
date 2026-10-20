@@ -36,7 +36,9 @@ async function answerOf(url: string): Promise<Answer> {
   if (!hit) return { value: null }
   if (hit.by === 'id') return { value: EVENT_ID.test(hit.identifier) ? hit.identifier.toLowerCase() : null }
   const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  // A path on another app's host can read as several kinds (SPEC §7.7, LTX-6): ask under each.
+  const kinds = hit.kinds ?? (hit.kind === undefined ? undefined : [hit.kind])
+  if (kinds) filter.kinds = kinds
   const found = await query([filter])
   const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
   if (authors.size !== 1) return { value: null }

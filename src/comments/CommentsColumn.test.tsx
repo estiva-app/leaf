@@ -873,13 +873,13 @@ describe('attaching a file to a comment (COMM-6)', () => {
 
 describe('the card and the live parts under the box (COMM-8)', () => {
   const SHIP = 'e'.repeat(64)
-  // The apps' manifests, as Ship and Leaf publish them: what makes a URL name a file (§7.7).
+  // The apps' manifests, as Ship and Leaf publish them: what makes a URL name a file (§7.7), on the app's own `web` origin.
   const manifest = (d: string, pattern: string, kind: number): SignedEvent => ({
     id: `${d.padEnd(63, '0')}9`,
     pubkey: SHIP,
     created_at: 1_760_000_000,
     kind: 31990,
-    tags: [['d', d], ['k', String(kind)], ['urls', pattern, String(kind)]],
+    tags: [['d', d], ['k', String(kind)], ['web', `${/^https:\/\/[^/]+/.exec(pattern)![0]}/o/<bech32>`, 'naddr'], ['urls', pattern, String(kind)]],
     content: '',
     sig: '',
   })
@@ -943,6 +943,16 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
     const e = await sent()
     expect(e.content).toBe(`see ${ISSUE_URL}`)
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+  })
+
+  it('an issue’s path on Leaf’s host draws as the issue, as its Ship address does, and the comment carries its card (LTX-6)', async () => {
+    const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
+    await open(EVENTS)
+    write(BOX, `see ${leafUrl} `)
+    await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
+    const e = await sent()
+    expect(e.content).toBe(`see ${leafUrl}`)
     expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
   })
 
