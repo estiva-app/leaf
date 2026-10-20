@@ -12,7 +12,7 @@
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
-import { eventIdFromRef, identifierFromRef, matchObjectUrl, objectRef, urlPatternsOf, type ForeignObject } from '@estiva-app/interop'
+import { blockUrlOf, eventIdFromRef, identifierFromRef, matchObjectUrl, objectRef, urlPatternsOf, type ForeignObject } from '@estiva-app/interop'
 import { encodeNaddr } from '@estiva-app/protocol'
 import { query } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
@@ -145,4 +145,33 @@ export function ownerPathOf(file: Pick<ForeignObject, 'kind' | 'address' | 'open
   if (!shape) return undefined
   const d = file.address.split(':').slice(2).join(':')
   return `/${shape.word}/${objectRef(d, file.slots.title?.value)}`
+}
+
+/**
+ * Leaf's link to one block of another app's file (LTX-6): the block shape its
+ * own app declares for its kind (Ship's `/issue/<slug>-<d>#block-<block>`),
+ * with Leaf's host in front, so every reader takes it as that block and Leaf
+ * opens it there. The owner is the manifest the file's "Open in" link came
+ * from, as for `ownerPathOf`. Undefined when that app declares no block shape
+ * for the kind (Peek's topics): there is then no link to copy.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
+ */
+export function ownerBlockLinker(
+  file: Pick<ForeignObject, 'kind' | 'address' | 'openUrl'>,
+  manifests: readonly Manifest[],
+  origin: string = window.location.origin,
+): ((block: string, title?: string) => string | undefined) | undefined {
+  const address = file.address
+  const owner = address && file.openUrl ? manifestOfLink(file.openUrl, manifests) : undefined
+  if (!address || !owner) return undefined
+  const here = origin.replace(/\/+$/, '')
+  // Only a word Leaf's own route reads back as another app's, for the reasons `ownerPathOf` gives.
+  const shapes = urlPatternsOf(owner).flatMap((p) => {
+    const at = originOf(p.pattern)
+    const word = typeWordOf(p.pattern)
+    return at && word && isOtherAppsWord(word) && p.kind === file.kind && p.pattern.includes('#block-<block>') ? [{ ...p, pattern: here + p.pattern.slice(at.length) }] : []
+  })
+  if (!shapes.length) return undefined
+  const d = address.split(':').slice(2).join(':')
+  return (block, title) => blockUrlOf(shapes, { kind: file.kind, d, title, block })
 }

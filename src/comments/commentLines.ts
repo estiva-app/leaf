@@ -45,6 +45,18 @@ export function linksIn(blocks: readonly RenderBlock[]): string[] {
 export interface RowLine {
   reference: string
   unreadable?: true
+  /** The URL the line wrote for its file, when it wrote one: the row opens it as written (LTX-6). */
+  url?: string
+}
+
+/**
+ * The URL a run wrote for its reference, when it is one that names that same
+ * file: what its chip or row opens (LTX-6). A block comment can mark any URL's
+ * text as a reference to another file, so the text must itself read as it.
+ */
+export function writtenUrlOf(run: Pick<RenderInline, 'text' | 'reference'>, resolveLink: LinkResolver | undefined): string | undefined {
+  if (!run.reference || !resolveLink || !/^https?:\/\//i.test(run.text)) return undefined
+  return referenceOfLink(run.text, resolveLink) === run.reference ? run.text : undefined
 }
 
 /** A card its writer carried under the comment (`embed`, SPEC §13.6.2), by the reference the body wrote, as a page's line carries one. */
@@ -74,6 +86,13 @@ export interface PlacedComment {
 export interface PlaceContext {
   here?: string
   resolveLink?: LinkResolver
+  /**
+   * Whether the file a `nostr:` reference names has been read and can be:
+   * an app URL draws as its file's chip or row only then, and until then, or
+   * for good when it cannot be, stays the URL it was written as (Ship's OPT-18).
+   * Without it, every URL stays as written.
+   */
+  readable?: (reference: string) => boolean
 }
 
 const BREAK: RenderInline = { text: '\n', marks: [] }
@@ -83,16 +102,21 @@ interface Drawing {
   cards: readonly Embed[]
   parts: readonly PartPointer[]
   resolveLink?: LinkResolver
+  here?: string
 }
 
 function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type'>, drawing: Drawing): RowLine | 'nothing' | undefined {
   const drawn = lineDrawOf(line, block, drawing)
   if (drawn.draw === 'nothing') return 'nothing'
   if (drawn.draw === 'unreadable') return { reference: drawn.reference, unreadable: true }
-  // A line that is only an app URL stays the link it was; its card or part, when it has one, draws under the comment.
+  // A URL whose file is not read yet stays the link it was (it reaches here only once read, as a reference); its card or part draws under the comment.
   if (drawn.draw !== 'row' || drawn.url) return undefined
+  // The page the comment is on stays its chip, as Ship keeps it (`stayChip`): a row of the page you are reading says nothing.
+  if (drawing.here && drawn.value.toLowerCase() === drawing.here.toLowerCase()) return undefined
   const run = line.find((r) => r.reference)
-  return run?.reference ? { reference: run.reference } : undefined
+  if (!run?.reference) return undefined
+  const url = writtenUrlOf(run, drawing.resolveLink)
+  return url ? { reference: run.reference, url } : { reference: run.reference }
 }
 
 /**
@@ -107,8 +131,19 @@ function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type
  * or an app link (`cardsIn` with `resolveLink`), and a part of the page the
  * comment is on draws nothing (Miky, 2026-10-19).
  */
-export function placeComment(blocks: readonly RenderBlock[], event: { tags: readonly (readonly string[])[] }, context: PlaceContext = {}): PlacedComment {
-  const { here, resolveLink } = context
+export function placeComment(body: readonly RenderBlock[], event: { tags: readonly (readonly string[])[] }, context: PlaceContext = {}): PlacedComment {
+  const { here, resolveLink, readable } = context
+  // An app URL whose file has been read is that file's reference, its run keeping the URL as its text, as Peek and Ship read one (LTX-6).
+  const blocks: readonly RenderBlock[] =
+    resolveLink && readable
+      ? linksAsReferences(body, (url) => {
+          // Only a link its chip can open as written (https, `writtenOpenerOf`): any other stays the link it was.
+          if (!/^https:\/\//i.test(url)) return undefined
+          const value = resolveLink(url)
+          const reference = value ? referenceOfValue(value) : undefined
+          return reference && readable(reference) ? value : undefined
+        })
+      : body
   const named = new Set(valuesIn(blocks, resolveLink))
   // At most six live under one comment (§13.6.1): each one re-reads its file every 30 s.
   const parts = partsOf({ tags: event.tags.map((t) => [...t]) })
@@ -128,7 +163,7 @@ export function placeComment(blocks: readonly RenderBlock[], event: { tags: read
   const urlsIn = (bs: readonly RenderBlock[], resolve: LinkResolver) => {
     for (const block of bs) {
       for (const run of block.inline ?? []) {
-        const value = run.reference && /^https?:\/\//i.test(run.text) && referenceOfLink(run.text, resolve) === run.reference ? valueOfReference(run.reference) : undefined
+        const value = writtenUrlOf(run, resolve) ? valueOfReference(run.reference!) : undefined
         if (value && !writtenUrl.has(value)) writtenUrl.set(value, run.text)
       }
       if (block.children) urlsIn(block.children, resolve)
@@ -141,7 +176,7 @@ export function placeComment(blocks: readonly RenderBlock[], event: { tags: read
     const opensAt = writtenUrl.get(card.value)
     return reference && card.layout !== 'none' ? [{ uri: reference, layout: card.layout, ...(opensAt ? { opensAt } : {}) }] : []
   })
-  const drawing = { cards: carried, parts, resolveLink }
+  const drawing = { cards: carried, parts, resolveLink, here }
 
   const rows = new Map<object, RowLine>()
   const rowRuns = new Map<RenderInline, RowLine>()

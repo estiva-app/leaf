@@ -4,8 +4,8 @@
  */
 import type { FolderContents, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { encodeNaddr, type PublishResult, type SignedEvent } from '@estiva-app/protocol'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { MIKY, shipIssue } from './pages/fixtures/shipFiles'
 
 const D = '7fd6a466-5c02-49e5-8cbc-0ce71ab32221'
@@ -123,6 +123,34 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     window.history.replaceState(null, '', '/issue/00000000-0000-4000-8000-000000000000')
     render(<App />)
     expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+  })
+
+  it('gives Copy link on a block of the issue as Ship’s block address with Leaf’s host (LTX-6)', async () => {
+    const copied: string[] = []
+    const was = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => void copied.push(text) } })
+    onTestFinished(() => {
+      if (was) Object.defineProperty(navigator, 'clipboard', was)
+      else delete (navigator as { clipboard?: unknown }).clipboard
+    })
+    window.history.replaceState(null, '', `/issue/${slug}-${D}`)
+    render(<App />)
+    const doc = await screen.findByRole('textbox', { name: 'Document' })
+    const block = await waitFor(() => {
+      const found = doc.querySelector<HTMLElement>('[data-block-id]')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    // The handle follows the pointer: over the text, its menu offers the link.
+    fireEvent.mouseMove(block)
+    fireEvent.click(await screen.findByRole('button', { name: 'Block menu' }))
+    await screen.findByRole('menuitem', { name: 'Comment' })
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toContain('Copy link')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
+    // jsdom measures every block at the same place, so the handle may stand by any of them.
+    const ids = [...doc.querySelectorAll<HTMLElement>('[data-block-id]')].map((b) => b.dataset.blockId)
+    await waitFor(() => expect(copied).toHaveLength(1))
+    expect(ids.map((id) => `${window.location.origin}/issue/${slug}-${D}#block-${id}`)).toContain(copied[0])
   })
 
   it("hands a Peek topic's address to Peek rather than showing Home", async () => {

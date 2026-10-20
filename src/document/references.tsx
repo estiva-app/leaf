@@ -89,15 +89,24 @@ function useFile(uri: string): ForeignObject | null | undefined {
  * prototype and Peek's `Reference` draw one: the package's InlineChip, the
  * kind's icon, the name cut at 24ch and the whole of it on hover. Anything
  * not read yet, or unreadable, is its address, quiet, never blank. No link
- * while writing: a click on a chip opens its menu (Open, and its card).
+ * while writing: a click on a chip opens its menu (Open, and its card). A sent
+ * comment's chip for a URL it wrote opens that URL as written, beside Leaf, as
+ * its card does (`opensAt`, LTX-6).
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
-export function ReferenceChip({ uri }: ReferenceViewProps) {
+export function ReferenceChip({ uri, opensAt }: ReferenceViewProps & { opensAt?: string }) {
   const file = useFile(uri)
   if (file && !file.unreachable) {
     const name = titleOf(file)
+    const opener = writtenOpenerOf(opensAt, file.openUrl)
     return (
       <WithTooltip inline label={name}>
-        <InlineChip tone="neutral" icon={<KindIcon kind={thingKindOf(file.kind)} size={14} tone="inherit" />} className="max-w-[24ch]">
+        <InlineChip
+          tone="neutral"
+          icon={<KindIcon kind={thingKindOf(file.kind)} size={14} tone="inherit" />}
+          className="max-w-[24ch]"
+          {...(opener ? { href: opener, target: '_blank', rel: 'noopener noreferrer' } : {})}
+        >
           <span className="truncate">{name}</span>
         </InlineChip>
       </WithTooltip>
@@ -154,8 +163,8 @@ export function LineCards({ cards, resolved }: { cards: readonly ReferenceCard[]
  * the page's compact card, a placeholder while it is read, and its chip when
  * it cannot be read, so the link never goes blank.
  */
-export function ReferenceRow({ uri }: { uri: string }) {
-  return <PlacedObject uri={uri} layout="compact" />
+export function ReferenceRow({ uri, opensAt }: { uri: string; /** The URL the line wrote: opened as written (LTX-6). */ opensAt?: string }) {
+  return <PlacedObject uri={uri} layout="compact" opensAt={opensAt} />
 }
 
 /**

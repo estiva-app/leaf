@@ -58,7 +58,7 @@ import {
 import { nameOf } from '../document/save'
 import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
 import { CarriedCards, PlacedObject, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
-import { linksIn, placeComment, referenceOfValue, ROW_BLOCK, type RowLine } from './commentLines'
+import { linksIn, placeComment, referenceOfValue, ROW_BLOCK, writtenUrlOf, type RowLine } from './commentLines'
 import { askLinks, knownBlockOf, knownLinkValue, linkReferenceOf, linksChanged, MAX_LINKS_ASKED, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
@@ -463,9 +463,19 @@ function CommentLine({
   useEffect(() => {
     void askLinks(linksIn(blocks).slice(0, MAX_LINKS_ASKED)).catch(() => {})
   }, [blocks, resolveLink])
-  const placed = useMemo(() => placeComment(blocks, comment.event, { here, resolveLink }), [blocks, comment, here, resolveLink])
-  const reference = (uri: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} />
-  const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference)} />
+  // The files its app links name, read as its chips are: a link draws as its file only once that file is read (LTX-6).
+  const linked = useReferences(linksIn(blocks).flatMap((url) => {
+    const value = resolveLink(url)
+    const reference = value ? referenceOfValue(value) : undefined
+    return reference ? [reference] : []
+  }))
+  const readableKey = Object.entries(linked).flatMap(([uri, file]) => (file && !file.unreachable ? [uri] : [])).sort().join('\n')
+  const placed = useMemo(() => {
+    const readable = new Set(readableKey.split('\n'))
+    return placeComment(blocks, comment.event, { here, resolveLink, readable: (reference) => readable.has(reference) })
+  }, [blocks, comment, here, resolveLink, readableKey])
+  const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} opensAt={opensAt} />
+  const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference, line.url)} />
   return (
     <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
@@ -502,7 +512,7 @@ function CommentLine({
             size="small"
             renderReference={(uri, run) => {
               const line = placed.rowRuns.get(run)
-              return line ? row(line) : reference(uri)
+              return line ? row(line) : reference(uri, writtenUrlOf(run, resolveLink))
             }}
             renderBlock={(block) => {
               const line = block.type === ROW_BLOCK ? placed.rowOf(block) : undefined
@@ -536,7 +546,7 @@ function CommentLine({
  */
 function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; fallback: ReactNode }) {
   if (line.unreadable) return fallback
-  if (/^nostr:naddr1/i.test(line.reference)) return <ReferenceRow uri={line.reference} />
+  if (/^nostr:naddr1/i.test(line.reference)) return <ReferenceRow uri={line.reference} opensAt={line.url} />
   const id = /^nostr:nevent1/i.test(line.reference) ? eventIdOf(line.reference) : null
   const quoted = id ? page.find((c) => c.id === id) : undefined
   if (!quoted) return fallback
@@ -555,7 +565,7 @@ function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pub
  * file as the page's own chip. Anything else, or anyone without a name, is its
  * address, quiet.
  */
-function BodyReference({ uri, urgent, nameOf, page }: { uri: string; urgent: readonly string[]; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[] }) {
+function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; urgent: readonly string[]; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; opensAt?: string }) {
   if (/^nostr:npub1/i.test(uri)) {
     const pubkey = pubkeyOf(uri)
     const name = pubkey ? nameOf(pubkey) : undefined
@@ -580,7 +590,7 @@ function BodyReference({ uri, urgent, nameOf, page }: { uri: string; urgent: rea
       )
     }
   } else {
-    return <ReferenceChip uri={uri} />
+    return <ReferenceChip uri={uri} opensAt={opensAt} />
   }
   return (
     <WithTooltip inline label={uri}>
