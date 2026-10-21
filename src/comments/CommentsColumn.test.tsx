@@ -785,6 +785,16 @@ describe('editing and deleting your own comment (COMM-5)', () => {
       expect(within(line(own.id)!).queryByText('(edited)')).toBeNull()
     })
 
+    it('✕ on a comment you already edited keeps your edited words, not the ones you first sent', async () => {
+      const own = mine([['embed', CARD_ADDRESS, 'detailed']], `First\n${CARD}`)
+      const reworded: SignedEvent = { id: '5'.repeat(64), pubkey: ME, created_at: own.created_at + 60, kind: 40003, tags: [['h', FOLDER], ['e', own.id]], content: `Reworded\n${CARD}`, sig: '' }
+      await open([own, reworded])
+      await waitFor(() => expect(cardOf(own.id)?.textContent).toContain('Card under'))
+      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove card' })))
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      expect(publish.mock.calls[0][0].content).toBe(`Reworded\n${CARD}`)
+    })
+
     it('offers no ✕ on the card under someone else’s comment', async () => {
       const theirs = comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
       await open([theirs])
