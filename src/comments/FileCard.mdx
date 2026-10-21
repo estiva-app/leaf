@@ -1,0 +1,43 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './FileCard.stories'
+
+<Meta of={Stories} />
+
+# FileCard
+
+One file as the package's **AttachmentCard**, its bytes fetched as the reader:
+a picture is its thumbnail and opens full size, anything else is its row.
+
+**Seen in**: *Comments/FileCard*: **Picture**, **In A Page**, **File**; a
+comment's files, and a picture in a page's text (an issue's, a project's or a
+Leaf page's).
+
+## When
+
+- A comment's files: **CommentFiles** draws one per file.
+- An attachment block in a page's text: `LiveDocument` draws one, with
+  `download={false}`, as Ship's description editor does (it saves on blur,
+  and the Download button takes focus).
+
+## When not
+
+- A block whose attributes the protocol will not name as a file
+  (`imetaFromAttrs` answers nothing): it is words, never a card.
+- A file being attached before it is sent: that is the comment box's own,
+  in **AttachmentCard** with a local preview.
+
+## How
+
+```tsx
+import { FileCard } from '../comments/CommentFiles'
+
+<FileCard file={imeta} />
+<FileCard file={imeta} download={false} />
+```
+
+## What it owns
+
+- **Which URL is which**: the relay's thumbnail in the card, the original only
+  when a picture is opened.
+- **The reader's fetch**: `blobObjectUrl`, so a file they cannot read draws as
+  the card that says so.
