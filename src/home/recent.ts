@@ -5,21 +5,33 @@ import { summaryText } from '../document/summary'
 /** How many rows Home shows (Miky, LEAF-6's kickoff). */
 export const HOME_ROWS = 7
 
-/** A page Home may list: a document in one of the Folders the tree reads. */
+/**
+ * A file Home may list: a page in one of the Folders the tree reads, or another app's file whose text Leaf writes
+ * and whose title, summary or text the viewer changed (LTX-2).
+ */
 export interface Page {
-  /** `30842:<pubkey>:<d>`: what its changes and comments name. */
+  /** `<kind>:<pubkey>:<d>`: what its changes and comments name. */
   address: string
   naddr: string
-  /** The page's own event: its `created_at` is when it was made. */
+  kind: number
+  /** The file's own event: its `created_at` is when it was made. */
   eventId: string
   title: string
   /** Its summary, the row's second line; left out when it has none (SPEC §6.12). */
   summary?: string
-  /** The Folder's name, as the row says it. */
+  /** Where it is, as the row says it: a page's Folder, an issue's project. Empty when that could not be read. */
   folder: string
-  /** The Folder's id: the `h` every change and comment on the page carries. */
+  /** The Folder's id: the `h` every change and comment on the file carries. */
   folderId: string
+  /** Another app's file: its type, "Issue", as the tree labels it. A page has none. */
+  type?: string
 }
+
+/**
+ * Whether only a change to a file's title, summary or text raises it on Home: another app's file, where a comment is
+ * that app's conversation, not writing (Miky, LTX-2's kickoff). A page rises on a comment too.
+ */
+const textOnly = (page: Page) => page.type !== undefined
 
 export interface RecentRow extends Page {
   /** The latest change to the page's text or title, a comment on it, or its making, in ms. */
@@ -33,8 +45,9 @@ export interface RecentRow extends Page {
  * made), every save of a page's text, title or summary (`1851`, by its `a`) and every
  * comment on it (`1111`, by its root `A` — a reply carries only `A`, and a
  * lowercase `a` on someone else's comment is a mention, SPEC §6.4). Started
- * from the pages that exist, never from the viewer's own `1851`s: a deleted
- * page's saves stay on the relay, and most of a person's `1851`s are Ship's.
+ * from the files that exist: a deleted page's saves stay on the relay. Another
+ * app's files are found from the viewer's own saves first ({@link textTargets}),
+ * then read, so a deleted one is not listed either.
  */
 export function recentFilters(pages: Page[]): Record<string, unknown>[] {
   const addresses = pages.map((p) => p.address)
@@ -43,6 +56,32 @@ export function recentFilters(pages: Page[]): Record<string, unknown>[] {
     { kinds: [CHANGE], '#a': addresses },
     { kinds: [KIND.COMMENT], '#A': addresses },
   ]
+}
+
+/** How many of the viewer's own saves Home reads to find other apps' files, newest first. */
+export const OWN_SAVES = 200
+
+/** The read of the viewer's own saves that {@link textTargets} looks through. */
+export function ownSavesFilter(me: string): Record<string, unknown> {
+  return { kinds: [CHANGE], authors: [me], limit: OWN_SAVES }
+}
+
+/**
+ * The other apps' files the viewer changed the title, summary or text of, newest first and each once: what Home
+ * reads next to find which of them Leaf writes. A page is left out (the tree lists those), and so is a change to any
+ * other field, such as an issue's status. At most `limit`, so a few the viewer cannot read still leave a full Home.
+ */
+export function textTargets(saves: SignedEvent[], limit = HOME_ROWS * 3): string[] {
+  const targets: string[] = []
+  for (const save of [...saves].sort((a, b) => timeOf(b) - timeOf(a))) {
+    const field = tag(save, 'field')
+    const target = tag(save, 'a')
+    if (!target || (field !== 'title' && field !== 'summary' && field !== 'description')) continue
+    if (target.startsWith(`${KIND.DOCUMENT}:`) || targets.includes(target)) continue
+    targets.push(target)
+    if (targets.length === limit) break
+  }
+  return targets
 }
 
 /**
@@ -75,9 +114,10 @@ const tag = (event: SignedEvent, name: string) => event.tags.find((t) => t[0] ==
 
 /**
  * Home's rows (Miky, LEAF-6's kickoff): the pages `me` made, edited or
- * commented on, ordered by the latest change to each by anyone, naming who
- * made it. Someone who touched none sees the most recent pages in their
- * Folders instead. At most {@link HOME_ROWS}.
+ * commented on, and another app's files whose title, summary or text `me`
+ * changed in any app (Miky, LTX-2's kickoff), ordered by the latest change to
+ * each by anyone, naming who made it. Someone who touched none sees the most
+ * recent pages in their Folders instead. At most {@link HOME_ROWS}.
  */
 export function rankRecent(pages: Page[], events: SignedEvent[], me: string | null): RecentRow[] {
   const rows = new Map<string, RecentRow>()
@@ -90,7 +130,7 @@ export function rankRecent(pages: Page[], events: SignedEvent[], me: string | nu
     const row = { ...page, at: 0, by: maker }
     rows.set(page.address, row)
     byEvent.set(page.eventId, row)
-    if (maker === me) touched.add(page.address)
+    if (maker === me && !textOnly(page)) touched.add(page.address)
   }
   for (const event of events) {
     const made = byEvent.get(event.id)
@@ -99,7 +139,8 @@ export function rankRecent(pages: Page[], events: SignedEvent[], me: string | nu
     if (!row) continue
     // A change or comment carrying another Folder's `h` is ignored by every reader (SPEC §6.2), so here too.
     if (!made && tag(event, 'h') !== row.folderId) continue
-    if (event.pubkey === me) touched.add(row.address)
+    if (textOnly(row) && event.kind === KIND.COMMENT) continue
+    if (event.pubkey === me && !(made && textOnly(row))) touched.add(row.address)
     const at = timeOf(event)
     if (at > row.at) {
       row.at = at
