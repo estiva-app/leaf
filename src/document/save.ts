@@ -129,12 +129,11 @@ export async function saveText(
   const pubkey = viewerPubkey()
   if (!result.ok || !pubkey || !file.address || !file.folder) return result.ok ? { ok: true, refused: [] } : result
   const adds = mentionAddsFor(pubkey, Date.now(), { file: file.address, folder: file.folder, saved, editedFrom })
-  const refused: string[] = []
-  for (const add of adds) {
-    const answer = await publish(add)
-    if (answer.ok) continue
-    console.warn('[relay] mention add refused', answer)
-    refused.push(add.tags.find((tag) => tag[0] === 'field')?.[1]?.replace(/^member:/, '') ?? '')
-  }
-  return { ok: true, refused: refused.filter(Boolean) }
+  const answers = await Promise.all(adds.map((add) => publish(add)))
+  const refused = adds.flatMap((add, i) => {
+    if (answers[i].ok) return []
+    console.warn('[relay] mention add refused', answers[i])
+    return add.tags.filter((tag) => tag[0] === 'field').map((tag) => tag[1].replace(/^member:/, ''))
+  })
+  return { ok: true, refused }
 }

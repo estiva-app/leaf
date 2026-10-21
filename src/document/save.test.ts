@@ -59,6 +59,8 @@ describe('a mention in a page (SPEC §11.8)', () => {
     const [text, add] = publish.mock.calls.map((call) => call[0] as Sent)
     expect(text.tags).toContainEqual(['field', 'description'])
     expect(text.tags.some((t) => t[0] === 'p')).toBe(false)
+    // A file field change (§6.2), signed by the writer: the Add button's own event.
+    expect(add).toMatchObject({ kind: 1851, pubkey: 'a'.repeat(64) })
     expect(add.tags).toEqual(expect.arrayContaining([['a', ADDRESS], ['field', `member:${QA2}`], ['value', 'true'], ['h', FOLDER]]))
   })
 
