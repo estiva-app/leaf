@@ -70,15 +70,18 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
   const target = useRef(file)
   const summaryEditor = useRef<InlineTextHandle>(null)
-  // The text, and an Add for each person it names anew; someone who could not be added is told about here.
+  // The text, and an Add for each person it names anew; someone who could not be added is told, and tried again on the next save.
+  const unadded = useRef<string[]>([])
   const commitText = useCallback(
     async (saved: FileText & { content: string }, editedFrom: FileText) => {
-      const result = await saveText(target.current, saved, editedFrom)
-      if (result.ok && result.refused.length > 0) {
+      const result = await saveText(target.current, saved, editedFrom, unadded.current)
+      if (!result.ok) return false
+      unadded.current = result.refused
+      if (result.refused.length > 0) {
         const names = result.refused.map((pubkey) => knownName(pubkey) ?? 'someone').join(', ')
-        showToast({ label: `Could not add ${names}.`, type: 'error' })
+        showToast({ label: `Could not add ${names}. Leaf tries again when you next save.`, type: 'error' })
       }
-      return result.ok
+      return true
     },
     [showToast],
   )

@@ -1,6 +1,6 @@
 import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
 import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
-import { byOrder, mentionAddsFor, type FileText } from '@estiva-app/conversation'
+import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -117,23 +117,33 @@ export async function saveField(
  * Save a file's text, and add each person it names whom the text it was
  * edited from did not, as the Add button does (SPEC §11.8). The save carries
  * no `p`: a typo fix names nobody new, so it adds nobody, and someone who left
- * stays out. `refused` is who could not be added, after a save that went through.
+ * stays out. `refused` is who could not be added, after a save that went
+ * through; pass them back as `unadded` and the next save that still names them
+ * tries again, since its text no longer names them anew.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-mention-in-a-files-text-adds-the-person-with-no-unread.md
  */
 export async function saveText(
   file: Pick<ForeignObject, 'address' | 'folder'>,
   saved: FileText & { content: string },
   editedFrom: FileText,
+  unadded: readonly string[] = [],
 ): Promise<{ ok: true; refused: string[] } | { ok: false; reason: string }> {
   const result = await saveField(file, 'description', saved.content, saved.format)
   const pubkey = viewerPubkey()
-  if (!result.ok || !pubkey || !file.address || !file.folder) return result.ok ? { ok: true, refused: [] } : result
-  const adds = mentionAddsFor(pubkey, Date.now(), { file: file.address, folder: file.folder, saved, editedFrom })
-  const answers = await Promise.all(adds.map((add) => publish(add)))
-  const refused = adds.flatMap((add, i) => {
-    if (answers[i].ok) return []
-    console.warn('[relay] mention add refused', answers[i])
-    return add.tags.filter((tag) => tag[0] === 'field').map((tag) => tag[1].replace(/^member:/, ''))
-  })
-  return { ok: true, refused }
+  const { address, folder } = file
+  if (!result.ok || !pubkey || !address || !folder) return result.ok ? { ok: true, refused: [] } : result
+  const named = peopleNamedInText(saved)
+  const people = [...new Set([...newlyNamedPeople(saved, editedFrom), ...unadded.filter((person) => named.has(person))])]
+    .filter((person) => person !== pubkey)
+    .slice(0, MAX_MENTIONED_PEOPLE)
+  const now = Date.now()
+  const answers = await Promise.all(people.map((person) => publish(buildMembershipChange(pubkey, now, { file: address, folder, person, member: true }))))
+  return {
+    ok: true,
+    refused: people.filter((_, i) => {
+      if (answers[i].ok) return false
+      console.warn('[relay] mention add refused', answers[i])
+      return true
+    }),
+  }
 }

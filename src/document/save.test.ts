@@ -75,4 +75,15 @@ describe('a mention in a page (SPEC §11.8)', () => {
     publish.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
     expect(await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask ', QA2)), { content: 'Ask' })).toEqual({ ok: true, refused: [QA2] })
   })
+
+  it('tries a refused Add again on the next save that still names them, and not once the mention is gone', async () => {
+    publish.mockClear()
+    const result = await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask, ', QA2)), blocks(textNaming('Ask ', QA2)), [QA2])
+    expect(result).toEqual({ ok: true, refused: [] })
+    expect(publish).toHaveBeenCalledTimes(2)
+    expect(publish.mock.calls[1][0].tags).toContainEqual(['field', `member:${QA2}`])
+    publish.mockClear()
+    await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask')), blocks(textNaming('Ask ', QA2)), [QA2])
+    expect(publish).toHaveBeenCalledTimes(1)
+  })
 })
