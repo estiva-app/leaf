@@ -1,11 +1,7 @@
 import { createContext, useContext, useEffect, useReducer } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { createPeopleCache, createProjectionCache, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
-import { Card, InlineChip, KindIcon, LinkUnavailable, SkeletonBar, WithTooltip, thingKindOf } from '@estiva-app/ui'
-import type { ReferenceCard, ReferenceViewProps } from '@estiva-app/ui/editor'
 import { query } from '../relay/bridge'
-import { titleOf, typeOf } from '../folders/tree'
-import { writtenOpenerOf } from '../comments/links'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
 export type Resolved = Record<string, ForeignObject | null | undefined>
@@ -81,106 +77,6 @@ export function useFile(uri: string): ForeignObject | null | undefined {
   const page = useContext(References)
   const own = useReferences(uri in page ? [] : [uri])
   return uri in page ? page[uri] : own[uri]
-}
-
-/**
- * A `nostr:` reference where it was written (SPEC §13.1), as Katerina's
- * prototype and Peek's `Reference` draw one: the package's InlineChip, the
- * kind's icon, the name cut at 24ch and the whole of it on hover. Anything
- * not read yet, or unreadable, is its address, quiet, never blank. No link
- * while writing: a click on a chip opens its menu (Open, and its card). A sent
- * comment's chip for a URL it wrote opens that URL as written, beside Leaf, as
- * its card does (`opensAt`, LTX-6).
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
- */
-export function ReferenceChip({ uri, opensAt }: ReferenceViewProps & { opensAt?: string }) {
-  const file = useFile(uri)
-  if (file && !file.unreachable) {
-    const name = titleOf(file)
-    const opener = writtenOpenerOf(opensAt, file.openUrl)
-    return (
-      <WithTooltip inline label={name}>
-        <InlineChip
-          tone="neutral"
-          icon={<KindIcon kind={thingKindOf(file.kind)} size={14} tone="inherit" />}
-          className="max-w-[24ch]"
-          {...(opener ? { href: opener, target: '_blank', rel: 'noopener noreferrer' } : {})}
-        >
-          <span className="truncate">{name}</span>
-        </InlineChip>
-      </WithTooltip>
-    )
-  }
-  return (
-    <WithTooltip inline label={uri}>
-      <InlineChip tone="quiet">{`${uri.replace(/^nostr:/, '').slice(0, 12)}…`}</InlineChip>
-    </WithTooltip>
-  )
-}
-
-/** One file a reference names, as the card its writer chose: a row (compact) or a card with its type (detailed). */
-function ReferenceObject({ file, layout, opensAt }: { file: ForeignObject; layout: ReferenceCard['layout']; /** The URL a comment wrote for it: opened as written, on a host an app declares (LTX-6). */ opensAt?: string }) {
-  const opener = writtenOpenerOf(opensAt, file.openUrl) ?? (file.openUrl && /^https?:\/\//i.test(file.openUrl) ? file.openUrl : undefined)
-  return (
-    // Opened beside Leaf, as "Open in" does: a click on a card never takes the page away.
-    <Card
-      hover={opener ? 'fill' : 'none'}
-      onClick={opener ? () => window.open(opener, '_blank', 'noopener') : undefined}
-      className="flex items-center gap-2 px-3 py-2"
-      data-reference-card={layout}
-    >
-      <KindIcon kind={thingKindOf(file.kind)} />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-body-2-strong text-text-primary">{titleOf(file)}</span>
-        {/* Its summary, on the card that has room for it (SPEC §6.12); a row stays one line. */}
-        {layout === 'detailed' && file.slots.subtitle && (
-          <span className="line-clamp-2 break-words text-body-2 text-text-secondary">{file.slots.subtitle.value}</span>
-        )}
-        {layout === 'detailed' && <span className="truncate text-body-2 text-text-secondary">{typeOf(file)}</span>}
-      </span>
-    </Card>
-  )
-}
-
-/**
- * A file alone on a comment's line, drawn as its row in place (SPEC §13.2):
- * the page's compact card, a placeholder while it is read, and its chip when
- * it cannot be read, so the link never goes blank.
- */
-export function ReferenceRow({ uri, opensAt }: { uri: string; /** The URL the line wrote: opened as written (LTX-6). */ opensAt?: string }) {
-  return <PlacedObject uri={uri} layout="compact" opensAt={opensAt} />
-}
-
-/**
- * The cards a comment's writer carried (SPEC §13.6.2), under its text, read
- * from the page's references. Its line drew nothing, since the card stands
- * for it, so one that cannot be read still says so rather than vanish, as
- * Peek's card under a message does.
- */
-export function CarriedCards({ cards }: { cards: readonly (ReferenceCard & { opensAt?: string })[] }) {
-  if (cards.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-col gap-2" data-line-cards={cards.length}>
-      {cards.map((card, i) => (
-        <PlacedObject key={`${card.uri}-${i}`} uri={card.uri} layout={card.layout} opensAt={card.opensAt} />
-      ))}
-    </div>
-  )
-}
-
-/** A file a comment draws in a row or a card of its own: a placeholder while it is read, "not available" when it cannot be. */
-export function PlacedObject({ uri, layout, opensAt }: { uri: string; layout: ReferenceCard['layout']; opensAt?: string }) {
-  const file = useFile(uri)
-  if (file === undefined) return <SkeletonBar className="h-10 w-full" />
-  if (file === null || file.unreachable) {
-    const noun = file?.noun ?? 'File'
-    return (
-      <span data-reference-unavailable>
-        <LinkUnavailable kind={file ? thingKindOf(file.kind) : 'file'} noun={noun.charAt(0).toUpperCase() + noun.slice(1)} />
-      </span>
-    )
-  }
-  return <ReferenceObject file={file} layout={layout} opensAt={opensAt} />
 }
 
 /** Every reference in the editor's document, so each chip and card has its file read. */

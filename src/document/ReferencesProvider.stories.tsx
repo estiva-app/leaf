@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
-import { ReferenceChip, ReferencesProvider } from './references'
+import { PageLink } from './PageLink'
+import { ReferencesProvider } from './references'
 
 const project = {
   ref: 'nostr:project',
@@ -22,13 +23,13 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Two chips inside one provider: the one it knows draws its name, the other its address. */
+/** Two chips inside one provider: the one it knows draws its name, the other waits for its read. */
 export const TwoChips: Story = {
   args: {
     value: { 'nostr:project': project },
     children: (
       <p className="text-body-2 text-text-secondary">
-        <ReferenceChip uri="nostr:project" /> and <ReferenceChip uri="nostr:unknown" />
+        <PageLink uri="nostr:project" /> and <PageLink uri="nostr:unknown" />
       </p>
     ),
   },

@@ -2,6 +2,7 @@ import {
   buildComment,
   buildReply,
   decorationsOf,
+  foldEmbeds,
   groupThreads,
   isCommentOn,
   KIND_ASSERTION,
@@ -23,11 +24,13 @@ import {
   buildEdit,
   buildReaction,
   buildResolution,
+  embedsOf,
   embedTagsOf,
   imetaOf,
   partTag,
   quoteOf,
   quoteTag,
+  withCard,
   type Embed,
   type Imeta,
   type PartPointer,
@@ -54,6 +57,8 @@ export interface CommentItem {
   edited: boolean
   /** Its files now: its own `imeta`, replaced by the latest edit carrying any (SPEC §6.8). */
   files: Imeta[]
+  /** Its cards now (`embed`, §13.6.2): its own, replaced by the latest edit carrying any, as Peek and Ship fold them. */
+  cards: Embed[]
   event: SignedEvent
   /** Its reactions, one per person and emoji, oldest first (SPEC §6.6). */
   reactions: ReactionEvent[]
@@ -116,7 +121,15 @@ export async function readThreads(doc: Commented): Promise<Threads> {
     ...all.map((e) => ({ id: e.id, at: e.created_at, body: e.content })),
     ...deleted.map((id) => ({ id, at: replies[id]?.[0]?.created_at ?? 0 })),
   ]
-  const decorations = targets.length ? await decorationsOf(targets, query) : null
+  // The edits that read fetches carry the cards an edit re-chose too (✕ on a sent card), so they are kept on the way past, as Peek does.
+  const edits: SignedEvent[] = []
+  const recording: typeof query = async (filters) => {
+    const answer = await query(filters)
+    for (const event of answer) if (event.kind === KIND_EDIT) edits.push(event)
+    return answer
+  }
+  const decorations = targets.length ? await decorationsOf(targets, recording) : null
+  const editedCards = foldEmbeds(edits)
   const item = (event: SignedEvent): CommentItem => {
     const edit = decorations?.byId[event.id]?.edit
     return {
@@ -126,6 +139,7 @@ export async function readThreads(doc: Commented): Promise<Threads> {
       body: edit?.body ?? event.content,
       edited: edit?.edited ?? false,
       files: edit?.attachments ?? imetaOf(event),
+      cards: editedCards[event.id] ?? embedsOf(event),
       event,
       reactions: decorations?.byId[event.id]?.reactions ?? [],
     }
@@ -270,6 +284,22 @@ export function editComment(comment: CommentItem, written: Written): Promise<Wri
   const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
   if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
   return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body: written.text }) : null, NOT_SAVED, SIGNED_OUT)
+}
+
+/**
+ * ✕ on your sent comment's card (`value`, its `embed` value): an edit with
+ * the words as they are and the comment's whole card set, that one `none`
+ * (§13.6.2), as Peek's and Ship's ✕ write it. The words unchanged, it is not
+ * marked edited.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
+ */
+export function removeCard(comment: CommentItem, value: string): Promise<WriteResult> {
+  const pubkey = viewerPubkey()
+  const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
+  if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
+  const embeds = withCard(comment.cards, value, 'none')
+  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body: comment.body, embeds }) : null, NOT_SAVED, SIGNED_OUT)
 }
 
 /** Delete your comment or reply: a `kind:5` naming it, as Peek's and Ship's Delete do. Its replies stay (SPEC §6.5). */

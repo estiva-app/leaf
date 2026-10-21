@@ -62,6 +62,8 @@ export function writtenUrlOf(run: Pick<RenderInline, 'text' | 'reference'>, reso
 /** A card its writer carried under the comment (`embed`, SPEC §13.6.2), by the reference the body wrote, as a page's line carries one. */
 export interface CarriedCard {
   uri: string
+  /** Its `embed` value, which ✕ writes as `none`. */
+  value: string
   layout: Exclude<Embed['layout'], 'none'>
   /** The first URL the body wrote for its file: the card opens it, as Peek's and Ship's do (LTX-6). */
   opensAt?: string
@@ -93,6 +95,8 @@ export interface PlaceContext {
    * Without it, every URL stays as written.
    */
   readable?: (reference: string) => boolean
+  /** The comment's cards as its edits left them (`CommentItem.cards`); without it, the event's own `embed` set. */
+  cards?: readonly Embed[]
 }
 
 const BREAK: RenderInline = { text: '\n', marks: [] }
@@ -150,7 +154,7 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
     .filter((part) => part.address !== here && named.has(part.address))
     .slice(0, MAX_PARTS)
   // A file's card only: Leaf reads files, not another app's messages, so a message's line keeps its row instead of a card that never loads.
-  const embeds = embedsOf(event).filter((embed) => embed.value.includes(':'))
+  const embeds = (context.cards ?? embedsOf(event)).filter((embed) => embed.value.includes(':'))
   const carried = embeds.length ? cardsIn(embeds, blocks, parts, resolveLink) : []
   const written = new Map<string, string>()
   for (const reference of carried.length ? referencesIn(blocks) : []) {
@@ -174,7 +178,7 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
     // Named by its `nostr:` reference, or only by an app link: then its address is written as one.
     const reference = written.get(card.value) ?? referenceOfValue(card.value)
     const opensAt = writtenUrl.get(card.value)
-    return reference && card.layout !== 'none' ? [{ uri: reference, layout: card.layout, ...(opensAt ? { opensAt } : {}) }] : []
+    return reference && card.layout !== 'none' ? [{ uri: reference, value: card.value, layout: card.layout, ...(opensAt ? { opensAt } : {}) }] : []
   })
   const drawing = { cards: carried, parts, resolveLink, here }
 

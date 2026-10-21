@@ -57,12 +57,14 @@ import {
 } from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
 import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
-import { CarriedCards, PlacedObject, ReferenceChip, ReferenceRow, ReferencesProvider, useReferences } from '../document/references'
+import { ReferencesProvider, useReferences } from '../document/references'
+import { PageLink } from '../document/PageLink'
+import { CommentCard } from './CommentCard'
 import { linksIn, placeComment, referenceOfValue, ROW_BLOCK, writtenUrlOf, type RowLine } from './commentLines'
 import { askLinks, knownBlockOf, knownLinkValue, linkReferenceOf, linksChanged, MAX_LINKS_ASKED, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
-import { deleteComment, editComment, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
+import { deleteComment, editComment, removeCard, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
 import { uploadFile } from '../relay/blobs'
 import { CommentFiles } from './CommentFiles'
@@ -184,7 +186,7 @@ function boxUnder(here: string | undefined): BoxUnder {
       void askLinks(links.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
       const uri = links.card ? referenceOfValue(links.card) : undefined
       return {
-        card: links.card && uri ? { value: links.card, view: <PlacedObject uri={uri} layout="detailed" /> } : undefined,
+        card: links.card && uri ? { value: links.card, view: <CommentCard uri={uri} /> } : undefined,
         parts: links.parts.map((part) => ({ key: `${part.address}#${part.block}`, view: <PartView pointer={part} /> })),
         names: [...links.values, ...links.parts.map((part) => part.address)],
       }
@@ -237,7 +239,7 @@ function Box({
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
   const here = useContext(PageHere)
-  // An edit carries no `part`, and Leaf does not fold an edit's `embed` set yet, so the edit box shows nothing under it.
+  // An edit carries no `part` and leaves the cards as sent (✕ on the sent card takes one off), so the edit box shows nothing under it.
   const isEdit = !!editing
   const under = useMemo(() => (isEdit ? undefined : boxUnder(here)), [isEdit, here])
   const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
@@ -283,7 +285,7 @@ function Box({
       people={people.people}
       references={(typed) => commentReferenceSections(scope, typed, people.nameOf)}
       referencesChanged={subscribeReferences}
-      referenceView={ReferenceChip}
+      referenceView={PageLink}
       insert={INSERT}
       draft={edit ? undefined : draft}
       edit={edit}
@@ -345,6 +347,8 @@ interface OwnActions {
   scope: { here: readonly ReferableComment[]; rest: readonly ReferableComment[] }
   onSave: (written: Written) => Promise<WriteResult>
   onDelete: () => Promise<WriteResult>
+  /** ✕ on its sent card: the comment then asks for no card (`value`, its `embed` value). */
+  onRemoveCard: (value: string) => Promise<WriteResult>
   /** It is a reply, not the thread's comment: what the delete question names. */
   reply: boolean
   /** The replies a deleted comment leaves behind, which the question says stay. */
@@ -437,6 +441,14 @@ function CommentLine({
   const [confirming, setConfirming] = useState(false)
   const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
   const [refused, setRefused] = useState<string | null>(null)
+  // A refused ✕ leaves the card and says why, as a refused reaction does.
+  const [removeRefused, setRemoveRefused] = useState<string | null>(null)
+  const removeSentCard = async (value: string) => {
+    if (!own) return
+    setRemoveRefused(null)
+    const result = await own.onRemoveCard(value).catch(() => ({ ok: false, reason: 'it did not go through' }) as const)
+    if (!result.ok) setRemoveRefused(result.reason)
+  }
   // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
   const pending = useRef(false)
   useEffect(() => {
@@ -472,7 +484,7 @@ function CommentLine({
   const readableKey = Object.entries(linked).flatMap(([uri, file]) => (file && !file.unreachable ? [uri] : [])).sort().join('\n')
   const placed = useMemo(() => {
     const readable = new Set(readableKey.split('\n'))
-    return placeComment(blocks, comment.event, { here, resolveLink, readable: (reference) => readable.has(reference) })
+    return placeComment(blocks, comment.event, { here, resolveLink, readable: (reference) => readable.has(reference), cards: comment.cards })
   }, [blocks, comment, here, resolveLink, readableKey])
   const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} opensAt={opensAt} />
   const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference, line.url)} />
@@ -519,7 +531,20 @@ function CommentLine({
               return line ? row(line) : undefined
             }}
           />
-          <CarriedCards cards={placed.cards} />
+          {placed.cards.length > 0 && (
+            <div className="mt-2 flex flex-col gap-2" data-line-cards={placed.cards.length}>
+              {placed.cards.map((card) => (
+                <CommentCard
+                  key={card.value}
+                  uri={card.uri}
+                  compact={card.layout === 'compact'}
+                  opensAt={card.opensAt}
+                  onRemove={own && card.layout === 'detailed' ? () => void removeSentCard(card.value) : undefined}
+                />
+              ))}
+            </div>
+          )}
+          {removeRefused && <FieldLine tone="error">Not removed: {removeRefused}.</FieldLine>}
           {placed.parts.length > 0 && (
             <div className="mt-2 flex flex-col gap-2" data-comment-parts={placed.parts.length}>
               {placed.parts.map((part) => (
@@ -546,7 +571,13 @@ function CommentLine({
  */
 function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; fallback: ReactNode }) {
   if (line.unreadable) return fallback
-  if (/^nostr:naddr1/i.test(line.reference)) return <ReferenceRow uri={line.reference} opensAt={line.url} />
+  if (/^nostr:naddr1/i.test(line.reference)) {
+    return (
+      <div data-link-row={line.reference.replace(/^nostr:/i, '')}>
+        <PageLink uri={line.reference} href={line.url} place="row" />
+      </div>
+    )
+  }
   const id = /^nostr:nevent1/i.test(line.reference) ? eventIdOf(line.reference) : null
   const quoted = id ? page.find((c) => c.id === id) : undefined
   if (!quoted) return fallback
@@ -590,7 +621,7 @@ function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; ur
       )
     }
   } else {
-    return <ReferenceChip uri={uri} opensAt={opensAt} />
+    return <PageLink uri={uri} href={opensAt} />
   }
   return (
     <WithTooltip inline label={uri}>
@@ -642,6 +673,7 @@ function ThreadCard({
   onReact,
   onEdit,
   onDelete,
+  onRemoveCard,
   edits,
 }: {
   thread: Thread
@@ -660,6 +692,7 @@ function ThreadCard({
   onReact?: OnReact
   onEdit: (comment: CommentItem, written: Written) => Promise<WriteResult>
   onDelete: (comment: CommentItem) => Promise<WriteResult>
+  onRemoveCard: (comment: CommentItem, value: string) => Promise<WriteResult>
   edits: OpenEdit
 }) {
   const own = useMemo(() => commentsOf(thread), [thread])
@@ -677,6 +710,7 @@ function ThreadCard({
           scope,
           onSave: (written) => onEdit(c, written),
           onDelete: () => onDelete(c),
+          onRemoveCard: (value) => onRemoveCard(c, value),
           reply: c !== thread.root,
           replies: c === thread.root ? thread.replies.length : 0,
           editing: edits.id === c.id,
@@ -903,6 +937,11 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     if (result.ok) reread()
     return result
   }
+  const removeCardOf = async (comment: CommentItem, value: string): Promise<WriteResult> => {
+    const result = await removeCard(comment, value)
+    if (result.ok) reread()
+    return result
+  }
 
   const draftPlace = editor && draft ? commentPlace(editor, { id: DRAFT, ...draft }) : null
   const draftLine = draft?.quote ? `On “${quoteText(draft.quote)}”` : draftPlace ? wholeBlocksLine(editor, draftPlace) : ''
@@ -929,6 +968,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       onReact={viewer ? toggleReaction : undefined}
       onEdit={edit}
       onDelete={remove}
+      onRemoveCard={removeCardOf}
       edits={edits}
     />
   )
