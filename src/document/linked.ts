@@ -1,8 +1,9 @@
-import { useCallback } from 'react'
+import { useState } from 'react'
 import { referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { linkStateFrom, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
+import { linkStateFrom, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
 import { writtenOpenerOf } from '../comments/links'
+import { useDirectory } from '../comments/people'
 import { useCardConversation } from './cardConversation'
 import { rereadReference, useFile } from './references'
 import { saveCardChoice } from './save'
@@ -58,7 +59,7 @@ export function linkStateOf(
   uri: string,
   object: ForeignObject | null | undefined,
   written?: string,
-  more: Pick<LinkedFromOptions, 'onAct' | 'conversation'> = {},
+  more: Pick<LinkedFromOptions, 'onAct' | 'conversation' | 'directory'> = {},
 ): LinkState {
   return linkStateFrom(object, unreadOf(uri), {
     hrefOf: (file, top) => openerOf(file, top ? written : undefined),
@@ -70,24 +71,30 @@ export function linkStateOf(
 /**
  * A link's state with what a card adds: its comment count, and its status and
  * owner pickers, each change written and the file read again, since the relay
- * is the authority on whether it happened (Decided 16 Oct: any reader may
- * change a file from its card; Miky, 21 Oct: Leaf's cards too).
+ * is the authority on whether it happened. A field its own app shares may be
+ * changed from its card in any app (Miky, 21 Oct). The choice shows at once
+ * and is held until that read lands.
  */
 export function useCardLinkState(uri: string, written?: string): LinkState {
-  const object = useFile(uri)
-  const count = useCardConversation(object && !object.unreachable ? object.address : undefined)
-  const onAct = useCallback(
-    async (actionId: string, value: string) => {
-      if (!object) return
-      const result = await saveCardChoice(object, actionId, value)
-      if (!result.ok) console.warn('[card] change not saved:', result.reason)
-      await rereadReference(uri)
-    },
-    [object, uri],
-  )
+  const read = useFile(uri)
+  const [chosen, choose] = useState<{ actionId: string; value: string } | null>(null)
+  const object = read && chosen ? { ...read, actions: read.actions.map((one) => (one.id === chosen.actionId ? { ...one, current: chosen.value } : one)) } : read
+  const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
+  const directory = useDirectory()
+  const { showToast } = useToast()
+  const onAct = async (actionId: string, value: string) => {
+    if (!read) return
+    choose({ actionId, value })
+    const result = await saveCardChoice(read, actionId, value)
+    // The picker goes back to what the relay holds, so say why rather than let it look like a slip.
+    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    await rereadReference(uri)
+    choose(null)
+  }
   const href = object ? openerOf(object, written) : ''
   return linkStateOf(uri, object, written, {
     onAct: (actionId, value) => void onAct(actionId, value),
+    directory,
     ...(count !== undefined && href ? { conversation: { count, href } } : {}),
   })
 }

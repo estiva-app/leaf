@@ -1,4 +1,5 @@
 import type { ForeignObject } from '@estiva-app/interop'
+import { ToastProvider } from '@estiva-app/ui'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -90,8 +91,10 @@ describe('a link’s card under a comment', () => {
 /** The card under a comment, with the page's references read as the column reads them. */
 function Card({ uri }: { uri: string }) {
   return (
-    <ReferencesProvider value={useReferences([uri])}>
-      <CommentCard uri={uri} />
-    </ReferencesProvider>
+    <ToastProvider>
+      <ReferencesProvider value={useReferences([uri])}>
+        <CommentCard uri={uri} />
+      </ReferencesProvider>
+    </ToastProvider>
   )
 }

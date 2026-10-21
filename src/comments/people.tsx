@@ -63,13 +63,27 @@ export function mentionablesOf(profiles: ReadonlyMap<string, Mentionable>, membe
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 }
 
+/**
+ * Whom a card's owner picker offers (a lead, an assignee), as Peek's and
+ * Ship's cards have their workspace's people: the named profiles on the
+ * roster, the viewer included, since taking it yourself is a choice.
+ */
+export function directoryOf(profiles: ReadonlyMap<string, Mentionable>, members: ReadonlySet<string> | null): Record<string, { displayName: string; picture?: string }> {
+  return Object.fromEntries(
+    [...profiles.values()]
+      .filter((p) => !members || members.has(p.pubkey))
+      .map((p) => [p.pubkey, { displayName: p.name, ...(p.picture ? { picture: p.picture } : {}) }]),
+  )
+}
+
 interface Known {
   offered: Mentionable[]
   profiles: ReadonlyMap<string, Mentionable>
+  members: ReadonlySet<string> | null
 }
 
 // The last answer, offered at once by the next page while its own read is out.
-let known: Known = { offered: [], profiles: new Map() }
+let known: Known = { offered: [], profiles: new Map(), members: null }
 
 /** A person's name from the last answer: what a draft's `@` chips are drawn with as it opens. */
 export function knownName(pubkey: string): string | undefined {
@@ -84,7 +98,7 @@ function readPeople(): Promise<void> {
   reading ??= Promise.all([query([{ kinds: [0], limit: 500 }]), query([{ kinds: [KIND_MEMBERSHIP_LIST], limit: 1 }]).then(rosterOf, () => null)])
     .then(([events, members]) => {
       const profiles = namedProfilesOf(events)
-      known = { offered: mentionablesOf(profiles, members, viewerPubkey()), profiles }
+      known = { offered: mentionablesOf(profiles, members, viewerPubkey()), profiles, members }
     })
     .finally(() => {
       reading = null
@@ -100,6 +114,24 @@ function readPeople(): Promise<void> {
  * leaves every profile offered rather than nobody.
  */
 export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: string) => string | undefined } {
+  const found = usePeople()
+  return useMemo(
+    () => ({
+      people: found.offered.map((p) => ({ id: p.pubkey, name: p.name, pubkey: p.pubkey, avatar: <Avatar size={32} src={p.picture} name={p.name} /> })),
+      nameOf: (pubkey: string) => found.profiles.get(pubkey)?.name,
+    }),
+    [found],
+  )
+}
+
+/** The workspace's people for a card's owner picker, read as `@` reads them. */
+export function useDirectory(): Record<string, { displayName: string; picture?: string }> {
+  const found = usePeople()
+  return useMemo(() => directoryOf(found.profiles, found.members), [found])
+}
+
+/** The last answer at once, then this page's own read of the roster and every profile. */
+function usePeople(): Known {
   const [found, setFound] = useState<Known>(known)
   useEffect(() => {
     let live = true
@@ -113,11 +145,5 @@ export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: 
       live = false
     }
   }, [])
-  return useMemo(
-    () => ({
-      people: found.offered.map((p) => ({ id: p.pubkey, name: p.name, pubkey: p.pubkey, avatar: <Avatar size={32} src={p.picture} name={p.name} /> })),
-      nameOf: (pubkey: string) => found.profiles.get(pubkey)?.name,
-    }),
-    [found],
-  )
+  return found
 }

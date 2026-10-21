@@ -38,12 +38,16 @@ export function PageLink({ uri, href, place = 'chip', editing = false }: Referen
 /** A file's link, read once for the tab and shared with every other link to it. */
 function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProps, 'place' | 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
   const link = linkStateOf(uri, useFile(uri), href)
-  if (place === 'card') return <PageCard uri={uri} href={href} />
+  if (place === 'card') return <PageCard uri={uri} href={href} editing={editing} />
   if (place === 'row') return <LinkRow link={link} preview={!editing} />
   return <LinkChip link={link} preview={!editing} />
 }
 
-/** A link its writer chose to show as its card: the card a comment draws, its values as words in the page. */
-function PageCard({ uri, href }: Pick<ReferenceViewProps, 'uri' | 'href'>) {
-  return <LinkCard link={useCardLinkState(uri, href)} readOnly />
+/**
+ * A link its writer chose to show as its card: the card a comment draws,
+ * pickers included, and its values as words while the page's text is being
+ * edited (Miky, 21 Oct).
+ */
+function PageCard({ uri, href, editing }: Pick<ReferenceViewProps, 'uri' | 'href' | 'editing'>) {
+  return <LinkCard link={useCardLinkState(uri, href)} readOnly={editing} />
 }

@@ -1,4 +1,5 @@
 import type { ForeignObject } from '@estiva-app/interop'
+import { ToastProvider } from '@estiva-app/ui'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,13 +39,33 @@ const project = file({
   children: [issue('1', 'Write the rule', 'WBD-1', 'Done', 'green'), issue('2', 'Build the editor', 'WBD-3', 'Done', 'green'), issue('3', 'Leaf pages', 'WBD-5', 'In progress', 'blue')],
 })
 
-function Link({ uri = PROJECT_URI, place, read = project }: { uri?: string; place: 'chip' | 'row' | 'card'; read?: ForeignObject | null }) {
+function Link({ uri = PROJECT_URI, place, read = project, editing = true }: { uri?: string; place: 'chip' | 'row' | 'card'; read?: ForeignObject | null; editing?: boolean }) {
   return (
-    <ReferencesProvider value={{ [uri]: read }}>
-      <PageLink uri={uri} place={place} editing />
-    </ReferencesProvider>
+    <ToastProvider>
+      <ReferencesProvider value={{ [uri]: read }}>
+        <PageLink uri={uri} place={place} editing={editing} />
+      </ReferencesProvider>
+    </ToastProvider>
   )
 }
+
+describe('a Ship project shown as its card in a Leaf page', () => {
+  const withStatus = file({
+    ...project,
+    slots: { ...project.slots, status: { value: 'Planned', colour: 'neutral', field: 'status' } } as ForeignObject['slots'],
+    actions: [{ id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'planned', options: [{ value: 'planned', label: 'Planned' }, { value: 'done', label: 'Done' }] }] as ForeignObject['actions'],
+  })
+
+  it('offers its Status picker while the page is read, as the card under a comment does', () => {
+    render(<Link place="card" read={withStatus} editing={false} />)
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull()
+  })
+
+  it('shows its status as words while the page’s text is being edited', () => {
+    render(<Link place="card" read={withStatus} />)
+    expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull()
+  })
+})
 
 describe('a Ship project linked in a Leaf page', () => {
   it('alone on its line is its row: key, title, and how far along', () => {

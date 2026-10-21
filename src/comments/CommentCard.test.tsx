@@ -1,4 +1,5 @@
 import type { ForeignObject } from '@estiva-app/interop'
+import { ToastProvider } from '@estiva-app/ui'
 import type { UnsignedEvent } from '@estiva-app/protocol'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -84,9 +85,11 @@ const project = {
 
 function Card({ read = project }: { read?: ForeignObject }) {
   return (
-    <ReferencesProvider value={{ [URI]: read }}>
-      <CommentCard uri={URI} />
-    </ReferencesProvider>
+    <ToastProvider>
+      <ReferencesProvider value={{ [URI]: read }}>
+        <CommentCard uri={URI} />
+      </ReferencesProvider>
+    </ToastProvider>
   )
 }
 
