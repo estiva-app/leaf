@@ -122,7 +122,7 @@ describe('a change from a card', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
-  it('writes nothing to where a file is filed or to its words, whatever a manifest calls the choice', async () => {
+  it('writes nothing to where a file is filed or to its words, from a card', async () => {
     publish.mockClear()
     expect((await saveCardChoice(issue(), 'move', 'q')).ok).toBe(false)
     expect((await saveCardChoice(issue(), 'rename', 'Taken over')).ok).toBe(false)

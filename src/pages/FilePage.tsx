@@ -25,7 +25,7 @@ import { useOwnerBlockLinker } from './usePathAddress'
  * Peek topic, says what it is and offers "Open in <its app>", the only place that app's name appears (PRO-24), with
  * no editor.
  *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
 export function FilePage({ file: listed, loading }: { file: ForeignObject | null; loading: boolean }) {
   // A project's issues come from its row's read, which carries no actions: such a file is read on its own before it

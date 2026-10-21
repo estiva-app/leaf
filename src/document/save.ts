@@ -126,8 +126,7 @@ const NOT_ON_A_CARD = new Set(['title', 'summary', 'description', 'archived'])
  * owner's app shares — an action of the file's own (never a borrowed one), a
  * select or a person, and for a select one of its options (5ebf2756). Written
  * as the same one-field change as the text, in the file's Folder. Never a
- * field a card does not hold: its words, where it is filed, or its archive,
- * whatever a manifest names (any key may publish one until WOR-2).
+ * field a card does not hold: its words, where it is filed, or its archive.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
 export async function saveCardChoice(
