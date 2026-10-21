@@ -10,7 +10,8 @@ vi.mock('@estiva-app/interop', async (importOriginal) => ({
 }))
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []) }))
 
-import { ReferenceRow, ReferencesProvider, useReferences } from './references'
+import { PageLink } from './PageLink'
+import { ReferencesProvider, useReferences } from './references'
 
 afterEach(() => {
   cleanup()
@@ -26,7 +27,7 @@ const issue = (subtitle: string) =>
 function Row({ uri }: { uri: string }) {
   return (
     <ReferencesProvider value={useReferences([uri])}>
-      <ReferenceRow uri={uri} />
+      <PageLink uri={uri} place="row" />
     </ReferencesProvider>
   )
 }

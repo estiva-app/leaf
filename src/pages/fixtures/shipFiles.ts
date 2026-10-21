@@ -103,7 +103,7 @@ export const PROFILES: SignedEvent[] = [
 
 function comment(by: string, body: string, minutesAgo: number): CommentItem {
   const at = Math.floor(Date.now() / 1000) - minutesAgo * 60
-  return { id: `c${minutesAgo}`, by, at, body, edited: false, files: [], reactions: [], event: event(1111, by, [], body, at) }
+  return { id: `c${minutesAgo}`, by, at, body, edited: false, files: [], cards: [], reactions: [], event: event(1111, by, [], body, at) }
 }
 
 /** A file's comments, as the column's read hands them over: one on the whole text with a reply. */

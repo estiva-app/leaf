@@ -340,7 +340,7 @@ describe('the comments column', () => {
       await open([comment([], `See\n${ISSUE}\nand ${OTHER} too`)])
       const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
       const row = await waitFor(() => {
-        const found = card.querySelector<HTMLElement>('[data-reference-card="compact"]')
+        const found = card.querySelector<HTMLElement>('[data-link-row]')
         expect(found).toBeTruthy()
         return found!
       })
@@ -348,7 +348,7 @@ describe('the comments column', () => {
       expect(row.closest('p')).toBeNull()
       // In a sentence the other file stays the chip it was written as, with no row.
       await waitFor(() => expect(within(card).getByText('Export to PDF')).toBeTruthy())
-      expect(within(card).getByText('Export to PDF').closest('[data-reference-card]')).toBeNull()
+      expect(within(card).getByText('Export to PDF').closest('[data-link-row], [data-card]')).toBeNull()
       expect(card.textContent).toContain('See')
     })
 
@@ -356,20 +356,20 @@ describe('the comments column', () => {
       await open([comment([['embed', ISSUE_ADDRESS, 'detailed']], `See\n${ISSUE}`)])
       const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
       const carried = await waitFor(() => {
-        const found = card.querySelector<HTMLElement>('[data-reference-card="detailed"]')
+        const found = card.querySelector<HTMLElement>('[data-card="detailed"]')
         expect(found).toBeTruthy()
         return found!
       })
       expect(within(carried).getByText('Fix the login, in short.')).toBeTruthy()
       expect(within(card).getAllByText('Fix the login')).toHaveLength(1)
-      expect(card.querySelector('[data-reference-card="compact"]')).toBeNull()
+      expect(card.querySelector('[data-link-row]')).toBeNull()
     })
 
     it('draws a bullet that is only a link as its row, and keeps the bullet', async () => {
       await open([comment([], `Read these:\n\n- ${ISSUE}\n- and ${OTHER} later`)])
       const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
       const row = await waitFor(() => {
-        const found = card.querySelector<HTMLElement>('[data-reference-card="compact"]')
+        const found = card.querySelector<HTMLElement>('[data-link-row]')
         expect(found).toBeTruthy()
         return found!
       })
@@ -377,14 +377,14 @@ describe('the comments column', () => {
       expect(row.closest('li')).toBeTruthy()
       // The second bullet is a sentence: its file stays a chip.
       await waitFor(() => expect(within(card).getByText('Export to PDF')).toBeTruthy())
-      expect(card.querySelectorAll('[data-reference-card]')).toHaveLength(1)
+      expect(card.querySelectorAll('[data-link-row], [data-card]')).toHaveLength(1)
     })
 
     it('says a carried card\'s file is not available, rather than drop the link, when it cannot be read', async () => {
       await open([comment([['embed', GONE_ADDRESS, 'detailed']], `See\n${GONE}`)])
       const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
       await waitFor(() => expect(within(card).getByText(/not available/)).toBeTruthy())
-      expect(card.querySelector('[data-reference-unavailable]')).toBeTruthy()
+      expect(card.querySelector('[data-card="detailed"]')).toBeTruthy()
     })
 
     it("draws another of this page's comments alone on its line as its row: its author and opening words", async () => {
@@ -760,6 +760,57 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     expect(within(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!).getByText('On the paragraph')).toBeTruthy()
   })
 
+  describe("the one file's card under a sent comment (WBD-6)", () => {
+    const CARD_ADDRESS = `30851:${QA2}:card-under`
+    const CARD = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'card-under', relays: [] })}`
+    beforeAll(() => {
+      files.known[CARD] = { ref: 'r', kind: 30851, eventId: 'e', widget: 'card', noun: 'issue', meta: [], actions: [], viaRecommendation: false, address: CARD_ADDRESS, slots: { title: { value: 'Card under' } } }
+    })
+    const cardOf = (id: string) => line(id)?.querySelector<HTMLElement>('[data-card="detailed"]') ?? null
+
+    it('✕ on your own comment’s card writes a 40003 with the words as they are and that card none, and the card goes without marking the comment edited', async () => {
+      const own = mine([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
+      await open([own])
+      await waitFor(() => expect(cardOf(own.id)?.textContent).toContain('Card under'))
+      publish.mockImplementationOnce(async (e) => {
+        relay.events = [...relay.events, { ...e, id: '9'.repeat(64), sig: '' } as SignedEvent]
+        return { ok: true }
+      })
+      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove card' })))
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      const e = publish.mock.calls[0][0]
+      expect([e.kind, e.content, e.pubkey]).toEqual([40003, `See\n${CARD}`, ME])
+      expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', own.id], ['embed', CARD_ADDRESS, 'none']]))
+      await waitFor(() => expect(cardOf(own.id)).toBeNull())
+      expect(within(line(own.id)!).queryByText('(edited)')).toBeNull()
+    })
+
+    it('✕ on a comment you already edited keeps your edited words, not the ones you first sent', async () => {
+      const own = mine([['embed', CARD_ADDRESS, 'detailed']], `First\n${CARD}`)
+      const reworded: SignedEvent = { id: '5'.repeat(64), pubkey: ME, created_at: own.created_at + 60, kind: 40003, tags: [['h', FOLDER], ['e', own.id]], content: `Reworded\n${CARD}`, sig: '' }
+      await open([own, reworded])
+      await waitFor(() => expect(cardOf(own.id)?.textContent).toContain('Card under'))
+      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove card' })))
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      expect(publish.mock.calls[0][0].content).toBe(`Reworded\n${CARD}`)
+    })
+
+    it('offers no ✕ on the card under someone else’s comment', async () => {
+      const theirs = comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
+      await open([theirs])
+      await waitFor(() => expect(cardOf(theirs.id)?.textContent).toContain('Card under'))
+      expect(within(cardOf(theirs.id)!).queryByRole('button', { name: 'Remove card' })).toBeNull()
+    })
+
+    it('draws no card under a comment whose author took it off in Peek or Ship, and the file’s line draws again', async () => {
+      const theirs = comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
+      const removed: SignedEvent = { id: '7'.repeat(64), pubkey: AUTHOR, created_at: theirs.created_at + 60, kind: 40003, tags: [['h', FOLDER], ['e', theirs.id], ['embed', CARD_ADDRESS, 'none']], content: theirs.content, sig: '' }
+      await open([theirs, removed])
+      await waitFor(() => expect(line(theirs.id)?.querySelector('[data-link-row]')?.textContent).toContain('Card under'))
+      expect(cardOf(theirs.id)).toBeNull()
+    })
+  })
+
   /* As AUT-5's tests above: the passkey screen takes the page's place, and the page draws again after the tap. */
   it('keeps your edit box open, with the words you typed, through a sign-in ending, and Save writes those words after the tap', async () => {
     const own = mine([], 'Too long?')
@@ -931,6 +982,8 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     const [kind, pubkey, identifier] = address.split(':')
     return `nostr:${encodeNaddr({ kind: Number(kind), pubkey, identifier, relays: [] })}`
   }
+  /** Where a click on a kit row or card goes: the link it draws. */
+  const opensAt = (drawn: HTMLElement) => (drawn.matches('a[href]') ? drawn : drawn.querySelector('a[href]'))?.getAttribute('href')
   const object = (address: string, title: string, body?: BlockDocument) =>
     ({
       ref: 'r',
@@ -1054,18 +1107,15 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
     const was = files.known[uriOf(ISSUE)]
     files.known[uriOf(ISSUE)] = { ...object(ISSUE, 'Fix it'), openUrl: `https://ship.example/o/${ISSUE}` } as ForeignObject
-    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
     try {
       await open([...EVENTS, comment([['embed', ISSUE, 'detailed']], `see\n${leafUrl}`)])
       const card = await waitFor(() => {
-        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-reference-card="detailed"]')
+        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-card="detailed"]')
         expect(found?.textContent).toContain('Fix it')
         return found!
       })
-      fireEvent.click(card)
-      expect(opened).toHaveBeenCalledWith(leafUrl, '_blank', 'noopener')
+      expect(opensAt(card)).toBe(leafUrl)
     } finally {
-      opened.mockRestore()
       files.known[uriOf(ISSUE)] = was
     }
   })
@@ -1084,21 +1134,18 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     }
     const issueOpens = `https://ship.example/o/${FRESH}`
     files.known[uriOf(FRESH)] = { ...object(FRESH, 'Fresh issue'), openUrl: issueOpens } as ForeignObject
-    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
     try {
       await open([...EVENTS, file(30851, SHIP, FRESH_D), comment([['embed', FRESH, 'detailed'], ['content-format', 'estiva-blocks-1']], serializeBlockDocument(doc))])
       const card = await waitFor(() => {
-        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-reference-card="detailed"]')
+        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-card="detailed"]')
         expect(found?.textContent).toContain('Fresh issue')
         return found!
       })
-      fireEvent.click(card)
-      expect(opened).toHaveBeenCalledWith(issueOpens, '_blank', 'noopener')
+      expect(opensAt(card)).toBe(issueOpens)
       // Its chip in the sentence is no link to the URL it was written as either.
       const links = [...card.closest('[data-comment-id]')!.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))
       expect(links).not.toContain(otherUrl)
     } finally {
-      opened.mockRestore()
       delete files.known[uriOf(FRESH)]
     }
   })
@@ -1113,7 +1160,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       await waitFor(() => expect(within(sent).getAllByText('Fix it')).toHaveLength(2))
       expect(sent.textContent).not.toContain('https://')
       expect(within(sent).getAllByText('Fix it').map((chip) => chip.closest('a')?.getAttribute('href'))).toEqual([leafUrl, ISSUE_URL])
-      expect(sent.querySelector('[data-reference-card]')).toBeNull()
+      expect(sent.querySelector('[data-card]')).toBeNull()
     })
 
     it('keeps the same path on a host no app declares as the URL it was written as', async () => {
@@ -1126,21 +1173,15 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     })
 
     it('draws an issue’s URL alone on its line, with no card carried, as the issue’s row, which opens the URL as written', async () => {
-      const opened = vi.spyOn(window, 'open').mockReturnValue(null)
-      try {
-        await open([...EVENTS, comment([], `see\n${leafUrl}`)])
-        const sent = await sentComment()
-        const row = await waitFor(() => {
-          const found = sent.querySelector<HTMLElement>('[data-reference-card="compact"]')
-          expect(found?.textContent).toContain('Fix it')
-          return found!
-        })
-        expect(sent.textContent).not.toContain('https://')
-        fireEvent.click(row)
-        expect(opened).toHaveBeenCalledWith(leafUrl, '_blank', 'noopener')
-      } finally {
-        opened.mockRestore()
-      }
+      await open([...EVENTS, comment([], `see\n${leafUrl}`)])
+      const sent = await sentComment()
+      const row = await waitFor(() => {
+        const found = sent.querySelector<HTMLElement>('[data-link-row]')
+        expect(found?.textContent).toContain('Fix it')
+        return found!
+      })
+      expect(sent.textContent).not.toContain('https://')
+      expect(opensAt(row)).toBe(leafUrl)
     })
   })
 
