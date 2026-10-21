@@ -1,4 +1,5 @@
 import { nestingOf, type ForeignObject } from '@estiva-app/interop'
+import { sharesText } from '../document/writable'
 import { KIND } from '@estiva-app/protocol'
 import { Chip, KindIcon, thingKindOf, type NavTreeGroup, type NavTreeNode } from '@estiva-app/ui'
 import { dOf, pagePath } from '../route'
@@ -19,13 +20,20 @@ export function typeOf(file: ForeignObject): string {
   return noun.charAt(0).toUpperCase() + noun.slice(1)
 }
 
-/**
- * A document is Leaf's own file: `kind:30842`, the type Leaf owns through its
- * manifest. A Peek topic (a bare `30840`) is not one — it is drawn like any other
- * app's file, labelled "Topic" and opened in Peek (Miky, 14 October).
- */
+/** A document is Leaf's own file: `kind:30842`, the type Leaf owns through its manifest, drawn as a page. */
 export function isDocument(file: ForeignObject): boolean {
   return file.kind === KIND.DOCUMENT
+}
+
+/**
+ * Whether the tree lists a file: one Leaf writes the text of — its pages, and any file whose own app shares its text,
+ * such as a Ship project or issue. A Peek topic has no text, so it is not listed (LTX-2), and a page filed under one
+ * draws at its Folder's top level, its `parent` left as written.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
+ */
+export function isListed(file: ForeignObject): boolean {
+  return !file.unreachable && sharesText(file)
 }
 
 /** The id the tree selects a file by, and finds it again by. */
@@ -49,7 +57,7 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
   // and draws them after anything filed under it in the Folder.
   if (!file.listsChildren) return nested.length ? { ...node, children: nested } : node
   const read = expansion.children[file.ref]
-  const listed = Array.isArray(read) ? read.filter((c) => !c.unreachable).map((c) => nodeOf(c, () => [], expansion)) : undefined
+  const listed = Array.isArray(read) ? read.filter(isListed).map((c) => nodeOf(c, () => [], expansion)) : undefined
   return {
     ...node,
     hasChildren: true,
@@ -62,13 +70,14 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
 }
 
 /**
- * The tree's groups: a Folder each, with what it holds nested as Peek nests it.
+ * The tree's groups: a Folder each, with the files it lists nested as Peek nests them.
  * A file the viewer cannot read is not drawn at all — the row would disclose it.
  */
 export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion): NavTreeGroup[] | null {
   if (!folders) return null
   return folders.map(({ folder, contents, failed }) => {
-    const readable = contents?.files.filter((f) => !f.unreachable) ?? null
+    // Filtered before nesting, so a page whose parent is not listed is one of the Folder's roots.
+    const readable = contents?.files.filter(isListed) ?? null
     const nesting = readable ? nestingOf(readable) : null
     return {
       id: folder.id,

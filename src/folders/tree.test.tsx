@@ -1,6 +1,7 @@
 import type { ForeignObject } from '@estiva-app/interop'
 import { describe, expect, it } from 'vitest'
-import { findDocument, findFile, groupsOf, isDocument, typeOf, type Expansion } from './tree'
+import { shipIssue, shipProject } from '../pages/fixtures/shipFiles'
+import { findDocument, findFile, groupsOf, typeOf, type Expansion } from './tree'
 import type { WorkspaceFolder } from './useWorkspace'
 
 const A = 'a'.repeat(64)
@@ -45,15 +46,24 @@ describe('the Folders tree', () => {
     expect(typeOf(issue)).toBe('Issue')
   })
 
-  it('draws a Peek topic as another app’s file, labelled "Topic", and a document with no label', () => {
-    const topic = file({ ref: 't', kind: 30840, naddr: 'naddr1t', noun: 'topic', appName: 'Peek', slots: { title: { value: 'Standup' } } })
-    const doc = file({ ref: 'd', naddr: 'naddr1d', noun: 'document', appName: 'Leaf', slots: { title: { value: 'Brief' } } })
-    expect(isDocument(topic)).toBe(false)
-    expect(isDocument(doc)).toBe(true)
-    expect(typeOf(topic)).toBe('Topic')
-    const [topicNode, docNode] = groupsOf([folder([topic, doc])], none)![0].nodes!
-    expect(topicNode.hint).toBeTruthy()
-    expect(docNode.hint).toBeUndefined()
+  it('lists pages and Ship projects, labelling a project by its type, and no Peek topic', () => {
+    const topic = file({ ref: 't', kind: 30840, naddr: 'naddr1t', address: `30840:${A}:t`, noun: 'topic', appName: 'Peek', slots: { title: { value: 'Standup' } } })
+    const doc = file({ ref: 'd', naddr: 'naddr1d', address: `30842:${A}:${D}`, noun: 'document', appName: 'Leaf', slots: { title: { value: 'Brief' } } })
+    const nodes = groupsOf([folder([topic, doc, shipProject()])], none)![0].nodes!
+    expect(nodes.map((n) => n.label)).toEqual(['Brief', "Leaf edits any file's text"])
+    expect(nodes[0].hint).toBeUndefined()
+    expect(nodes[1].hint).toBeTruthy()
+  })
+
+  it('draws a page filed under a topic at its Folder’s top level', () => {
+    const topic = file({ ref: 't', kind: 30840, naddr: 'naddr1t', address: `30840:${A}:t`, slots: { title: { value: 'Standup' } } })
+    const under = file({ ref: 'u', naddr: 'naddr1u', address: `30842:${A}:${D}`, parentRef: `30840:${A}:t`, slots: { title: { value: 'Minutes' } } })
+    expect(groupsOf([folder([topic, under])], none)![0].nodes!.map((n) => n.label)).toEqual(['Minutes'])
+  })
+
+  it('says a Folder that holds only topics is empty', () => {
+    const topic = file({ ref: 't', kind: 30840, naddr: 'naddr1t', address: `30840:${A}:t` })
+    expect(groupsOf([folder([topic])], none)![0].message).toBe('Nothing in this yet.')
   })
 
   it('says a Folder is empty, could not be read, or is still being read', () => {
@@ -63,15 +73,15 @@ describe('the Folders tree', () => {
   })
 
   it("reads a project's issues when its row opens, and finds an issue opened from there", () => {
-    const project = file({ ref: 'proj', kind: 30850, naddr: 'naddr1proj', listsChildren: true })
-    const issue = file({ ref: 'iss', kind: 30851, naddr: 'naddr1iss', noun: 'issue' })
+    const project = shipProject()
+    const issue = shipIssue()
     const closed = groupsOf([folder([project])], none)![0].nodes![0]
     expect(closed.hasChildren).toBe(true)
     expect(closed.children).toBeUndefined()
-    const read: Expansion = { ...none, children: { proj: [issue] }, opened: new Set(['proj']) }
+    const read: Expansion = { ...none, children: { [project.ref]: [issue] }, opened: new Set([project.ref]) }
     const open = groupsOf([folder([project])], read)![0].nodes![0]
     expect(open.open).toBe(true)
-    expect(open.children?.map((n) => n.href)).toEqual(['/f/naddr1iss'])
-    expect(findFile([folder([project])], read.children, 'naddr1iss')?.file.ref).toBe('iss')
+    expect(open.children?.map((n) => n.href)).toEqual([`/f/${issue.naddr}`])
+    expect(findFile([folder([project])], read.children, issue.naddr!)?.file.ref).toBe(issue.ref)
   })
 })

@@ -1,11 +1,11 @@
 import type { RelayState } from '@estiva-app/protocol'
-import { Card, cn, EmptyState, KindIcon, Panel, SectionHeader, SkeletonList, WithTooltip } from '@estiva-app/ui'
+import { Card, Chip, cn, EmptyState, KindIcon, Panel, SectionHeader, SkeletonList, thingKindOf, WithTooltip } from '@estiva-app/ui'
 import { IconFilePlus } from '@tabler/icons-react'
 import { useState } from 'react'
 import { relayLabel } from '../config'
 import { exactly, whenOf } from '../home/recent'
-import type { Recent } from '../home/useRecent'
-import { documentPath, dOf } from '../route'
+import type { HomeRow, Recent } from '../home/useRecent'
+import { pagePath } from '../route'
 
 export interface HomePageProps {
   /** The relay this build is set to, or `null` when the app runs alone. */
@@ -28,6 +28,13 @@ const SAYS: Record<RelayState, (host: string, name?: string) => string> = {
   live: (host, name) => (name ? `Connected to ${host} as ${name}.` : `Connected to ${host}.`),
   reconnecting: (host) => `Reconnecting to ${host}…`,
   failed: (host) => `Could not connect to ${host}.`,
+}
+
+/** A row's caption before its time: "QA · Miky, ", "QA · " while the name is read, and no place when it has none. */
+function placeAndWho(r: HomeRow): string {
+  const said = [r.folder, r.byName].filter(Boolean).join(' · ')
+  if (!said) return ''
+  return r.byName ? `${said}, ` : `${said} · `
 }
 
 /**
@@ -77,18 +84,22 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
             ) : (
               recent.map((r) => (
                 // The summary is one line under the title, and the row keeps to one line without it (the short-summary story's LeafRecentRow).
-                <Card key={r.address} href={documentPath(dOf(r.address), r.title)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
+                <Card key={r.address} href={pagePath(r)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
                   <span className={cn('flex shrink-0', r.summary && 'pt-0.5')}>
-                    <KindIcon kind="file" />
+                    <KindIcon kind={r.type ? thingKindOf(r.kind) : 'file'} />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <WithTooltip label={r.title} wrapperClassName="min-w-0">
-                      <span className="block truncate text-body-2-strong text-text-primary">{r.title}</span>
-                    </WithTooltip>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <WithTooltip label={r.title} wrapperClassName="min-w-0">
+                        <span className="block truncate text-body-2-strong text-text-primary">{r.title}</span>
+                      </WithTooltip>
+                      {/* Another app's file says what it is, as its row in the tree does (record a-file-is-labelled-by-its-type-not-its-app). */}
+                      {r.type && <Chip type="neutral" label={r.type} />}
+                    </span>
                     {r.summary && <span className="block truncate text-body-2 text-text-secondary">{r.summary}</span>}
                   </span>
                   <span className={cn('shrink-0 text-caption text-text-muted', r.summary && 'pt-0.5')}>
-                    {r.byName ? `${r.folder} · ${r.byName}, ` : `${r.folder} · `}
+                    {placeAndWho(r)}
                     <WithTooltip inline label={exactly(r.at)}>
                       <span>{whenOf(r.at, now ?? opened)}</span>
                     </WithTooltip>
