@@ -166,7 +166,8 @@ describe('a table', () => {
 
 describe('a picture in the text', () => {
   const SHOT = { url: 'https://relay.example/a279.png', m: 'image/png', x: 'a279'.padEnd(64, '0'), size: 2048, filename: 'shot.png' }
-  const attachments = (content: string) => content.match(new RegExp(SHOT.x, 'g')) ?? []
+  type Saved = { content: { type: string; attrs?: { x?: string } }[] }
+  const attachments = (content: string) => (JSON.parse(content) as Saved).content.filter((block) => block.type === 'attachment')
 
   it('draws as its file card, not its name, and a word typed beside it keeps it in the saved text', async () => {
     const { onCommit } = mount()
@@ -185,6 +186,6 @@ describe('a picture in the text', () => {
     type(box, ' and more')
     leave(box)
     await waitFor(() => expect(reopen).toHaveBeenCalledTimes(1))
-    expect(attachments(reopen.mock.calls[0][0].content)).toHaveLength(1)
+    expect(attachments(reopen.mock.calls[0][0].content)).toMatchObject([{ attrs: { x: SHOT.x } }])
   })
 })
