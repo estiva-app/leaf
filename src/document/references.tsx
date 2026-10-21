@@ -25,7 +25,7 @@ const listeners = new Set<() => void>()
  */
 export async function rereadReference(uri: string): Promise<void> {
   try {
-    const found = await resolveForeignObjects([uri], query, people.viaRelay(query), manifests)
+    const found = await resolveForeignObjects([uri], query, people.viaRelay(query), manifests, { archivedWith: true })
     known[uri] = found[uri] ?? null
   } catch {
     return
@@ -61,7 +61,8 @@ export function useReferences(uris: readonly string[]): Resolved {
     }
     if (missing.length === 0) return () => void (live = false)
     for (const uri of missing) known[uri] = undefined
-    const read = resolveForeignObjects(missing, query, people.viaRelay(query), manifests)
+    // With its parent's archive too: an issue in an archived project is read-only, so its card offers no pickers.
+    const read = resolveForeignObjects(missing, query, people.viaRelay(query), manifests, { archivedWith: true })
       .then((found) => {
         for (const uri of missing) known[uri] = found[uri] ?? null
       })
