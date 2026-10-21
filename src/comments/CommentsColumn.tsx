@@ -443,10 +443,14 @@ function CommentLine({
   const [refused, setRefused] = useState<string | null>(null)
   // A refused ✕ leaves the card and says why, as a refused reaction does.
   const [removeRefused, setRemoveRefused] = useState<string | null>(null)
+  const removing = useRef(false)
   const removeSentCard = async (value: string) => {
-    if (!own) return
+    // One ✕ at a time: a second click before the answer would write the same edit again.
+    if (!own || removing.current) return
+    removing.current = true
     setRemoveRefused(null)
     const result = await own.onRemoveCard(value).catch(() => ({ ok: false, reason: 'it did not go through' }) as const)
+    removing.current = false
     if (!result.ok) setRemoveRefused(result.reason)
   }
   // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
@@ -533,9 +537,9 @@ function CommentLine({
           />
           {placed.cards.length > 0 && (
             <div className="mt-2 flex flex-col gap-2" data-line-cards={placed.cards.length}>
-              {placed.cards.map((card) => (
+              {placed.cards.map((card, i) => (
                 <CommentCard
-                  key={card.value}
+                  key={`${card.value}-${i}`}
                   uri={card.uri}
                   compact={card.layout === 'compact'}
                   opensAt={card.opensAt}

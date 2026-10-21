@@ -280,10 +280,15 @@ const NOT_SAVED = 'it did not go through'
  * as they are, as Ship's edit does.
  */
 export function editComment(comment: CommentItem, written: Written): Promise<WriteResult> {
+  return sendEdit(comment, written.text)
+}
+
+/** A `kind:40003` on `comment`, in the Folder it was filed in: its new body, and its whole card set when that changes. */
+function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[]): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
   if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
-  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body: written.text }) : null, NOT_SAVED, SIGNED_OUT)
+  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...(embeds ? { embeds } : {}) }) : null, NOT_SAVED, SIGNED_OUT)
 }
 
 /**
@@ -295,11 +300,7 @@ export function editComment(comment: CommentItem, written: Written): Promise<Wri
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
  */
 export function removeCard(comment: CommentItem, value: string): Promise<WriteResult> {
-  const pubkey = viewerPubkey()
-  const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
-  if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
-  const embeds = withCard(comment.cards, value, 'none')
-  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body: comment.body, embeds }) : null, NOT_SAVED, SIGNED_OUT)
+  return sendEdit(comment, comment.body, withCard(comment.cards, value, 'none'))
 }
 
 /** Delete your comment or reply: a `kind:5` naming it, as Peek's and Ship's Delete do. Its replies stay (SPEC §6.5). */
