@@ -9,8 +9,8 @@ import {
   publishableFromEditor,
   toEditorDocument,
   type ContentFormat,
+  imetaFromAttrs,
   type EditorDocument,
-  type Imeta,
 } from '@estiva-app/protocol'
 import type { FileText } from '@estiva-app/conversation'
 import { MenuItem } from '@estiva-app/ui'
@@ -45,7 +45,10 @@ const readMarkdown = (text: string) => toEditorDocument(descriptionTextToBlockDo
 
 /** A file in the text — a picture is one — as the kit's card, as Ship's description draws it: a picture opens full size (115c8229). */
 function PageFile({ attrs }: AttachmentViewProps) {
-  return <FileCard file={attrs as unknown as Imeta} download={false} />
+  // The attributes are whoever saved last's: a block the protocol will not name as a file is not drawn as one (§13.3).
+  const file = imetaFromAttrs(attrs)
+  if (!file) return <span>{typeof attrs.filename === 'string' ? attrs.filename : 'attachment'}</span>
+  return <FileCard file={file} download={false} />
 }
 
 /**

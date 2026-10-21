@@ -188,4 +188,12 @@ describe('a picture in the text', () => {
     await waitFor(() => expect(reopen).toHaveBeenCalledTimes(1))
     expect(attachments(reopen.mock.calls[0][0].content)).toMatchObject([{ attrs: { x: SHOT.x } }])
   })
+
+  it('whose stored attributes are not a file draws as words, and the page still opens', async () => {
+    const hostile = JSON.stringify({ type: 'doc', content: [{ type: 'attachment', id: 'b1', attrs: { ...SHOT, m: 5, filename: { a: 1 } } }] })
+    render(<LiveDocument value={hostile} format="blocks" changedBy={KATERINA} onCommit={vi.fn()} onLeftUnsaved={vi.fn()} />)
+    const box = await ready()
+    expect(box.querySelector('[data-attachment]')).toBeNull()
+    expect(box.textContent).toContain('attachment')
+  })
 })
