@@ -1,4 +1,4 @@
-import { createPeopleCache, createProjectionCache, resolveForeignObject, type ForeignObject } from '@estiva-app/interop'
+import { createPeopleCache, createProjectionCache, resolveForeignObject, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
 import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
@@ -15,6 +15,11 @@ const people = createPeopleCache()
  */
 export function readDocument(naddr: string): Promise<ForeignObject | null> {
   return resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { archivedWith: true })
+}
+
+/** Several files read as {@link readDocument} reads one, in one request: keyed by the `naddr` given. */
+export function readDocuments(naddrs: readonly string[]): Promise<Record<string, ForeignObject | null>> {
+  return resolveForeignObjects(naddrs, query, people.viaRelay(query), manifests, { archivedWith: true })
 }
 
 /**

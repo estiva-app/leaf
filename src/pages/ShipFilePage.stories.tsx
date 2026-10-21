@@ -232,8 +232,11 @@ export const TreeToday: Story = {
 }
 
 const NOW = Date.UTC(2026, 9, 20, 8)
+const TYPES: Record<string, string> = { '30850': 'Project', '30851': 'Issue' }
 const recent = (address: string, title: string, folder: string, byName: string, ago: number, summary?: string) => ({
   address,
+  kind: Number(address.split(':')[0]),
+  type: TYPES[address.split(':')[0]],
   naddr: `naddr1${title.length}`,
   eventId: `e${title.length}`,
   folderId: folder.toLowerCase(),

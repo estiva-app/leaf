@@ -31,6 +31,7 @@ export const Connected: Story = { args: { relay: 'http://localhost:3000', state:
 const NOW = Date.UTC(2026, 9, 9, 8)
 const row = (n: number, title: string, folder: string, byName: string, ago: number, summary?: string) => ({
   address: `30842:${'a'.repeat(64)}:p${n}`,
+  kind: 30842,
   naddr: `naddr1p${n}`,
   eventId: `e${n}`,
   folderId: folder.toLowerCase(),

@@ -1,13 +1,16 @@
 import type { SignedEvent } from '@estiva-app/protocol'
 import { describe, expect, it } from 'vitest'
-import { HOME_ROWS, rankRecent, recentFilters, whenOf, type Page } from './recent'
+import { HOME_ROWS, rankRecent, recentFilters, textTargets, whenOf, type Page } from './recent'
 
 const ME = 'a'.repeat(64)
 const ANA = 'b'.repeat(64)
 const RAVI = 'c'.repeat(64)
 
 function page(n: number, maker = ANA): Page {
-  return { address: `30842:${maker}:p${n}`, naddr: `naddr1p${n}`, eventId: `e${n}`, title: `Page ${n}`, folder: 'QA', folderId: 'f1' }
+  return { address: `30842:${maker}:p${n}`, naddr: `naddr1p${n}`, kind: 30842, eventId: `e${n}`, title: `Page ${n}`, folder: 'QA', folderId: 'f1' }
+}
+function issue(n: number, maker = ANA): Page {
+  return { address: `30851:${maker}:i${n}`, naddr: `naddr1i${n}`, kind: 30851, eventId: `ei${n}`, title: `Issue ${n}`, folder: 'QA', folderId: 'f1', type: 'Issue' }
 }
 function made(p: Page, at: number): SignedEvent {
   return { id: p.eventId, pubkey: p.address.split(':')[1], kind: 30842, created_at: at, tags: [['h', 'f1']], content: '', sig: '' }
@@ -41,6 +44,32 @@ describe("Home's rows", () => {
       ME,
     )
     expect(rows.map((r) => r.title)).toEqual(['Page 2', 'Page 1'])
+  })
+
+  it('lists an issue whose text you changed beside your pages, by that change', () => {
+    const [mine, rewritten] = [page(1), issue(1)]
+    const rows = rankRecent([mine, rewritten], [made(mine, 10), save(mine, ME, 20), made(rewritten, 5), save(rewritten, ME, 30)], ME)
+    expect(rows.map((r) => [r.title, r.type, r.at])).toEqual([
+      ['Issue 1', 'Issue', 30_000],
+      ['Page 1', undefined, 20_000],
+    ])
+  })
+
+  it('never lists or raises an issue by a comment, and never by having made it', () => {
+    const [commented, filed, rewritten] = [issue(1), issue(2, ME), issue(3)]
+    const rows = rankRecent(
+      [commented, filed, rewritten],
+      [comment(commented, ME, 40), made(filed, 50), save(rewritten, ME, 10), comment(rewritten, RAVI, 60)],
+      ME,
+    )
+    expect(rows.map((r) => [r.title, r.at])).toEqual([['Issue 3', 10_000]])
+  })
+
+  it("finds the other apps' files whose title, summary or text you changed, newest first, each once", () => {
+    const [p, a, b, c] = [page(1, ME), issue(1), issue(2), issue(3)]
+    const saves = [save(p, ME, 50), save(a, ME, 10, 'title'), save(b, ME, 20, 'status'), save(c, ME, 30, 'summary'), save(a, ME, 40)]
+    expect(textTargets(saves)).toEqual([a.address, c.address])
+    expect(textTargets(saves, 1)).toEqual([a.address])
   })
 
   it('does not count leaving, archiving or moving a page as an edit', () => {
