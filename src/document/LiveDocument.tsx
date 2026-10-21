@@ -10,16 +10,18 @@ import {
   toEditorDocument,
   type ContentFormat,
   type EditorDocument,
+  type Imeta,
 } from '@estiva-app/protocol'
 import type { FileText } from '@estiva-app/conversation'
 import { MenuItem } from '@estiva-app/ui'
-import { DocumentEditor, type DocumentCodec, type HeldTyping, type MentionPerson, type SelectionAnchor } from '@estiva-app/ui/editor'
+import { DocumentEditor, type AttachmentViewProps, type DocumentCodec, type HeldTyping, type MentionPerson, type SelectionAnchor } from '@estiva-app/ui/editor'
 import { PageLink, PageNamesProvider } from './PageLink'
 import { ReferencesProvider, useEditorReferences } from './references'
 import { REFERENCE_COPY, referenceSections, subscribeReferences } from './referencePicker'
 import type { ChangedBy } from './useLiveDocument'
 import { sessionEnded } from '../auth/estivaId'
 import { heldText, registerHeld, releaseHeld } from '../auth/heldTyping'
+import { FileCard } from '../comments/CommentFiles'
 import { MAX_LINKS_ASKED, askLinks, linkReferenceOf } from '../comments/links'
 import { useMentionPeople } from '../comments/people'
 
@@ -40,6 +42,11 @@ const LINK_CHIPS = { referenceOf: linkReferenceOf, ask: askLinks, limit: MAX_LIN
 
 /** Markdown pasted as plain text lands as the blocks it spells, tables included, read as the agent reads a description (LEAF-10). */
 const readMarkdown = (text: string) => toEditorDocument(descriptionTextToBlockDocument(text))
+
+/** A file in the text — a picture is one — as the kit's card, as Ship's description draws it: a picture opens full size (115c8229). */
+function PageFile({ attrs }: AttachmentViewProps) {
+  return <FileCard file={attrs as unknown as Imeta} download={false} />
+}
 
 /**
  * A document's text: the shared editor every app writes a document with
@@ -130,6 +137,7 @@ export function LiveDocument({
       {...(onCommentOn ? { onCommentOnSelection: onCommentOn } : {})}
       {...(blockRows ? { blockRows } : {})}
       referenceView={PageLink}
+      attachmentView={PageFile}
       wrap={(children, editor) => (
         <PageReferences editor={editor} nameOf={people.nameOf}>
           {children}

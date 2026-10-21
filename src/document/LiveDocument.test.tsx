@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { Editor } from '@tiptap/react'
 import type { FileText } from '@estiva-app/conversation'
 
-vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null }))
+vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null, relaySigner: () => null }))
 
 import { LiveDocument } from './LiveDocument'
 
@@ -161,5 +161,30 @@ describe('a table', () => {
     const reopened = await ready()
     expect(reopened.querySelectorAll('tr')).toHaveLength(3)
     expect(reopened.querySelector('th')?.textContent).toBe('Name')
+  })
+})
+
+describe('a picture in the text', () => {
+  const SHOT = { url: 'https://relay.example/a279.png', m: 'image/png', x: 'a279'.padEnd(64, '0'), size: 2048, filename: 'shot.png' }
+  const attachments = (content: string) => content.match(new RegExp(SHOT.x, 'g')) ?? []
+
+  it('draws as its file card, not its name, and a word typed beside it keeps it in the saved text', async () => {
+    const { onCommit } = mount()
+    const first = await ready()
+    enter(first)
+    act(() => void first.editor.chain().insertContent({ type: 'attachment', attrs: SHOT }).run())
+    leave(first)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    const [{ content: value }] = onCommit.mock.calls[0]
+    cleanup()
+    const reopen = vi.fn<Commit>(async () => true)
+    render(<LiveDocument value={value} format="blocks" changedBy={KATERINA} onCommit={reopen} onLeftUnsaved={vi.fn()} />)
+    const box = await ready()
+    // The kit's card for a picture, where the editor alone draws the file name as a line of text.
+    await waitFor(() => expect(box.querySelector('[data-attachment="image"]')).not.toBeNull())
+    type(box, ' and more')
+    leave(box)
+    await waitFor(() => expect(reopen).toHaveBeenCalledTimes(1))
+    expect(attachments(reopen.mock.calls[0][0].content)).toHaveLength(1)
   })
 })

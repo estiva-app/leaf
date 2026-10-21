@@ -14,27 +14,36 @@ export function CommentFiles({ files }: { files: readonly Imeta[] }) {
   if (files.length === 0) return null
   return (
     <div data-comment-files="" className="flex flex-wrap items-start gap-1.5 pt-1">
-      {files.map((file, i) => {
-        const isImage = file.m.startsWith('image/')
-        const name = file.filename ?? file.alt ?? (isImage ? 'attachment' : 'file')
-        return (
-          <AttachmentCard
-            // Content addressed, so the hash keys it; one file attached twice is the same blob, hence the index.
-            key={`${file.x}_${i}`}
-            data-attachment={isImage ? 'image' : 'file'}
-            name={name}
-            // Never empty: an empty alt says a picture somebody chose to post is decoration.
-            alt={isImage ? (file.alt ?? name) : undefined}
-            size={file.size}
-            contentType={file.m}
-            // The relay's thumbnail in the column; the original only when it is opened. Another file is fetched to open, as in Ship.
-            remoteSrc={isImage ? (file.thumb ?? file.url) : file.url}
-            remoteFullSrc={isImage ? file.url : undefined}
-            fetchImage={blobObjectUrl}
-            download
-          />
-        )
-      })}
+      {files.map((file, i) => (
+        // Content addressed, so the hash keys it; one file attached twice is the same blob, hence the index.
+        <FileCard key={`${file.x}_${i}`} file={file} />
+      ))}
     </div>
+  )
+}
+
+/**
+ * One file as the package's card, in a comment or in a page's text (115c8229).
+ * `download` is off in a page's text, as in Ship's description editor: that
+ * editor saves when it loses focus and the Download button takes it. A picture
+ * still opens full size there.
+ */
+export function FileCard({ file, download = true }: { file: Imeta; download?: boolean }) {
+  const isImage = file.m.startsWith('image/')
+  const name = file.filename ?? file.alt ?? (isImage ? 'attachment' : 'file')
+  return (
+    <AttachmentCard
+      data-attachment={isImage ? 'image' : 'file'}
+      name={name}
+      // Never empty: an empty alt says a picture somebody chose to post is decoration.
+      alt={isImage ? (file.alt ?? name) : undefined}
+      size={file.size}
+      contentType={file.m}
+      // The relay's thumbnail in the column; the original only when it is opened. Another file is fetched to open, as in Ship.
+      remoteSrc={isImage ? (file.thumb ?? file.url) : download ? file.url : undefined}
+      remoteFullSrc={isImage ? file.url : undefined}
+      fetchImage={blobObjectUrl}
+      download={download}
+    />
   )
 }
