@@ -1,6 +1,5 @@
 import { CardUnder, LinkRow } from '@estiva-app/ui'
-import { linkStateOf } from '../document/linked'
-import { useFile } from '../document/references'
+import { useCardLinkState } from '../document/linked'
 
 /**
  * The one file's card under a comment, as Peek's and Ship's `MessageCard`
@@ -11,7 +10,7 @@ import { useFile } from '../document/references'
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
  */
 export function CommentCard({ uri, compact = false, opensAt, onRemove }: { uri: string; compact?: boolean; opensAt?: string; onRemove?: () => void }) {
-  const link = linkStateOf(uri, useFile(uri), opensAt)
+  const link = useCardLinkState(uri, opensAt)
   return (
     <div data-card={compact ? 'compact' : 'detailed'} data-card-value={uri.replace(/^nostr:/i, '')}>
       {compact ? <LinkRow link={link} /> : <CardUnder link={link} onRemove={onRemove} revealOnHover={!!onRemove} />}

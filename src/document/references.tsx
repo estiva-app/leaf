@@ -15,12 +15,33 @@ const RETRY_MS = 5000
 
 /** The reads out now, by reference: a second chip or card asking for a file already being read waits for that read. */
 const reading = new Map<string, Promise<void>>()
+/** Every page and card holding read references, told when one is read again. */
+const listeners = new Set<() => void>()
+
+/**
+ * Read one reference again, after a change from its card: the card then shows
+ * what the relay now holds rather than what was chosen. A failed read keeps
+ * what was known.
+ */
+export async function rereadReference(uri: string): Promise<void> {
+  try {
+    const found = await resolveForeignObjects([uri], query, people.viaRelay(query), manifests)
+    known[uri] = found[uri] ?? null
+  } catch {
+    return
+  }
+  for (const listener of listeners) listener()
+}
 
 /** The files a page's references name, read once per tab and shared by every chip and card. */
 export function useReferences(uris: readonly string[]): Resolved {
   const key = [...new Set(uris)].sort().join('\n')
   const [, landed] = useReducer((n: number) => n + 1, 0)
   const [attempt, retry] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    listeners.add(landed)
+    return () => void listeners.delete(landed)
+  }, [])
   useEffect(() => {
     const all = key ? key.split('\n') : []
     const missing = all.filter((uri) => !(uri in known))

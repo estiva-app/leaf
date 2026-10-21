@@ -3,7 +3,7 @@ import { InlineChip, LinkCard, LinkChip, LinkRow } from '@estiva-app/ui'
 import type { ReferenceViewProps } from '@estiva-app/ui/editor'
 import { decodeNpub } from '@estiva-app/protocol'
 import { knownName } from '../comments/people'
-import { linkStateOf } from './linked'
+import { linkStateOf, useCardLinkState } from './linked'
 import { useFile } from './references'
 
 const Names = createContext<(pubkey: string) => string | undefined>(knownName)
@@ -38,7 +38,12 @@ export function PageLink({ uri, href, place = 'chip', editing = false }: Referen
 /** A file's link, read once for the tab and shared with every other link to it. */
 function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProps, 'place' | 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
   const link = linkStateOf(uri, useFile(uri), href)
-  if (place === 'card') return <LinkCard link={link} readOnly />
+  if (place === 'card') return <PageCard uri={uri} href={href} />
   if (place === 'row') return <LinkRow link={link} preview={!editing} />
   return <LinkChip link={link} preview={!editing} />
+}
+
+/** A link its writer chose to show as its card: the card a comment draws, its values as words in the page. */
+function PageCard({ uri, href }: Pick<ReferenceViewProps, 'uri' | 'href'>) {
+  return <LinkCard link={useCardLinkState(uri, href)} readOnly />
 }
