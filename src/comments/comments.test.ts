@@ -32,7 +32,7 @@ const comment = (tags: string[][], content: string, h = FOLDER) =>
   event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['a', ADDRESS], ['k', '30842'], ['p', AUTHOR], ...tags, ['h', h]], content)
 const reply = (to: SignedEvent, tags: string[][], content: string, pubkey = ME) =>
   event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', to.id], ['k', '1111'], ['p', to.pubkey], ...tags, ['h', FOLDER]], content, pubkey)
-const itemOf = (e: SignedEvent): CommentItem => ({ id: e.id, by: e.pubkey, at: e.created_at, body: e.content, edited: false, files: [], event: e, reactions: [] })
+const itemOf = (e: SignedEvent): CommentItem => ({ id: e.id, by: e.pubkey, at: e.created_at, body: e.content, edited: false, files: [], cards: [], event: e, reactions: [] })
 
 describe('a comment from the column', () => {
   it("on a block is a 1111 on the document, naming the block and carrying the document's Folder as h", async () => {

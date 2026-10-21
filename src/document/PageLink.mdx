@@ -1,0 +1,38 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './PageLink.stories'
+
+<Meta of={Stories} />
+
+# PageLink
+
+A link in Leaf's text, drawn by where it sits with the kit's widgets: the chip
+in a sentence, the row alone on its line, the card in the row's place. A person
+is `@` and their name.
+
+**Seen in**: *Document/PageLink*: **Chip**, **Row**, **As Card**; in a page,
+in a sent comment, and in the comment box.
+
+## When
+
+- A `nostr:` reference in a page's editor (its `referenceView`), in the comment
+  box, or in a sent comment's chip or row.
+
+## When not
+
+- The one file's card under a comment → **CommentCard**, which carries the
+  author's ✕.
+- A person in a sent comment, urgent or not → the column's own `@Name` chip.
+
+## How
+
+```tsx
+import { PageLink } from '../document/PageLink'
+
+<PageLink uri={reference} href={writtenUrl} place="row" />
+```
+
+## What it owns
+
+- Choosing chip, row or card from `place`, and reading the file through
+  **ReferencesProvider** (`useFile`). The look is the kit's `LinkChip`,
+  `LinkRow` and `LinkCard`; where a written URL may open is `linkStateOf`'s.
