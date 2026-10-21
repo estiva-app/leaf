@@ -4,7 +4,8 @@ type Sent = { tags: string[][] }
 const publish = vi.hoisted(() => vi.fn<(event: { tags: string[][] }) => Promise<{ ok: boolean }>>(async () => ({ ok: true })))
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish, viewerPubkey: () => 'a'.repeat(64) }))
 
-import { buildChange, saveField } from './save'
+import { encodeNpub } from '@estiva-app/protocol'
+import { buildChange, saveField, saveText } from './save'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const ADDRESS = `30842:${'b'.repeat(64)}:d1`
@@ -36,5 +37,53 @@ describe("a document's save", () => {
     publish.mockClear()
     expect(await saveField({ address: ADDRESS, folder: undefined }, 'title', 'x')).toEqual({ ok: false, reason: 'This cannot be saved from here.' })
     expect(publish).not.toHaveBeenCalled()
+  })
+})
+
+const QA2 = 'c2'.repeat(32)
+const npub = (hex: string) => `nostr:${encodeNpub(hex)}`
+/** A page's text as a block document naming `people` with `@` (§13.3 reference marks). */
+const textNaming = (words: string, ...people: string[]) =>
+  JSON.stringify({
+    type: 'doc',
+    content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: words }, ...people.map((p) => ({ type: 'text', text: '@someone', marks: [{ type: 'reference', attrs: { uri: npub(p) } }] }))] }],
+  })
+const blocks = (content: string) => ({ content, format: 'estiva-blocks-1' })
+
+describe('a mention in a page (SPEC §11.8)', () => {
+  it('saves the text with no p, then adds the person it names anew, as the Add button does', async () => {
+    publish.mockClear()
+    const result = await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask ', QA2)), blocks(textNaming('Ask')))
+    expect(result).toEqual({ ok: true, refused: [] })
+    expect(publish).toHaveBeenCalledTimes(2)
+    const [text, add] = publish.mock.calls.map((call) => call[0] as Sent)
+    expect(text.tags).toContainEqual(['field', 'description'])
+    expect(text.tags.some((t) => t[0] === 'p')).toBe(false)
+    // A file field change (§6.2), signed by the writer: the Add button's own event.
+    expect(add).toMatchObject({ kind: 1851, pubkey: 'a'.repeat(64) })
+    expect(add.tags).toEqual(expect.arrayContaining([['a', ADDRESS], ['field', `member:${QA2}`], ['value', 'true'], ['h', FOLDER]]))
+  })
+
+  it('adds nobody on a typo fix that still names them, so someone who left stays out', async () => {
+    publish.mockClear()
+    await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask, ', QA2)), blocks(textNaming('Aks ', QA2)))
+    expect(publish).toHaveBeenCalledTimes(1)
+  })
+
+  it('says who could not be added when the relay refuses the Add, after the text went through', async () => {
+    publish.mockClear()
+    publish.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
+    expect(await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask ', QA2)), { content: 'Ask' })).toEqual({ ok: true, refused: [QA2] })
+  })
+
+  it('tries a refused Add again on the next save that still names them, and not once the mention is gone', async () => {
+    publish.mockClear()
+    const result = await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask, ', QA2)), blocks(textNaming('Ask ', QA2)), [QA2])
+    expect(result).toEqual({ ok: true, refused: [] })
+    expect(publish).toHaveBeenCalledTimes(2)
+    expect(publish.mock.calls[1][0].tags).toContainEqual(['field', `member:${QA2}`])
+    publish.mockClear()
+    await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask')), blocks(textNaming('Ask ', QA2)), [QA2])
+    expect(publish).toHaveBeenCalledTimes(1)
   })
 })

@@ -9,7 +9,9 @@ import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
-import { readSummary, saveField } from '../document/save'
+import { readSummary, saveField, saveText } from '../document/save'
+import type { FileText } from '@estiva-app/conversation'
+import { knownName } from '../comments/people'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
@@ -68,7 +70,21 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
   const target = useRef(file)
   const summaryEditor = useRef<InlineTextHandle>(null)
-  const commitText = useCallback(async (value: string, contentFormat?: string) => (await saveField(target.current, 'description', value, contentFormat)).ok, [])
+  // The text, and an Add for each person it names anew; someone who could not be added is told, and tried again on the next save.
+  const unadded = useRef<string[]>([])
+  const commitText = useCallback(
+    async (saved: FileText & { content: string }, editedFrom: FileText) => {
+      const result = await saveText(target.current, saved, editedFrom, unadded.current)
+      if (!result.ok) return false
+      unadded.current = result.refused
+      if (result.refused.length > 0) {
+        const names = result.refused.map((pubkey) => knownName(pubkey) ?? 'someone').join(', ')
+        showToast({ label: `Could not add ${names}. Leaf tries again when you next save.`, type: 'error' })
+      }
+      return true
+    },
+    [showToast],
+  )
   // The title now, for a toast after the page is gone.
   const named = useRef(title)
   useEffect(() => {

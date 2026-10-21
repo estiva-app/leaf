@@ -69,7 +69,7 @@ const file = (d: string, title: string, more: Partial<ReferenceCandidate> = {}):
   ...more,
 })
 
-type Commit = (value: string, contentFormat?: string) => Promise<boolean>
+type Commit = (saved: { content: string; format?: string }) => Promise<boolean>
 
 /**
  * A Leaf page open in a Folder, as App wires it: the page publishes its
@@ -139,7 +139,7 @@ describe('[ on a Leaf page', () => {
     await press(box, 'Enter')
     act(() => void fireEvent.blur(box))
     await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
-    const [saved] = onCommit.mock.calls[0] as unknown as [string]
+    const saved = onCommit.mock.calls[0][0].content
     expect(saved).toContain('nostr:naddr-ledger')
     expect(saved).not.toContain('[quok')
   })

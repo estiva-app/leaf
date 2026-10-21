@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
+import type { FileText } from '@estiva-app/conversation'
 
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null }))
 
@@ -40,7 +41,7 @@ const text = () => page().editor.getText()
 
 const KATERINA = { pubkey: 'k'.repeat(64), name: 'Katerina' }
 
-type Commit = (value: string, contentFormat?: string) => Promise<boolean>
+type Commit = (saved: FileText & { content: string }, editedFrom: FileText) => Promise<boolean>
 
 function mount(onCommit = vi.fn<Commit>(async () => true), onLeftUnsaved = vi.fn()) {
   const props = { format: 'marker' as const, changedBy: KATERINA, onCommit, onLeftUnsaved }
@@ -63,7 +64,7 @@ describe('someone else saves the page', () => {
     const box = await ready()
     enter(box)
     arrive('theirs')
-    expect(await screen.findByText('Katerina saved a newer version.')).toBeTruthy()
+    expect(await screen.findByText(/Katerina saved a newer version\./)).toBeTruthy()
     expect(text()).toBe('mine')
     fireEvent.mouseDown(screen.getByRole('button', { name: 'Load it' }))
     fireEvent.click(screen.getByRole('button', { name: 'Load it' }))
@@ -91,7 +92,7 @@ describe('someone else saves the page', () => {
     await screen.findByText(/saved a newer version/)
     leave(box)
     await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
-    expect(onCommit.mock.calls[0][0]).toContain('mine and more')
+    expect(onCommit.mock.calls[0][0].content).toContain('mine and more')
     // The page still holds theirs until your save comes back; it must not replace yours.
     await act(async () => {})
     expect(text()).toBe('mine and more')
@@ -101,7 +102,7 @@ describe('someone else saves the page', () => {
 
 describe('a save the relay refuses', () => {
   it('keeps the text in the page and says so', async () => {
-    const { onCommit } = mount(vi.fn(async () => false))
+    const { onCommit } = mount(vi.fn<Commit>(async () => false))
     const box = await ready()
     type(box, ' unsaved')
     leave(box)
@@ -111,11 +112,29 @@ describe('a save the relay refuses', () => {
   })
 
   it('is reported once you have left the page, when there is no editor left to say it', async () => {
-    const { unmount, onLeftUnsaved } = mount(vi.fn(async () => false))
+    const { unmount, onLeftUnsaved } = mount(vi.fn<Commit>(async () => false))
     const box = await ready()
     type(box, ' unsaved')
     unmount()
     await waitFor(() => expect(onLeftUnsaved).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('the text a save was edited from', () => {
+  it('is the page as opened, in its format, and after your save it is your save, as a block document', async () => {
+    const { onCommit } = mount()
+    const box = await ready()
+    type(box, ' one')
+    leave(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    const [first, openedFrom] = onCommit.mock.calls[0]
+    // An old page is marker text: compared as marker text, not as a block document.
+    expect(openedFrom).toEqual({ content: 'mine' })
+    type(box, ' two')
+    leave(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(2))
+    // Edited from your first save: whoever it named is not named anew by the second (SPEC §11.8).
+    expect(onCommit.mock.calls[1][1]).toEqual({ content: first.content, format: 'estiva-blocks-1' })
   })
 })
 
@@ -134,7 +153,7 @@ describe('a table', () => {
     expect(box.querySelectorAll('tr:first-child th')).toHaveLength(3)
     leave(box)
     await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
-    const [value, contentFormat] = onCommit.mock.calls[0]
+    const [{ content: value, format: contentFormat }] = onCommit.mock.calls[0]
     // The saved tag, read back as `contentFormatOf` reads it.
     expect(contentFormat).toBe('estiva-blocks-1')
     cleanup()

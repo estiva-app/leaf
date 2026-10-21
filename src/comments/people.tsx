@@ -76,6 +76,22 @@ export function knownName(pubkey: string): string | undefined {
   return known.profiles.get(pubkey)?.name
 }
 
+// The read out now: the page's text and its comments column open together, and ask once between them.
+let reading: Promise<void> | null = null
+
+/** Read the roster and every profile into `known`, or join the read already out. */
+function readPeople(): Promise<void> {
+  reading ??= Promise.all([query([{ kinds: [0], limit: 500 }]), query([{ kinds: [KIND_MEMBERSHIP_LIST], limit: 1 }]).then(rosterOf, () => null)])
+    .then(([events, members]) => {
+      const profiles = namedProfilesOf(events)
+      known = { offered: mentionablesOf(profiles, members, viewerPubkey()), profiles }
+    })
+    .finally(() => {
+      reading = null
+    })
+  return reading
+}
+
 /**
  * The people `@` offers, as the box's list draws them, and the name of anyone
  * with a profile. Read once each time a page's column opens — the roster and
@@ -87,11 +103,8 @@ export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: 
   const [found, setFound] = useState<Known>(known)
   useEffect(() => {
     let live = true
-    const roster = query([{ kinds: [KIND_MEMBERSHIP_LIST], limit: 1 }]).then(rosterOf, () => null)
-    Promise.all([query([{ kinds: [0], limit: 500 }]), roster])
-      .then(([events, members]) => {
-        const profiles = namedProfilesOf(events)
-        known = { offered: mentionablesOf(profiles, members, viewerPubkey()), profiles }
+    readPeople()
+      .then(() => {
         if (live) setFound(known)
       })
       // A refused read keeps the last answer; the next page asks again.

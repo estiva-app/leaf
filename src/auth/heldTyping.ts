@@ -154,12 +154,14 @@ export function useHeldTyping(key: string | undefined, read: () => string | unde
   useEffect(() => {
     latest.current = read
   })
-  useEffect(() => {
-    if (!key) return
-    readers.set(key, () => latest.current())
-    return () => {
-      readers.delete(key)
-      if (!ending) releaseHeld(key)
-    }
-  }, [key])
+  useEffect(() => (key ? registerHeld(key, () => latest.current()) : undefined), [key])
+}
+
+/** {@link useHeldTyping} without React: register `read` for `key`, and get back what unregisters it. */
+export function registerHeld(key: string, read: () => string | undefined): () => void {
+  readers.set(key, read)
+  return () => {
+    readers.delete(key)
+    if (!ending) releaseHeld(key)
+  }
 }

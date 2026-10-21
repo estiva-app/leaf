@@ -31,7 +31,7 @@ import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, th
  * under them, its text in Leaf's editor and its comments beside it — a page's layout (FilePage's DocumentView).
  * Archived, its title, summary and text are read-only and its comments stay open (SPEC §6.5).
  */
-function SharedTextView({ file, value, changedBy = null, onCommit = async () => true }: { file: ForeignObject; value?: string; changedBy?: ChangedBy | null; onCommit?: (value: string) => Promise<boolean> }) {
+function SharedTextView({ file, value, changedBy = null, onCommit = async () => true }: { file: ForeignObject; value?: string; changedBy?: ChangedBy | null; onCommit?: (saved: { content: string }) => Promise<boolean> }) {
   const body = file.slots[BODY_SLOT]
   const locked = !!file.archived
   const [editor, setEditor] = useState<Editor | null>(null)
