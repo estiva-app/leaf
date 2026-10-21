@@ -548,7 +548,7 @@ function CommentLine({
               ))}
             </div>
           )}
-          {removeRefused && <FieldLine tone="error">Not removed: {removeRefused}.</FieldLine>}
+          {removeRefused && <FieldLine tone="error">Card not removed: {removeRefused}.</FieldLine>}
           {placed.parts.length > 0 && (
             <div className="mt-2 flex flex-col gap-2" data-comment-parts={placed.parts.length}>
               {placed.parts.map((part) => (
