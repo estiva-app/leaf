@@ -10,7 +10,7 @@ const FIELDS: readonly DocumentField[] = ['title', 'summary', 'description']
  * file's kind (SPEC §7.3). The text only as a block document, and only where the page shows it: a `body` slot that
  * reads the `description`, so Leaf never writes a text it does not draw.
  *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
 export function writableFields(file: ForeignObject): ReadonlySet<DocumentField> {
   if (file.kind === KIND.DOCUMENT) return new Set(FIELDS)

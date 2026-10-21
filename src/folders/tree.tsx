@@ -30,7 +30,7 @@ export function isDocument(file: ForeignObject): boolean {
  * such as a Ship project or issue. A Peek topic has no text, so it is not listed (LTX-2), and a page filed under one
  * draws at its Folder's top level, its `parent` left as written.
  *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
 export function isListed(file: ForeignObject): boolean {
   return !file.unreachable && sharesText(file)

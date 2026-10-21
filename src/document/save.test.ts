@@ -5,7 +5,8 @@ const publish = vi.hoisted(() => vi.fn<(event: { tags: string[][] }) => Promise<
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish, viewerPubkey: () => 'a'.repeat(64) }))
 
 import { encodeNpub } from '@estiva-app/protocol'
-import { buildChange, saveField, saveText } from './save'
+import type { ForeignObject } from '@estiva-app/interop'
+import { buildChange, saveCardChoice, saveField, saveText } from './save'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const ADDRESS = `30842:${'b'.repeat(64)}:d1`
@@ -85,5 +86,46 @@ describe('a mention in a page (SPEC §11.8)', () => {
     publish.mockClear()
     await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask')), blocks(textNaming('Ask ', QA2)), [QA2])
     expect(publish).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a change from a card', () => {
+  const issue = (over: Partial<ForeignObject> = {}) =>
+    ({
+      address: '30851:f3:i',
+      folder: 'folder-1',
+      parentField: 'project',
+      actions: [
+        { id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo' }, { value: 'done', label: 'Done' }] },
+        { id: 'move', label: 'Project', control: 'select', field: 'project', current: 'p', options: [{ value: 'q', label: 'Done' }] },
+        { id: 'rename', label: 'Status', control: 'select', field: 'title', current: '', options: [{ value: 'Taken over', label: 'Done' }] },
+      ],
+      ...over,
+    }) as Pick<ForeignObject, 'address' | 'folder' | 'actions' | 'archived' | 'parentField'>
+
+  it('writes the status as one change of that field, in the file’s Folder', async () => {
+    publish.mockClear()
+    expect(await saveCardChoice(issue(), 'set-status', 'done')).toEqual({ ok: true })
+    const sent = publish.mock.calls.at(-1)![0]
+    expect(sent.tags.filter((t) => ['a', 'field', 'value', 'h'].includes(t[0]))).toEqual([
+      ['a', '30851:f3:i'],
+      ['field', 'status'],
+      ['value', 'done'],
+      ['h', 'folder-1'],
+    ])
+  })
+
+  it('writes nothing for a file archived itself or with its project', async () => {
+    publish.mockClear()
+    expect((await saveCardChoice(issue({ archived: { by: 'f3', at: 1 } } as Partial<ForeignObject>), 'set-status', 'done')).ok).toBe(false)
+    expect((await saveCardChoice(issue({ archived: { by: 'f3', at: 1, with: '30850:f3:p' } } as Partial<ForeignObject>), 'set-status', 'done')).ok).toBe(false)
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('writes nothing to where a file is filed or to its words, from a card', async () => {
+    publish.mockClear()
+    expect((await saveCardChoice(issue(), 'move', 'q')).ok).toBe(false)
+    expect((await saveCardChoice(issue(), 'rename', 'Taken over')).ok).toBe(false)
+    expect(publish).not.toHaveBeenCalled()
   })
 })

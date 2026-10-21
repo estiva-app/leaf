@@ -63,7 +63,7 @@ export async function nameOf(pubkey: string): Promise<string | null> {
 export function buildChange(
   pubkey: string,
   createdAtMs: number,
-  args: { target: string; field: DocumentField; value: string; folder: string; contentFormat?: string },
+  args: { target: string; field: string; value: string; folder: string; contentFormat?: string },
 ): UnsignedEvent {
   return {
     pubkey,
@@ -116,6 +116,40 @@ export async function saveField(
   // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] save refused', result)
   return { ok: false, reason: 'Could not save. Your text is still here.' }
+}
+
+/** The fields a card never writes: a file's words, and its archive. */
+const NOT_ON_A_CARD = new Set(['title', 'summary', 'description', 'archived'])
+
+/**
+ * Change a file from its card: a status or an owner, through a choice its
+ * owner's app shares — an action of the file's own (never a borrowed one), a
+ * select or a person, and for a select one of its options (5ebf2756). Written
+ * as the same one-field change as the text, in the file's Folder. Never a
+ * field a card does not hold: its words, where it is filed, or its archive.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
+ */
+export async function saveCardChoice(
+  file: Pick<ForeignObject, 'address' | 'folder' | 'actions' | 'archived' | 'parentField'>,
+  actionId: string,
+  value: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const pubkey = viewerPubkey()
+  if (!pubkey) return { ok: false, reason: 'Sign in to change it.' }
+  const action = file.actions.find((one) => one.id === actionId)
+  const shared =
+    action &&
+    !action.declaredBy &&
+    action.field &&
+    !NOT_ON_A_CARD.has(action.field) &&
+    action.field !== file.parentField &&
+    (action.control === 'select' || action.control === 'pubkey')
+  if (!shared || file.archived || !file.address || !file.folder) return { ok: false, reason: 'This can’t be changed from here.' }
+  if (action.control === 'select' && !action.options?.some((option) => option.value === value)) return { ok: false, reason: 'This can’t be changed from here.' }
+  const result = await publish(buildChange(pubkey, Date.now(), { target: file.address, field: action.field!, value, folder: file.folder }))
+  if (result.ok) return { ok: true }
+  console.warn('[relay] change refused', result)
+  return { ok: false, reason: 'Could not change it.' }
 }
 
 /**

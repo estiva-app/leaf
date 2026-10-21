@@ -36,7 +36,7 @@ export function manifestContent() {
       Leaf is also the document app (SPEC §7.8, LTX-4): it writes the title,
       summary and text of any file whose own app shares them, as Peek shows
       every file's conversation. It owns documents as well; the `k` tag says so.
-      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-app-writes-what-a-files-app-shares.md
+      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
     */
     aspect: 'document',
     records: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { mentionablesOf, namedProfilesOf, rosterOf } from './people'
+import { directoryOf, mentionablesOf, namedProfilesOf, rosterOf } from './people'
 
 const ME = 'a'.repeat(64)
 const QA2 = 'c'.repeat(64)
@@ -24,5 +24,13 @@ describe('who @ offers in a comment', () => {
 
   it('still names someone who left the roster, so a mention of them reads as their name', () => {
     expect(namedProfilesOf(events).get(LEFT)?.name).toBe('Gone')
+  })
+})
+
+describe('whom a card’s Lead picker offers', () => {
+  const events = [roster, profile(ME, 'QA-1'), profile(QA2, 'QA-2'), profile(LEFT, 'Gone')]
+
+  it('offers the people on the roster with a name, you included, and nobody off the roster', () => {
+    expect(directoryOf(namedProfilesOf(events), rosterOf(events))).toEqual({ [ME]: { displayName: 'QA-1' }, [QA2]: { displayName: 'QA-2' } })
   })
 })
