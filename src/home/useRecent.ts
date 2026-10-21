@@ -85,12 +85,17 @@ export function useRecent(folders: WorkspaceFolder[] | null, shown: boolean): Re
     if (!pages || !folders || !shown) return
     let live = true
     const me = viewerPubkey()
-    // Your pages still list when the other apps' files could not be read.
-    const others = othersOf(folders, me).catch(() => [])
-    const read = others.then(async (others) => {
-      const files = [...pages, ...others]
-      return { files, events: files.length === 0 ? [] : await query(recentFilters(files)) }
-    })
+    // Your pages' changes are read beside the other apps' files, not after them, and your pages still list when
+    // those files or their changes could not be read.
+    const pageEvents = pages.length === 0 ? Promise.resolve([]) : query(recentFilters(pages))
+    const others = othersOf(folders, me).then(
+      async (others) => ({ others, events: others.length === 0 ? [] : await query(recentFilters(others)) }),
+      () => ({ others: [] as Page[], events: [] }),
+    )
+    const read = Promise.all([pageEvents, others]).then(([events, more]) => ({
+      files: [...pages, ...more.others],
+      events: [...events, ...more.events],
+    }))
     void read.then(
       async ({ files, events }) => {
         const rows = rankRecent(files, events, me)

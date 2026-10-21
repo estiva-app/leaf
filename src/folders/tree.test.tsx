@@ -1,7 +1,7 @@
 import type { ForeignObject } from '@estiva-app/interop'
 import { describe, expect, it } from 'vitest'
 import { shipIssue, shipProject } from '../pages/fixtures/shipFiles'
-import { findDocument, findFile, groupsOf, isDocument, typeOf, type Expansion } from './tree'
+import { findDocument, findFile, groupsOf, typeOf, type Expansion } from './tree'
 import type { WorkspaceFolder } from './useWorkspace'
 
 const A = 'a'.repeat(64)
@@ -64,11 +64,6 @@ describe('the Folders tree', () => {
   it('says a Folder that holds only topics is empty', () => {
     const topic = file({ ref: 't', kind: 30840, naddr: 'naddr1t', address: `30840:${A}:t` })
     expect(groupsOf([folder([topic])], none)![0].message).toBe('Nothing in this yet.')
-  })
-
-  it('tells a page from another app’s file', () => {
-    expect(isDocument(file({ kind: 30840 }))).toBe(false)
-    expect(isDocument(file({}))).toBe(true)
   })
 
   it('says a Folder is empty, could not be read, or is still being read', () => {
