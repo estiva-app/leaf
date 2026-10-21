@@ -29,12 +29,6 @@ function ask(address: string): Promise<number | undefined> {
   return next
 }
 
-/** Test seam. */
-export function resetCardConversationsForTests(): void {
-  held.clear()
-  asking.clear()
-}
-
 /**
  * How many conversations a carded file has (5ebf2756), `undefined` while asked
  * or for something with no address. No unread dot: Leaf keeps no read state
