@@ -11,6 +11,12 @@ const Names = createContext<(pubkey: string) => string | undefined>(knownName)
 /** Hands the people's names to every person a page mentions, whose node views React does not otherwise reach. */
 export const PageNamesProvider = Names.Provider
 
+// Outside a page's text (a comment's box) an editable editor counts as being written in.
+const Focused = createContext(true)
+
+/** Says whether the page's text has the caret: a writer's page is always editable, so editable alone is not "being edited". */
+export const PageFocusedProvider = Focused.Provider
+
 /** The person a `nostr:npub` names, or `null` for any other reference. */
 function personOf(uri: string): string | null {
   if (!/^nostr:npub1/i.test(uri)) return null
@@ -46,8 +52,9 @@ function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProp
 /**
  * A link its writer chose to show as its card: the card a comment draws,
  * pickers included, and its values as words while the page's text is being
- * edited (Miky, 21 Oct).
+ * edited (Miky, 21 Oct) — while it has the caret, as Ship's description does.
  */
 function PageCard({ uri, href, editing }: Pick<ReferenceViewProps, 'uri' | 'href' | 'editing'>) {
-  return <LinkCard link={useCardLinkState(uri, href)} readOnly={editing} />
+  const focused = useContext(Focused)
+  return <LinkCard link={useCardLinkState(uri, href)} readOnly={editing && focused} />
 }
