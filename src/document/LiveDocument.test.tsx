@@ -211,6 +211,10 @@ describe('a project shown as its card in the page', () => {
     // The writer's page is always editable: editable alone is not "being edited".
     expect(box.editor.isEditable).toBe(true)
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull())
+    // A press on the picker is the picker's: the text does not take it (ProseMirror skips a press whose default is
+    // prevented), so the caret does not come in and turn the card to words under the pointer.
+    const status = screen.getByRole('combobox', { name: 'Status' })
+    expect(fireEvent.mouseDown(status.querySelector('span') ?? status)).toBe(false)
     enter(box)
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull())
     expect(screen.getByText('Planned')).toBeTruthy()

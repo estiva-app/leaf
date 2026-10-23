@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useRef } from 'react'
 import { InlineChip, LinkCard, LinkChip, LinkRow } from '@estiva-app/ui'
 import type { ReferenceViewProps } from '@estiva-app/ui/editor'
 import { decodeNpub } from '@estiva-app/protocol'
@@ -56,5 +56,21 @@ function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProp
  */
 function PageCard({ uri, href, editing }: Pick<ReferenceViewProps, 'uri' | 'href' | 'editing'>) {
   const focused = useContext(Focused)
-  return <LinkCard link={useCardLinkState(uri, href)} readOnly={editing && focused} />
+  const card = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const element = card.current
+    if (!element) return
+    // ProseMirror sees a press before React does and takes the caret into the text, which turned the card to words
+    // under the pointer, its picker gone before it opened. It leaves alone a press whose default is prevented.
+    const keep = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('button, [role="combobox"]')) event.preventDefault()
+    }
+    element.addEventListener('mousedown', keep)
+    return () => element.removeEventListener('mousedown', keep)
+  }, [])
+  return (
+    <span ref={card} className="contents">
+      <LinkCard link={useCardLinkState(uri, href)} readOnly={editing && focused} />
+    </span>
+  )
 }
