@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useRef } from 'react'
 import { InlineChip, LinkCard, LinkChip, LinkRow } from '@estiva-app/ui'
 import type { ReferenceViewProps } from '@estiva-app/ui/editor'
 import { decodeNpub } from '@estiva-app/protocol'
@@ -10,6 +10,12 @@ const Names = createContext<(pubkey: string) => string | undefined>(knownName)
 
 /** Hands the people's names to every person a page mentions, whose node views React does not otherwise reach. */
 export const PageNamesProvider = Names.Provider
+
+// Outside a page's text (a comment's box) an editable editor counts as being written in.
+const Focused = createContext(true)
+
+/** Says whether the page's text has the caret: a writer's page is always editable, so editable alone is not "being edited". */
+export const PageFocusedProvider = Focused.Provider
 
 /** The person a `nostr:npub` names, or `null` for any other reference. */
 function personOf(uri: string): string | null {
@@ -46,8 +52,25 @@ function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProp
 /**
  * A link its writer chose to show as its card: the card a comment draws,
  * pickers included, and its values as words while the page's text is being
- * edited (Miky, 21 Oct).
+ * edited (Miky, 21 Oct) — while it has the caret, as Ship's description does.
  */
 function PageCard({ uri, href, editing }: Pick<ReferenceViewProps, 'uri' | 'href' | 'editing'>) {
-  return <LinkCard link={useCardLinkState(uri, href)} readOnly={editing} />
+  const focused = useContext(Focused)
+  const card = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const element = card.current
+    if (!element) return
+    // ProseMirror sees a press before React does and takes the caret into the text, which turned the card to words
+    // under the pointer, its picker gone before it opened. It leaves alone a press whose default is prevented.
+    const keep = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('button, [role="combobox"]')) event.preventDefault()
+    }
+    element.addEventListener('mousedown', keep)
+    return () => element.removeEventListener('mousedown', keep)
+  }, [])
+  return (
+    <span ref={card} className="contents">
+      <LinkCard link={useCardLinkState(uri, href)} readOnly={editing && focused} />
+    </span>
+  )
 }

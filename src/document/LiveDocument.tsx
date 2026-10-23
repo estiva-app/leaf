@@ -1,5 +1,5 @@
 import { useCallback, useRef, type ReactNode } from 'react'
-import type { Editor } from '@tiptap/react'
+import { useEditorState, type Editor } from '@tiptap/react'
 import { IconLink, IconMessage } from '@tabler/icons-react'
 import {
   BLOCK_DOCUMENT_FORMAT,
@@ -15,7 +15,7 @@ import {
 import type { FileText } from '@estiva-app/conversation'
 import { MenuItem } from '@estiva-app/ui'
 import { DocumentEditor, type AttachmentViewProps, type DocumentCodec, type HeldTyping, type MentionPerson, type SelectionAnchor } from '@estiva-app/ui/editor'
-import { PageLink, PageNamesProvider } from './PageLink'
+import { PageFocusedProvider, PageLink, PageNamesProvider } from './PageLink'
 import { ReferencesProvider, useEditorReferences } from './references'
 import { REFERENCE_COPY, referenceSections, subscribeReferences } from './referencePicker'
 import type { ChangedBy } from './useLiveDocument'
@@ -154,9 +154,12 @@ export function LiveDocument({
 /** Every file the page links to, read in one go and handed to each link, and the people's names to each mention. */
 function PageReferences({ editor, nameOf, children }: { editor: Editor | null; nameOf: (pubkey: string) => string | undefined; children: ReactNode }) {
   const references = useEditorReferences(editor)
+  const focused = useEditorState({ editor, selector: ({ editor: e }) => !!e?.isFocused }) ?? false
   return (
     <ReferencesProvider value={references}>
-      <PageNamesProvider value={nameOf}>{children}</PageNamesProvider>
+      <PageNamesProvider value={nameOf}>
+        <PageFocusedProvider value={focused}>{children}</PageFocusedProvider>
+      </PageNamesProvider>
     </ReferencesProvider>
   )
 }

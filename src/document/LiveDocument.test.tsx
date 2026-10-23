@@ -4,7 +4,11 @@ import type { Editor } from '@tiptap/react'
 import type { FileText } from '@estiva-app/conversation'
 
 vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null, relaySigner: () => null }))
+// What the page's links read: nothing, unless a test hands one its file.
+const references = vi.hoisted(() => vi.fn((): Record<string, unknown> => ({})))
+vi.mock('./references', async (actual) => ({ ...(await actual<typeof import('./references')>()), useEditorReferences: references }))
 
+import { ToastProvider } from '@estiva-app/ui'
 import { LiveDocument } from './LiveDocument'
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text nodes, and ProseMirror calls them on every change. */
@@ -45,8 +49,14 @@ type Commit = (saved: FileText & { content: string }, editedFrom: FileText) => P
 
 function mount(onCommit = vi.fn<Commit>(async () => true), onLeftUnsaved = vi.fn()) {
   const props = { format: 'marker' as const, changedBy: KATERINA, onCommit, onLeftUnsaved }
-  const view = render(<LiveDocument value="mine" {...props} />)
-  const arrive = (value: string) => view.rerender(<LiveDocument value={value} {...props} />)
+  // A card's pickers say a refused change in a toast.
+  const page = (value: string) => (
+    <ToastProvider>
+      <LiveDocument value={value} {...props} />
+    </ToastProvider>
+  )
+  const view = render(page('mine'))
+  const arrive = (value: string) => view.rerender(page(value))
   return { ...view, arrive, onCommit, onLeftUnsaved }
 }
 
@@ -161,6 +171,53 @@ describe('a table', () => {
     const reopened = await ready()
     expect(reopened.querySelectorAll('tr')).toHaveLength(3)
     expect(reopened.querySelector('th')?.textContent).toBe('Name')
+  })
+})
+
+describe('a project shown as its card in the page', () => {
+  const URI = 'nostr:naddr1project'
+  const lead = 'f3'.repeat(32)
+  const PROJECT = {
+    ref: 'r',
+    kind: 30850,
+    eventId: 'e',
+    widget: 'card',
+    address: `30850:${lead}:p`,
+    noun: 'project',
+    appName: 'Estiva Ship',
+    slots: { title: { value: 'Widgets 2: build 2' }, status: { value: 'Planned', colour: 'neutral', field: 'status' } },
+    meta: [{ label: 'Key', field: 'key', value: 'WBD' }],
+    actions: [{ id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'planned', options: [{ value: 'planned', label: 'Planned' }, { value: 'done', label: 'Done' }] }],
+    comments: [],
+    viaRecommendation: false,
+  }
+  it('has its Status picker while its writer is not in the text, and words while they are', async () => {
+    references.mockReturnValue({ [URI]: PROJECT })
+    // The page as saved with the link alone on its line, shown as its card.
+    const { onCommit } = mount()
+    const first = await ready()
+    enter(first)
+    act(() => void first.editor.chain().clearContent().insertContent({ type: 'reference', attrs: { uri: URI, embed: 'detailed' } }).run())
+    leave(first)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    const [{ content: value }] = onCommit.mock.calls[0]
+    cleanup()
+    render(
+      <ToastProvider>
+        <LiveDocument value={value} format="blocks" changedBy={KATERINA} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} />
+      </ToastProvider>,
+    )
+    const box = await ready()
+    // The writer's page is always editable: editable alone is not "being edited".
+    expect(box.editor.isEditable).toBe(true)
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull())
+    // A press on the picker is the picker's: the text does not take it (ProseMirror skips a press whose default is
+    // prevented), so the caret does not come in and turn the card to words under the pointer.
+    const status = screen.getByRole('combobox', { name: 'Status' })
+    expect(fireEvent.mouseDown(status.querySelector('span') ?? status)).toBe(false)
+    enter(box)
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull())
+    expect(screen.getByText('Planned')).toBeTruthy()
   })
 })
 
