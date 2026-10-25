@@ -1,8 +1,8 @@
 /**
  * A page under an archived page, at any depth, is read as archived with the
- * closest archived one above it (SPEC §6.5, PEEKM-2): its page is locked and
- * its card offers no pickers. Leaf's own reads, against a relay faked at
- * `query`; the walk itself is interop's.
+ * closest archived one above it (SPEC §6.5, PEEKM-2): `with` is the page a
+ * reader is sent to unarchive. Leaf's own read of a file by its address,
+ * against a relay faked at `query`; the walk itself is interop's.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
