@@ -62,8 +62,9 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const { showToast } = useToast()
   const own = isDocument(file)
   const writes = writableFields(file)
-  // Another app's file archived, itself or with its project or Folder: its fields wait for it to be unarchived in that
-  // app, its comments stay open (SPEC §6.5). Leaf's own pages are as before, with no Unarchive in Leaf (project Later list).
+  // Another app's file archived, itself or with the closest archived file above it at any depth (interop's walk,
+  // PEEKM-2): its fields wait for it to be unarchived in that app (SPEC §6.5). Leaf's own pages and the comment box are
+  // as before until PEEKM-8, with no Unarchive in Leaf (project Later list).
   const locked = !own && isArchived(file)
   const title = titleOf(file)
   const body = file.slots[BODY_SLOT]

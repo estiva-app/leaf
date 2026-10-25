@@ -11,7 +11,8 @@ const people = createPeopleCache()
 
 /**
  * One file, read again on its own: what the page shows after a change to it arrives, and a file opened by its address.
- * Archived with its project or Folder counts too, so a file reached directly is read-only as Ship draws it.
+ * Archived with the closest archived file above it, at any depth, counts too (SPEC §6.5), so a file reached directly
+ * is read-only as every app draws it.
  */
 export function readDocument(naddr: string): Promise<ForeignObject | null> {
   return resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { archivedWith: true })
