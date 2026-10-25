@@ -148,6 +148,29 @@ describe('the text a save was edited from', () => {
   })
 })
 
+describe('a link on words in a page', () => {
+  it('keeps its link through a save of another change (WBD-7)', async () => {
+    const HREF = 'https://example.com/docs'
+    const saved = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', id: 'a1', content: [{ type: 'text', text: 'Read ' }, { type: 'text', text: 'the docs', marks: [{ type: 'link', attrs: { href: HREF } }] }] }],
+    })
+    const onCommit = vi.fn<Commit>(async () => true)
+    render(
+      <ToastProvider>
+        <LiveDocument value={saved} format="blocks" changedBy={null} onCommit={onCommit} onLeftUnsaved={vi.fn()} />
+      </ToastProvider>,
+    )
+    const box = await ready()
+    type(box, ' first.')
+    leave(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    const { content } = onCommit.mock.calls[0][0]
+    expect(content).toContain(`"href":"${HREF}"`)
+    expect(content).toContain('first.')
+  })
+})
+
 describe('a table', () => {
   it('goes in from / → Insert → Table, and the saved text opens with it', async () => {
     const { onCommit } = mount()

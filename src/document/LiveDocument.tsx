@@ -25,9 +25,15 @@ import { FileCard } from '../comments/CommentFiles'
 import { MAX_LINKS_ASKED, askLinks, linkReferenceOf } from '../comments/links'
 import { useMentionPeople } from '../comments/people'
 
-/** A page's text as the shared editor reads and writes it: Leaf's saved text, a block document once saved. */
+/**
+ * A page's text as the shared editor reads and writes it: Leaf's saved text, a
+ * block document once saved. A link on words keeps its link through a save
+ * (§13.3, C23): with Ship's descriptions on the shared editor too (WBD-7), it
+ * is the only editor of a document's text (Peek edits none), the condition
+ * WBD-1 set for turning it on.
+ */
 const CODEC: DocumentCodec = {
-  read: (value, format) => toEditorDocument(documentForEditing(value, format as ContentFormat)),
+  read: (value, format) => toEditorDocument(documentForEditing(value, format as ContentFormat), { links: true }),
   write: (doc) => publishableFromEditor(doc as EditorDocument),
 }
 
@@ -40,8 +46,8 @@ const REFERENCES = { sections: referenceSections, subscribe: subscribeReferences
 /** A pasted app URL becomes its file's chip, as in Leaf's comments (`LinkChips`, §7.7). */
 const LINK_CHIPS = { referenceOf: linkReferenceOf, ask: askLinks, limit: MAX_LINKS_ASKED }
 
-/** Markdown pasted as plain text lands as the blocks it spells, tables included, read as the agent reads a description (LEAF-10). */
-const readMarkdown = (text: string) => toEditorDocument(descriptionTextToBlockDocument(text))
+/** Markdown pasted as plain text lands as the blocks it spells, tables and links on words included, read as the agent reads a description (LEAF-10). */
+const readMarkdown = (text: string) => toEditorDocument(descriptionTextToBlockDocument(text), { links: true })
 
 /** A file in the text — a picture is one — as the kit's card, as Ship's description draws it: a picture opens full size (115c8229). */
 function PageFile({ attrs }: AttachmentViewProps) {
