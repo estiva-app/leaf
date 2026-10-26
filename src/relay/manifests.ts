@@ -1,5 +1,12 @@
+import { createProjectionCache } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { query } from './bridge'
+
+/**
+ * Every resolve's manifest cache, one per tab: the tree, the page and its references open together, so one cache
+ * asks a manifest once while it is in flight instead of once per reader (APP-2).
+ */
+export const projections = createProjectionCache()
 
 /** The manifests apps publish (kind 31990), read once per tab; an empty or failed read is asked again next time. */
 let manifests: Promise<SignedEvent[]> | null = null
