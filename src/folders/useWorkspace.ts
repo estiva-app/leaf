@@ -1,6 +1,6 @@
-import type { FolderContents, FolderSummary, ForeignObject } from '@estiva-app/interop'
+import type { FolderContents, FolderSummary, ForeignObject, QueryFn } from '@estiva-app/interop'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { readChildren, readFolder, readFolders } from './workspace'
+import { loadQuery, readChildren, readFolder, readFolders } from './workspace'
 
 /** One Folder in the tree: its contents once read, or why they could not be. */
 export interface WorkspaceFolder {
@@ -40,10 +40,10 @@ export function useWorkspace(): Workspace {
 
   // Each Folder's latest read, so an older read that lands late never replaces a newer one.
   const latest = useRef(new Map<string, number>())
-  const readInto = useCallback(async (folder: FolderSummary) => {
+  const readInto = useCallback(async (folder: FolderSummary, read: QueryFn = loadQuery()) => {
     const turn = (latest.current.get(folder.id) ?? 0) + 1
     latest.current.set(folder.id, turn)
-    const next: WorkspaceFolder = await readFolder(folder.id).then(
+    const next: WorkspaceFolder = await readFolder(folder.id, read).then(
       (contents) => ({ folder, contents }),
       () => ({ folder, contents: null, failed: true }),
     )
@@ -52,9 +52,11 @@ export function useWorkspace(): Workspace {
   }, [])
 
   const reload = useCallback(async () => {
+    // One load: the listing and every Folder's read share what they have read.
+    const read = loadQuery()
     let listing: FolderSummary[]
     try {
-      listing = await readFolders()
+      listing = await readFolders(read)
     } catch {
       setFailed(true)
       return
@@ -64,7 +66,7 @@ export function useWorkspace(): Workspace {
     setFolders((before) =>
       listing.map((folder) => ({ folder, contents: before?.find((f) => f.folder.id === folder.id)?.contents ?? null })),
     )
-    await Promise.all(listing.map(readInto))
+    await Promise.all(listing.map((folder) => readInto(folder, read)))
   }, [readInto])
 
   /** Read one Folder again — the one a new document went in — leaving the rest as read. */

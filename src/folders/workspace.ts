@@ -1,6 +1,6 @@
 import {
+  createLoadQuery,
   createPeopleCache,
-  createProjectionCache,
   listFolders,
   planPlaceFile,
   resolveFolderContents,
@@ -9,30 +9,40 @@ import {
   type FolderContents,
   type FolderSummary,
   type ForeignObject,
+  type QueryFn,
 } from '@estiva-app/interop'
 import { buildDocument, encodeNaddr, KIND, type PublishResult } from '@estiva-app/protocol'
 import { summaryText } from '../document/summary'
 import { publish, query, viewerPubkey } from '../relay/bridge'
+import { projections as manifests } from '../relay/manifests'
 
 /*
   Leaf's reads of the workspace: the same interop calls Peek's and Ship's trees
   make, so a Folder holds the same files in all three. The caches are the
   manifests and the names, which every Folder's read shares.
 */
-export const manifests = createProjectionCache()
 const people = createPeopleCache()
+
+/**
+ * One load of the tree's reads: the listing and every Folder's contents read
+ * each file's changes once between them (APP-2). Make one per load and drop
+ * it, so a reload reads afresh.
+ */
+export function loadQuery(): QueryFn {
+  return createLoadQuery(query)
+}
 
 /**
  * The Folders the tree shows: every Folder this person can read, as Peek's
  * Folders view does (Miky, LEAF-2's kickoff) — not only the ones they joined.
  */
-export async function readFolders(): Promise<FolderSummary[]> {
-  return topLevelFolders(await listFolders(query))
+export async function readFolders(read: QueryFn = query): Promise<FolderSummary[]> {
+  return topLevelFolders(await listFolders(read))
 }
 
 /** Everything in one Folder, whichever app owns it. Throws when it could not be read. */
-export function readFolder(id: string): Promise<FolderContents> {
-  return resolveFolderContents(id, query, people.viaRelay(query), manifests)
+export function readFolder(id: string, read: QueryFn = query): Promise<FolderContents> {
+  return resolveFolderContents(id, read, people.viaRelay(read), manifests)
 }
 
 /**

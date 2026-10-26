@@ -1,12 +1,12 @@
-import { createPeopleCache, createProjectionCache, resolveForeignObject, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
+import { createPeopleCache, resolveForeignObject, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
 import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
+import { projections as manifests } from '../relay/manifests'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
 export const CHANGE = 1851
 
-const manifests = createProjectionCache()
 const people = createPeopleCache()
 
 /**

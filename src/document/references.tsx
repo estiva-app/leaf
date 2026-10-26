@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useReducer } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
-import { createPeopleCache, createProjectionCache, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
+import { createPeopleCache, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
 import { query } from '../relay/bridge'
+import { projections as manifests } from '../relay/manifests'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
 export type Resolved = Record<string, ForeignObject | null | undefined>
 
-const manifests = createProjectionCache()
 const people = createPeopleCache()
 const known: Resolved = {}
 /** A failed read is asked again this many times, after 5, 10 and 20 seconds. */
