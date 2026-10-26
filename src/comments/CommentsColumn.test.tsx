@@ -909,6 +909,48 @@ describe('attaching a file to a comment (COMM-6)', () => {
     ])
   })
 
+  /* A file added while editing (Miky, 26 Oct, PEEKM-4): the edit box opens with the comment's own, and the save writes the whole set. */
+  it('adds a picture while editing your comment, and the edit names it beside the file it had, by imeta', async () => {
+    blobs.upload.mockResolvedValue({ ok: true, file: PNG })
+    const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], 'The plan'), pubkey: ME }
+    await open([own])
+    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
+    await waitFor(() => expect(row()).not.toBeNull())
+    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
+    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    let at: HTMLElement | null = box('Edit message')
+    while (at && !at.querySelector('input[type=file]')) at = at.parentElement
+    expect(within(at!).getByText('plan.pdf')).toBeTruthy()
+    act(() => void fireEvent.change(at!.querySelector('input[type=file]')!, { target: { files: [new File(['png'], 'shot.png', { type: 'image/png' })] } }))
+    await waitFor(() => expect(within(at!).getByText('shot.png')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content]).toEqual([40003, 'The plan'])
+    expect(e.tags.filter((t) => t[0] === 'imeta').map((t) => t.find((part) => part.startsWith('x ')))).toEqual([`x ${PDF.x}`, `x ${PNG.x}`])
+  })
+
+  it('takes one of two files off while editing your comment, and the edit names only the one kept, by imeta', async () => {
+    const imeta = (f: typeof PNG) => ['imeta', `url ${f.url}`, `m ${f.m}`, `x ${f.x}`, `size ${f.size}`, `filename ${f.filename}`]
+    const own: SignedEvent = { ...comment([imeta(PDF), imeta(PNG)], 'The plan'), pubkey: ME }
+    await open([own])
+    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
+    await waitFor(() => expect(row()).not.toBeNull())
+    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
+    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    let at: HTMLElement | null = box('Edit message')
+    while (at && !at.querySelector('input[type=file]')) at = at.parentElement
+    act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove shot.png' })))
+    await waitFor(() => expect(within(at!).queryByText('shot.png')).toBeNull())
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content]).toEqual([40003, 'The plan'])
+    expect(e.tags.filter((t) => t[0] === 'imeta').map((t) => t.find((part) => part.startsWith('x ')))).toEqual([`x ${PDF.x}`])
+  })
+
   it('says why a file did not upload, keeps the words, sends nothing on Enter, and sends the words once its ✕ takes it off', async () => {
     blobs.upload.mockResolvedValue({ ok: false, reason: 'Too large' })
     await open([])

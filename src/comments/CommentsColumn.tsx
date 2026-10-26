@@ -244,6 +244,15 @@ function Box({
   const under = useMemo(() => (isEdit ? undefined : boxUnder(here)), [isEdit, here])
   const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
     const attached = filesOf(files)
+    if (editing) {
+      // A file added or taken off while editing (Miky, 26 Oct, PEEKM-4) rides the edit as the whole set, only when it changed.
+      // An edit with no `imeta` leaves the set as it was, so no edit can take the last one off.
+      const before = editing.comment.files
+      if (attached.length === 0 && before.length > 0) return { accepted: false, reason: 'the last file cannot be taken off a comment yet' }
+      const same = attached.length === before.length && attached.every((file, i) => file.x === before[i].x)
+      const result = await onSend({ ...composerText(body as EditorDocument), ...(same ? {} : { files: attached }) })
+      return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
+    }
     // What was under the box as it was sent: the card unless ✕ took it off, and the parts as they read now.
     const parts = under ? boxReadOf(body as EditorDocument, { resolveLink: knownLinkValue, blockOf: knownBlockOf, here }).parts : []
     const cards = under ? embedsToSend({ card: shown.card }, new Set()) : []
@@ -277,7 +286,14 @@ function Box({
         : []),
     ]
   })
-  const edit = editing && opened ? { body: opened, onCancel: editing.onCancel, onSave: (body: JSONContent) => send(body) } : undefined
+  // The comment's own files show in the edit box and can be taken off; more can be added, since the save writes them.
+  const [editFiles] = useState<BoxFile[] | undefined>(() =>
+    editing?.comment.files.map((file, i) => ({ id: `kept-${i}`, name: file.filename ?? file.alt ?? 'file', size: file.size, contentType: file.m, state: 'ready', value: file })),
+  )
+  const edit =
+    editing && opened
+      ? { body: opened, files: editFiles, writesFiles: true, onCancel: editing.onCancel, onSave: (body: JSONContent, files: BoxFile[]) => send(body, files) }
+      : undefined
   return (
     <CommentBox
       label={placeholder}
@@ -558,8 +574,8 @@ function CommentLine({
           )}
         </>
       )}
-      {/* Under the edit box too: an edit leaves a comment's files as they are. */}
-      <CommentFiles files={comment.files} />
+      {/* While editing, the files are in the edit box, where they can be taken off. */}
+      {!(editing && own) && <CommentFiles files={comment.files} />}
       {confirming && own && <ConfirmDeleteComment own={own} onClose={() => setConfirming(false)} />}
       <ReactionRow reactions={reactions} options={REACTION_OPTIONS} nameOf={(pubkey) => named(pubkey) ?? 'Someone'} viewer={viewer} onToggle={onReact ? (emoji) => void toggle(emoji) : undefined} className="pt-1" />
       {refused && <FieldLine tone="error">Not reacted: {refused}.</FieldLine>}

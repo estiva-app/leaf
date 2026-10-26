@@ -27,6 +27,7 @@ import {
   embedsOf,
   embedTagsOf,
   imetaOf,
+  imetaTag,
   partTag,
   quoteOf,
   quoteTag,
@@ -201,7 +202,7 @@ export interface Anchor {
 export interface Written {
   text: string
   urgent?: readonly string[]
-  /** Uploaded before the send: the relay refuses a comment naming a file it does not hold. An edit leaves a comment's files as they are. */
+  /** Uploaded before the send: the relay refuses a comment naming a file it does not hold. An edit's only when it changed them: the whole set after it. */
   files?: readonly Imeta[]
   /** The card shown under the box as it was sent (`embed`, §13.6.2): none after ✕. A new comment's only. */
   cards?: readonly Embed[]
@@ -276,19 +277,21 @@ const NOT_SAVED = 'it did not go through'
 /**
  * Your comment or reply, reworded: the `kind:40003` Peek and Ship write (SPEC
  * §6.8), in the Folder the comment was filed in. It carries no `block` or
- * `quote`, so the comment stays where it is, and no `imeta`, so its files stay
- * as they are, as Ship's edit does.
+ * `quote`, so the comment stays where it is. A file added or taken off while
+ * editing (Miky, 26 Oct, PEEKM-4) rides it as the whole `imeta` set; with no
+ * `written.files` it carries none, so its files stay as they are.
  */
 export function editComment(comment: CommentItem, written: Written): Promise<WriteResult> {
-  return sendEdit(comment, written.text)
+  return sendEdit(comment, written.text, undefined, written.files)
 }
 
-/** A `kind:40003` on `comment`, in the Folder it was filed in: its new body, and its whole card set when that changes. */
-function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[]): Promise<WriteResult> {
+/** A `kind:40003` on `comment`, in the Folder it was filed in: its new body, and its whole card set and file set when either changes. */
+function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[], files?: readonly Imeta[]): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
   if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
-  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...(embeds ? { embeds } : {}) }) : null, NOT_SAVED, SIGNED_OUT)
+  const changes = { ...(embeds ? { embeds } : {}), ...(files ? { mediaTags: files.map(imetaTag) } : {}) }
+  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...changes }) : null, NOT_SAVED, SIGNED_OUT)
 }
 
 /**
