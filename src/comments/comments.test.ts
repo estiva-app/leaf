@@ -107,6 +107,12 @@ describe('a comment from the column', () => {
     expect(imetaOfSent()).toEqual([imetaTag(kept)])
   })
 
+  it('an edit that takes every file off writes no imeta, not the files the comment had', async () => {
+    const root = comment([], 'Too long?')
+    expect(await editComment({ ...itemOf(root), files: [kept] }, { text: 'Too long?', files: [] })).toEqual({ ok: true })
+    expect(imetaOfSent()).toEqual([])
+  })
+
   it('✕ on a sent card still lists the files the comment has', async () => {
     const root = comment([], 'See it')
     expect(await removeCard({ ...itemOf(root), files: [kept], cards: [{ value: ADDRESS, layout: 'detailed' }] }, ADDRESS)).toEqual({ ok: true })
