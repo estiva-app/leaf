@@ -92,6 +92,17 @@ describe('a comment from the column', () => {
     expect(e.content).toBe('Far too long?')
     expect(e.tags).toEqual(expect.arrayContaining([['h', 'another-folder'], ['e', root.id]]))
     expect(e.tags.some((t) => t[0] === 'block' || t[0] === 'quote')).toBe(false)
+    // No files given: no `imeta`, so the comment's files stay as they are.
+    expect(e.tags.some((t) => t[0] === 'imeta')).toBe(false)
+  })
+
+  it('writes a file set an edit changed as the whole set, on the same kind:40003 (PEEKM-4)', async () => {
+    const root = comment([['h', 'another-folder']], 'Too long?')
+    const files = ['a', 'c'].map((c) => ({ url: `/media/${c.repeat(64)}.png`, m: 'image/png', x: c.repeat(64), size: 10 }))
+    expect(await editComment(itemOf(root), { text: 'Too long?', files })).toEqual({ ok: true })
+    const e = sent()
+    expect(e.kind).toBe(40003)
+    expect(e.tags.filter((t) => t[0] === 'imeta').map((t) => t.find((part) => part.startsWith('x ')))).toEqual([`x ${'a'.repeat(64)}`, `x ${'c'.repeat(64)}`])
   })
 
   it('deletes your comment with a kind:5 naming it', async () => {
