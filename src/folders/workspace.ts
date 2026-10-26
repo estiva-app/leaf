@@ -21,7 +21,6 @@ import { projections as manifests } from '../relay/manifests'
   make, so a Folder holds the same files in all three. The caches are the
   manifests and the names, which every Folder's read shares.
 */
-export { manifests }
 const people = createPeopleCache()
 
 /**

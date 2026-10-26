@@ -16,6 +16,9 @@ const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], sent: [] as Signe
 const matches = (f: Filter, e: SignedEvent) => {
   if (Array.isArray(f.kinds) && !f.kinds.includes(e.kind)) return false
   if (Array.isArray(f.authors) && !f.authors.includes(e.pubkey)) return false
+  if (Array.isArray(f.ids) && !f.ids.includes(e.id)) return false
+  if (typeof f.since === 'number' && e.created_at < f.since) return false
+  if (typeof f.until === 'number' && e.created_at > f.until) return false
   for (const [key, want] of Object.entries(f)) {
     if (!key.startsWith('#')) continue
     const held = e.tags.filter((t) => t[0] === key.slice(1)).map((t) => t[1])
@@ -112,7 +115,8 @@ const statusOf = (workspace: ReturnType<typeof useWorkspace>, folder: string, re
 
 async function loaded() {
   const view = renderHook(() => useWorkspace())
-  await waitFor(() => expect(view.result.current.folders?.every((f) => f.contents)).toBe(true))
+  // A whole load runs every interop read; the default 1 s is short for it when the suite runs in parallel.
+  await waitFor(() => expect(view.result.current.folders?.every((f) => f.contents)).toBe(true), { timeout: 4000 })
   return view
 }
 

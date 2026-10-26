@@ -19,7 +19,7 @@ import { fileCandidates, searchFileReferences, type ForeignObject } from '@estiv
 import { KIND, decodeNpub, findNostrUris } from '@estiva-app/protocol'
 import { KindIcon, thingKindOf } from '@estiva-app/ui'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
-import { manifests } from '../folders/workspace'
+import { projections as manifests } from '../relay/manifests'
 import { query } from '../relay/bridge'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
