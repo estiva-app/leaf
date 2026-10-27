@@ -72,6 +72,19 @@ describe('the Folders tree', () => {
     expect(groupsOf([folder(null)], none)![0].nodes).toBeNull()
   })
 
+  it('lets a page open only when a page is filed under it', () => {
+    const D2 = 'a1b2c3d4-0000-4000-8000-00000000000b'
+    const top = file({ ref: 'p', naddr: 'naddr1p', address: `30842:${A}:${D}`, listsChildren: true, slots: { title: { value: 'Brief' } } })
+    const alone = file({ ref: 'q', naddr: 'naddr1q', address: `30842:${A}:${D2}`, listsChildren: true, slots: { title: { value: 'Notes' } } })
+    const under = file({ ref: 'u', naddr: 'naddr1u', address: `30842:${A}:u`, parentRef: `30842:${A}:${D}`, listsChildren: true, slots: { title: { value: 'Minutes' } } })
+    const [brief, notes] = groupsOf([folder([top, alone, under])], none)![0].nodes!
+    expect(brief.children?.map((n) => n.label)).toEqual(['Minutes'])
+    expect(brief.children?.[0].hasChildren).toBeFalsy()
+    expect(brief.children?.[0].children).toBeUndefined()
+    expect(notes.hasChildren).toBeFalsy()
+    expect(notes.children).toBeUndefined()
+  })
+
   it("reads a project's issues when its row opens, and finds an issue opened from there", () => {
     const project = shipProject()
     const issue = shipIssue()

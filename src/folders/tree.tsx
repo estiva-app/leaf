@@ -54,8 +54,9 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
   }
   const nested = nestedUnder(file).map((c) => nodeOf(c, nestedUnder, expansion))
   // A file whose app lists its own children — a project its issues — reads them when the row opens,
-  // and draws them after anything filed under it in the Folder.
-  if (!file.listsChildren) return nested.length ? { ...node, children: nested } : node
+  // and draws them after anything filed under it in the Folder. A page's children are pages filed in
+  // its Folder, already nested above, so it opens only when there are some (LFB-4).
+  if (!file.listsChildren || isDocument(file)) return nested.length ? { ...node, children: nested } : node
   const read = expansion.children[file.ref]
   const listed = Array.isArray(read) ? read.filter(isListed).map((c) => nodeOf(c, () => [], expansion)) : undefined
   return {
