@@ -12,6 +12,7 @@ import {
   embedsToSend,
   groupReactions,
   offersEditAndDelete,
+  openingWords,
   REACTION_EMOJI,
   REACTION_HORIZON,
   type DraftStore,
@@ -56,7 +57,7 @@ import {
   type UploadAnswer,
 } from '@estiva-app/ui/editor'
 import { nameOf } from '../document/save'
-import { commentReferenceSections, snippetOf, subscribeReferences, type ReferableComment } from '../document/referencePicker'
+import { commentReferenceSections, subscribeReferences, type ReferableComment } from '../document/referencePicker'
 import { ReferencesProvider, useReferences } from '../document/references'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
@@ -603,7 +604,7 @@ function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pub
   return (
     <Card className="flex items-center gap-2 px-3 py-2" data-comment-row={quoted.id}>
       <IconMessage size={16} stroke={1.5} />
-      <span className="truncate text-body-2 text-text-secondary">{`${nameOf(quoted.by) ?? 'Someone'}: ${snippetOf(quoted.body, nameOf)}`}</span>
+      <span className="truncate text-body-2 text-text-secondary">{`${nameOf(quoted.by) ?? 'Someone'}: ${openingWords(quoted.body, nameOf)}`}</span>
     </Card>
   )
 }
@@ -630,7 +631,7 @@ function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; ur
     const id = eventIdOf(uri)
     const quoted = id ? page.find((c) => c.id === id) : undefined
     if (quoted) {
-      const words = `${nameOf(quoted.by) ?? 'Someone'}: ${snippetOf(quoted.body, nameOf)}`
+      const words = `${nameOf(quoted.by) ?? 'Someone'}: ${openingWords(quoted.body, nameOf)}`
       return (
         <WithTooltip inline label={words}>
           <InlineChip tone="neutral" icon={<IconMessage size={14} stroke={1.5} />} className="max-w-full">

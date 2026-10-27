@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { renderHook, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { namedProfilesOf, rosterOf } from '@estiva-app/conversation'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { directoryOf, mentionablesOf, namedProfilesOf, rosterOf } from './people'
+import { directoryOf, useMentionPeople } from './people'
 
 const ME = 'a'.repeat(64)
 const QA2 = 'c'.repeat(64)
@@ -10,20 +12,32 @@ const event = (kind: number, pubkey: string, content: string, tags: string[][] =
 const profile = (pubkey: string, name: string) => event(0, pubkey, JSON.stringify({ name }))
 const roster = event(13534, 'd'.repeat(64), '', [['member', ME], ['member', QA2]])
 
-describe('who @ offers in a comment', () => {
-  const events = [roster, profile(ME, 'QA-1'), profile(QA2, 'QA-2'), profile(LEFT, 'Gone')]
+// The relay as Leaf reads it: every profile for `kinds: [0]`, the roster for its kind; signed in as ME.
+vi.mock('../relay/bridge', () => ({
+  viewerPubkey: () => ME,
+  query: async (filters: { kinds?: number[] }[]) => {
+    const kinds = filters.flatMap((f) => f.kinds ?? [])
+    return [roster, profile(ME, 'QA-1'), profile(QA2, 'QA-2'), profile(LEFT, 'Gone')].filter((e) => kinds.includes(e.kind))
+  },
+}))
 
-  it('offers the people on the roster with a name, never you and never someone off the roster', () => {
-    expect(mentionablesOf(namedProfilesOf(events), rosterOf(events), ME).map((p) => p.pubkey)).toEqual([QA2])
+describe('whom @ offers in a comment', () => {
+  async function offered(): Promise<string[]> {
+    const view = renderHook(() => useMentionPeople())
+    await waitFor(() => expect(view.result.current.people.map((p) => p.name)).toContain('QA-2'))
+    return view.result.current.people.map((p) => p.name)
+  }
+
+  it('does not offer a named profile that is not on the roster', async () => {
+    expect(await offered()).not.toContain('Gone')
   })
 
-  it('offers every named profile but you when the relay gives no roster', () => {
-    const noRoster = events.filter((e) => e.kind === 0)
-    expect(mentionablesOf(namedProfilesOf(noRoster), rosterOf(noRoster), ME).map((p) => p.name)).toEqual(['Gone', 'QA-2'])
+  it('does not offer the signed-in viewer, though they are on the roster with a name', async () => {
+    expect(await offered()).not.toContain('QA-1')
   })
 
-  it('still names someone who left the roster, so a mention of them reads as their name', () => {
-    expect(namedProfilesOf(events).get(LEFT)?.name).toBe('Gone')
+  it('offers the other named members of the roster', async () => {
+    expect(await offered()).toEqual(['QA-2'])
   })
 })
 

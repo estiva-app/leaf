@@ -1,74 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { KIND_MEMBERSHIP_LIST, mentionablePeople, namedProfilesOf, rosterOf, type NamedProfile } from '@estiva-app/conversation'
 import { Avatar } from '@estiva-app/ui'
 import type { MentionPerson } from '@estiva-app/ui/editor'
 import { query, viewerPubkey } from '../relay/bridge'
 
 /**
- * Who `@` and `!@` offer in a comment: the workspace's people, as Peek's
- * `mentionablePeopleOf` and Ship's `mentionPeople` have them. The relay's
- * roster (NIP-43's `kind:13534`) narrowed to the keys with a named profile —
- * the roster also lists keys that are not people, and a shortened key is
- * nobody a person can pick — agents included, since mentioning one is how you
- * ask it something, and never the viewer.
+ * Who `@` and `!@` offer in a comment: the workspace's people, by the rule
+ * Peek and Ship use too (`mentionablePeople`, PEEKM-6) — the relay's roster
+ * (NIP-43's `kind:13534`) narrowed to the keys with a named profile, agents
+ * included, never the viewer, by name. Leaf reads the two itself; the package
+ * maps them.
  */
-
-/** NIP-43's relay membership list. */
-const KIND_MEMBERSHIP_LIST = 13534
-
-/** A person `@` can name: their key, their name, and their face when they have one. */
-export interface Mentionable {
-  pubkey: string
-  name: string
-  picture?: string
-}
-
-/**
- * Every named profile, newest `kind:0` per key. Not narrowed to the roster:
- * this answers "what is this key called", which a mention of someone who has
- * left still needs answered, as Peek's `profilesOf` does.
- */
-export function namedProfilesOf(events: readonly SignedEvent[]): Map<string, Mentionable> {
-  const newest = new Map<string, SignedEvent>()
-  for (const e of events) {
-    if (e.kind !== 0) continue
-    const seen = newest.get(e.pubkey)
-    if (!seen || e.created_at > seen.created_at) newest.set(e.pubkey, e)
-  }
-  const out = new Map<string, Mentionable>()
-  for (const [pubkey, event] of newest) {
-    let content: { display_name?: unknown; name?: unknown; picture?: unknown }
-    try {
-      content = JSON.parse(event.content) as typeof content
-    } catch {
-      continue
-    }
-    const name = [content.display_name, content.name].find((n): n is string => typeof n === 'string' && n.trim() !== '')
-    if (!name) continue
-    out.set(pubkey, { pubkey, name, ...(typeof content.picture === 'string' && content.picture ? { picture: content.picture } : {}) })
-  }
-  return out
-}
-
-/** The newest roster's members, or `null` when there is none to read: then every profile is offered, as Peek does. */
-export function rosterOf(events: readonly SignedEvent[]): Set<string> | null {
-  const roster = events.filter((e) => e.kind === KIND_MEMBERSHIP_LIST).sort((a, b) => b.created_at - a.created_at)[0]
-  return roster ? new Set(roster.tags.filter((t) => (t[0] === 'member' || t[0] === 'p') && typeof t[1] === 'string').map((t) => t[1])) : null
-}
-
-/** Who `@` offers: the named profiles on the roster, never the viewer, by name. */
-export function mentionablesOf(profiles: ReadonlyMap<string, Mentionable>, members: ReadonlySet<string> | null, me: string | null): Mentionable[] {
-  return [...profiles.values()]
-    .filter((p) => p.pubkey !== me && (!members || members.has(p.pubkey)))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
-}
 
 /**
  * Whom a card's owner picker offers (a lead, an assignee), as Peek's and
  * Ship's cards have their workspace's people: the named profiles on the
  * roster, the viewer included, since taking it yourself is a choice.
  */
-export function directoryOf(profiles: ReadonlyMap<string, Mentionable>, members: ReadonlySet<string> | null): Record<string, { displayName: string; picture?: string }> {
+export function directoryOf(profiles: ReadonlyMap<string, NamedProfile>, members: ReadonlySet<string> | null): Record<string, { displayName: string; picture?: string }> {
   return Object.fromEntries(
     [...profiles.values()]
       .filter((p) => !members || members.has(p.pubkey))
@@ -77,8 +26,8 @@ export function directoryOf(profiles: ReadonlyMap<string, Mentionable>, members:
 }
 
 interface Known {
-  offered: Mentionable[]
-  profiles: ReadonlyMap<string, Mentionable>
+  offered: NamedProfile[]
+  profiles: ReadonlyMap<string, NamedProfile>
   members: ReadonlySet<string> | null
 }
 
@@ -98,7 +47,7 @@ function readPeople(): Promise<void> {
   reading ??= Promise.all([query([{ kinds: [0], limit: 500 }]), query([{ kinds: [KIND_MEMBERSHIP_LIST], limit: 1 }]).then(rosterOf, () => null)])
     .then(([events, members]) => {
       const profiles = namedProfilesOf(events)
-      known = { offered: mentionablesOf(profiles, members, viewerPubkey()), profiles, members }
+      known = { offered: mentionablePeople(profiles.values(), members, viewerPubkey()), profiles, members }
     })
     .finally(() => {
       reading = null
