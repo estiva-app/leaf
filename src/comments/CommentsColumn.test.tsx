@@ -951,6 +951,42 @@ describe('attaching a file to a comment (COMM-6)', () => {
     expect(e.tags.filter((t) => t[0] === 'imeta').map((t) => t.find((part) => part.startsWith('x ')))).toEqual([`x ${PDF.x}`])
   })
 
+  it('takes the only file off while editing your comment, and the edit names none, which takes it off (SPEC §6.8)', async () => {
+    const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], 'The plan'), pubkey: ME }
+    await open([own])
+    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
+    await waitFor(() => expect(row()).not.toBeNull())
+    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
+    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    let at: HTMLElement | null = box('Edit message')
+    while (at && !at.querySelector('input[type=file]')) at = at.parentElement
+    act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove plan.pdf' })))
+    await waitFor(() => expect(within(at!).queryByText('plan.pdf')).toBeNull())
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content]).toEqual([40003, 'The plan'])
+    expect(e.tags.filter((t) => t[0] === 'imeta')).toEqual([])
+    expect(screen.queryByText(/cannot be taken off/)).toBeNull()
+  })
+
+  it('refuses taking the only file off a comment with no words, and publishes nothing: Delete removes it', async () => {
+    const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], ''), pubkey: ME }
+    await open([own])
+    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
+    await waitFor(() => expect(row()).not.toBeNull())
+    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
+    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    let at: HTMLElement | null = box('Edit message')
+    while (at && !at.querySelector('input[type=file]')) at = at.parentElement
+    act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove plan.pdf' })))
+    await waitFor(() => expect(within(at!).queryByText('plan.pdf')).toBeNull())
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    expect(await screen.findByText(/a message needs words or a file/)).toBeTruthy()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   it('says why a file did not upload, keeps the words, sends nothing on Enter, and sends the words once its ✕ takes it off', async () => {
     blobs.upload.mockResolvedValue({ ok: false, reason: 'Too large' })
     await open([])

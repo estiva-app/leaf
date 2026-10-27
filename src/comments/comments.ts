@@ -56,7 +56,7 @@ export interface CommentItem {
   body: string
   /** An edit changed the body. */
   edited: boolean
-  /** Its files now: its own `imeta`, replaced by the latest edit carrying any (SPEC §6.8). */
+  /** Its files now: its own `imeta`, replaced by the latest edit's, an edit with none taking them all off (SPEC §6.8). */
   files: Imeta[]
   /** Its cards now (`embed`, §13.6.2): its own, replaced by the latest edit carrying any, as Peek and Ship fold them. */
   cards: Embed[]

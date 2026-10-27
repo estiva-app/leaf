@@ -245,6 +245,14 @@ describe("a document's threads", () => {
     expect(threads[0].replies[0].files?.map((f) => f.filename)).toEqual(['d.png'])
   })
 
+  it('reads a comment whose edit lists no files as having none (SPEC §6.8)', async () => {
+    const imeta = (name: string) => ['imeta', `url https://relay.test/${name}`, 'm image/png', `x ${name[0].repeat(64)}`, 'size 7909', `filename ${name}`]
+    const root = comment([imeta('a.png')], 'One shot')
+    relay.events = [root, event(40003, [['h', FOLDER], ['e', root.id], ['ts', '1']], 'One shot', ME)]
+    const { threads } = await readThreads(DOC)
+    expect(threads[0].root?.files).toEqual([])
+  })
+
   it("keeps a deleted comment's replies, without it, on the place they copied from it", async () => {
     const root = comment([['block', 'b1', 'b2'], ['quote', 'the plan']], 'Too long?')
     const first = reply(root, [['block', 'b1', 'b2'], ['quote', 'the plan']], 'Cut it')
