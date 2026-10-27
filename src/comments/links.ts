@@ -17,20 +17,8 @@ import { query } from '../relay/bridge'
 import { declaredManifests } from '../relay/manifests'
 import { referenceOfValue } from './commentLines'
 
-/**
- * The reader keeps the manifests it was handed for its life: an empty read
- * (signed in before any app published, or a relay that answered nothing) is
- * said as a failure, so it is asked again rather than leave every link naming
- * nothing for the tab.
- */
-async function manifests() {
-  const found = await declaredManifests()
-  if (found.length === 0) throw new Error('No app manifest read yet; asked again later.')
-  return found
-}
-
-/** The tab's link reader. */
-export const links = linkReader({ query, manifests })
+/** The tab's link reader. An empty manifest read is asked again, by `declaredManifests` and by the reader (interop 0.69). */
+export const links = linkReader({ query, manifests: declaredManifests })
 
 /** The chip a pasted app URL becomes (`LinkChips`' `referenceOf`): its file's, a block link's too. Leaf draws files, not another app's messages. */
 export function linkReferenceOf(url: string): string | undefined {
