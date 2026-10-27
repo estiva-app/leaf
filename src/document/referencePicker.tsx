@@ -14,9 +14,9 @@
  * landing tells the open list to draw again ({@link subscribeReferences}).
  */
 import { useEffect } from 'react'
-import { FILE_TIER, KIND_COMMENT, MESSAGE_TIER, messageReference, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
+import { FILE_TIER, KIND_COMMENT, MESSAGE_TIER, messageReference, openingWords, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
 import { fileCandidates, searchFileReferences, type ForeignObject } from '@estiva-app/interop'
-import { KIND, decodeNpub, findNostrUris } from '@estiva-app/protocol'
+import { KIND } from '@estiva-app/protocol'
 import { KindIcon, thingKindOf } from '@estiva-app/ui'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
 import { projections as manifests } from '../relay/manifests'
@@ -94,20 +94,6 @@ export interface ReferableComment {
   body: string
 }
 
-/** A comment's opening words as a row's caption, as Ship's `snippetOf`: marks gone, a person by name, any other pointer dropped. */
-export function snippetOf(body: string, nameOf: (pubkey: string) => string | undefined): string {
-  const text = body.replace(/nostr:[a-z0-9]+/gi, (uri) => {
-    const found = findNostrUris(uri)[0]
-    if (!found?.startsWith('nostr:npub1')) return found ? '' : uri
-    try {
-      return `@${nameOf(decodeNpub(found)) ?? 'someone'}`
-    } catch {
-      return ''
-    }
-  })
-  return text.replace(/\*\*|__|[*`]/g, '').replace(/^\s*(?:#{1,6}|>|[-*]|\d+\.)\s+/gm, '').replace(/\s+/g, ' ').trim()
-}
-
 const messageRows = (comments: readonly ReferableComment[], tier: number, nameOf: (pubkey: string) => string | undefined): ReferenceCandidate[] =>
   comments.map((c) => ({
     id: c.id,
@@ -115,7 +101,8 @@ const messageRows = (comments: readonly ReferableComment[], tier: number, nameOf
     type: 'message' as const,
     kind: KIND_COMMENT,
     title: nameOf(c.by) ?? 'Someone',
-    caption: snippetOf(c.body, nameOf),
+    // A comment's opening words, read as Peek and Ship read them (PEEKM-6).
+    caption: openingWords(c.body, nameOf),
     search: c.body,
     tier,
     at: c.at,
