@@ -971,6 +971,22 @@ describe('attaching a file to a comment (COMM-6)', () => {
     expect(screen.queryByText(/cannot be taken off/)).toBeNull()
   })
 
+  it('refuses taking the only file off a comment with no words, and publishes nothing: Delete removes it', async () => {
+    const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], ''), pubkey: ME }
+    await open([own])
+    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
+    await waitFor(() => expect(row()).not.toBeNull())
+    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
+    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    let at: HTMLElement | null = box('Edit message')
+    while (at && !at.querySelector('input[type=file]')) at = at.parentElement
+    act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove plan.pdf' })))
+    await waitFor(() => expect(within(at!).queryByText('plan.pdf')).toBeNull())
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+    expect(await screen.findByText(/a message needs words or a file/)).toBeTruthy()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   it('says why a file did not upload, keeps the words, sends nothing on Enter, and sends the words once its ✕ takes it off', async () => {
     blobs.upload.mockResolvedValue({ ok: false, reason: 'Too large' })
     await open([])
