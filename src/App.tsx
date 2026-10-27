@@ -22,7 +22,7 @@ import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument } fro
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
-import { pictureOf } from './document/save'
+import { profileOf } from './document/save'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { useFileByAddress } from './pages/useFileByAddress'
@@ -76,9 +76,10 @@ function Frame() {
     // The face is the profile's, as Peek's and Ship's menus draw it: Estiva ID's directory answers no picture.
     const viewer = viewerPubkey()
     if (viewer)
-      void pictureOf(viewer)
+      void profileOf(viewer)
         .catch(() => null)
-        .then((picture) => {
+        .then((profile) => {
+          const picture = profile?.picture
           if (live && picture) setMe((was) => ({ ...was, picture }))
         })
     return () => {

@@ -48,14 +48,13 @@ export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder'
 
 /** A person's name for "<name> saved a newer version", from their profile; `null` when they have none. */
 export async function nameOf(pubkey: string): Promise<string | null> {
-  const lookup = await people.viaRelay(query)([pubkey])
-  return lookup[pubkey]?.displayName ?? null
+  return (await profileOf(pubkey))?.displayName ?? null
 }
 
-/** A person's picture, from their profile, as Peek and Ship draw their face; `null` when they have none. */
-export async function pictureOf(pubkey: string): Promise<string | null> {
+/** A person's name and picture, from their profile, as Peek and Ship draw them; `null` when they have none. */
+export async function profileOf(pubkey: string): Promise<{ displayName?: string; picture?: string } | null> {
   const lookup = await people.viaRelay(query)([pubkey])
-  return lookup[pubkey]?.picture ?? null
+  return lookup[pubkey] ?? null
 }
 
 /**
