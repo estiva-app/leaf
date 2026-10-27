@@ -62,12 +62,13 @@ function readPeople(): Promise<void> {
  * on the next page. The roster is its own read: a relay that will not give it
  * leaves every profile offered rather than nobody.
  */
-export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: string) => string | undefined } {
+export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: string) => string | undefined; pictureOf: (pubkey: string) => string | undefined } {
   const found = usePeople()
   return useMemo(
     () => ({
       people: found.offered.map((p) => ({ id: p.pubkey, name: p.name, pubkey: p.pubkey, avatar: <Avatar size={32} src={p.picture} name={p.name} /> })),
       nameOf: (pubkey: string) => found.profiles.get(pubkey)?.name,
+      pictureOf: (pubkey: string) => found.profiles.get(pubkey)?.picture,
     }),
     [found],
   )

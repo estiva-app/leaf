@@ -148,6 +148,17 @@ describe('the comments column', () => {
     expect(screen.getByText('On deleted blocks')).toBeTruthy()
   })
 
+  it("draws a comment's author by their profile picture, and by initials when their profile has none (LFB-1)", async () => {
+    const PICTURE = 'https://id.estiva.app/avatar/qa1.jpg'
+    const pictured: SignedEvent = { ...profile(AUTHOR, 'QA-1'), content: JSON.stringify({ name: 'QA-1', picture: PICTURE }) }
+    const byQa2: SignedEvent = { ...comment([], 'No picture here'), id: '9'.repeat(64), pubkey: QA2 }
+    await open([roster, pictured, profile(QA2, 'QA-2'), comment([], 'Mine has a face'), byQa2])
+    const card = (words: RegExp) => [...document.querySelectorAll<HTMLElement>('[data-comment-id]')].find((c) => words.test(c.textContent ?? ''))
+    await waitFor(() => expect(card(/Mine has a face/)?.querySelector('img')?.getAttribute('src')).toBe(PICTURE))
+    await waitFor(() => expect(card(/No picture here/)?.textContent).toContain('QA-2'))
+    expect(card(/No picture here/)?.querySelector('img')).toBeNull()
+  })
+
   it('draws a second-level item in a comment nested under the item above it, as the box wrote it', async () => {
     await open([comment([], '- Agenda\n  - budget\n- Next')])
     await waitFor(() => expect(document.querySelector('[data-comment-id] li')).not.toBeNull())

@@ -52,6 +52,12 @@ export async function nameOf(pubkey: string): Promise<string | null> {
   return lookup[pubkey]?.displayName ?? null
 }
 
+/** A person's picture, from their profile, as Peek and Ship draw their face; `null` when they have none. */
+export async function pictureOf(pubkey: string): Promise<string | null> {
+  const lookup = await people.viaRelay(query)([pubkey])
+  return lookup[pubkey]?.picture ?? null
+}
+
 /**
  * A change to one field of a document — `kind:1851`, SPEC §6.2, the same event
  * Ship's `buildChange` makes: `a`, `field`, `value`, `h`, then the body's

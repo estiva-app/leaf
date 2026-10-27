@@ -98,6 +98,16 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     expect(screen.queryByText(/Archived/)).toBeNull()
   })
 
+  it("draws the owner on Ship's row by their profile picture, as Ship does (LFB-1)", async () => {
+    const issue = shipIssue()
+    const PICTURE = 'https://id.estiva.app/avatar/owner.jpg'
+    const people = Object.fromEntries(Object.entries(issue.people ?? {}).map(([pk, p]) => [pk, { ...p, picture: PICTURE }]))
+    render(<ToastProvider><FilePage file={{ ...issue, people }} loading={false} /></ToastProvider>)
+    await documentBox()
+    const row = screen.getByRole('button', { name: 'Open in Ship' }).parentElement!
+    expect([...row.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toContain(PICTURE)
+  })
+
   it('saves its text when you leave it: one block-document change on `description`, at the issue, in its own Folder', async () => {
     const issue = shipIssue()
     render(<ToastProvider><FilePage file={issue} loading={false} /></ToastProvider>)

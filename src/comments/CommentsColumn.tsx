@@ -200,6 +200,8 @@ function boxUnder(here: string | undefined): BoxUnder {
 interface BoxPeople {
   people: readonly MentionPerson[]
   nameOf: (pubkey: string) => string | undefined
+  /** Whose face a key draws: a comment's author line. */
+  pictureOf?: (pubkey: string) => string | undefined
 }
 
 /**
@@ -435,6 +437,7 @@ function CommentLine({
   names,
   now,
   nameOf,
+  pictureOf,
   page,
   viewer,
   onReact,
@@ -444,6 +447,8 @@ function CommentLine({
   names: Record<string, string>
   now: number
   nameOf: (pubkey: string) => string | undefined
+  /** The author's face, from their profile; initials without one. */
+  pictureOf?: (pubkey: string) => string | undefined
   page: readonly CommentItem[]
   /** Who is looking: their reactions are lit. */
   viewer?: string
@@ -512,7 +517,7 @@ function CommentLine({
     <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 text-body-2-strong text-text-primary">
-          <Person name={names[comment.by] ?? 'Someone'} />
+          <Person name={names[comment.by] ?? 'Someone'} picture={pictureOf?.(comment.by)} />
         </span>
         <WithTooltip label={exactly(comment.at * 1000)}>
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
@@ -739,7 +744,7 @@ function ThreadCard({
           onTyped: edits.onTyped,
         }
       : undefined
-  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
+  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} pictureOf={people.pictureOf} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
   return (
     <Card data-thread-id={thread.id} data-active={active || undefined} data-resolved={thread.resolved || undefined} data-deleted={deleted || undefined} hover="fill" quietUntilHover selected={active} onClick={click} className="flex shrink-0 flex-col gap-3 p-3">
       <div className="flex items-start gap-2">
