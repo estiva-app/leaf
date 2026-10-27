@@ -1,18 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fileReference, messageReference } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 
 const ME = 'a'.repeat(64)
 const publish = vi.hoisted(() => vi.fn<(event: UnsignedEvent) => Promise<{ ok: boolean; reason?: string }>>(async () => ({ ok: true })))
-const relay = vi.hoisted(() => ({ events: [] as SignedEvent[] }))
+const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], hang: false, signedIn: true }))
 /* The relay, by filter: kinds, `#A` and `#e`, which is all these reads ask. */
 const matches = (e: SignedEvent, f: Record<string, unknown>) =>
   (!f.kinds || (f.kinds as number[]).includes(e.kind)) &&
   Object.entries(f).every(([k, v]) => !k.startsWith('#') || e.tags.some((t) => t[0] === k.slice(1) && (v as string[]).includes(t[1])))
 vi.mock('../relay/bridge', () => ({
-  query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((e) => filters.some((f) => matches(e, f)))),
+  query: vi.fn((filters: Record<string, unknown>[]) =>
+    relay.hang ? new Promise<never>(() => {}) : Promise.resolve(relay.events.filter((e) => filters.some((f) => matches(e, f)))),
+  ),
   publish,
-  viewerPubkey: () => ME,
+  viewerPubkey: () => (relay.signedIn ? ME : null),
 }))
 
 import { deleteComment, editComment, postComment, postReply, readThreads, removeCard, setResolved, type CommentItem, type Thread } from './comments'
@@ -187,6 +189,109 @@ describe('what a comment names', () => {
     expect(e.tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE]]))
     expect(e.tags.some((t) => t[0] === 'q' && t[1] === root.id)).toBe(false)
     expect(e.tags.some((t) => t[0] === 'a' && t[1] === ADDRESS)).toBe(false)
+  })
+})
+
+/* The tags a link earns, from the one link reader every app shares (PEEKM-7, record an-edit-says-what-the-message-links-now). */
+describe('what a link in a comment tags', () => {
+  const SHIP = 'f'.repeat(64)
+  const D1 = '11111111-1111-4111-8111-111111111111'
+  const D2 = '22222222-2222-4222-8222-222222222222'
+  const D3 = '33333333-3333-4333-8333-333333333333'
+  const ISSUE1 = `30851:${SHIP}:${D1}`
+  const ISSUE2 = `30851:${SHIP}:${D2}`
+  const ISSUE3 = `30851:${SHIP}:${D3}`
+  const urlOf = (slug: string, d: string) => `https://ship.estiva.app/issue/${slug}-${d}`
+  // Ship's manifest, as it publishes it: what makes its URL name an issue (§7.7).
+  const manifest = event(31990, [['d', 'ship'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', 'https://ship.estiva.app/issue/<slug>-<d>', '30851'], ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851']], '', SHIP)
+  const issue = (d: string) => event(30851, [['d', d]], '', SHIP)
+  const QA2 = 'c'.repeat(64)
+  const named = (name: string) => sent().tags.filter((t) => t[0] === name)
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    relay.events = [manifest, issue(D1), issue(D2), issue(D3)]
+  })
+  afterEach(() => {
+    relay.hang = false
+    relay.signedIn = true
+    vi.useRealTimers()
+  })
+
+  it('signed out, a comment or a reply with a link says so at once, not after the link’s answer (up to 5 s)', async () => {
+    relay.hang = true
+    relay.signedIn = false
+    const D4 = '44444444-4444-4444-8444-444444444444'
+    const root = comment([], 'Too long?')
+    const thread: Thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
+    const answers: unknown[] = []
+    void postComment(DOC, { text: `see ${urlOf('slow', D4)}` }).then((r) => answers.push(r))
+    void postReply(DOC, thread, { text: `see ${urlOf('slow', D4)}` }).then((r) => answers.push(r))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answers).toEqual([
+      { ok: false, reason: 'you are signed out' },
+      { ok: false, reason: 'you are signed out' },
+    ])
+    await vi.advanceTimersByTimeAsync(5_000)
+  })
+
+  // A top-level comment's first `a` is its page, NIP-22's scope; every other is a mention.
+  const PAGE_A = ['a', ADDRESS]
+
+  it('a Ship issue linked by its URL earns its a, so the comment lists under the issue’s Mentioned in', async () => {
+    await postComment(DOC, { text: `see ${urlOf('fix-it', D1)}` })
+    expect(named('a')).toEqual([PAGE_A, ['a', ISSUE1]])
+  })
+
+  it('a URL in a code span, and an http:// link, earn nothing, while an https link beside them earns its a', async () => {
+    await postComment(DOC, { text: `run \`${urlOf('fix-it', D1)}\` and see http://ship.estiva.app/issue/fix-it-${D2}, then ${urlOf('done', D3)}` })
+    expect(named('a')).toEqual([PAGE_A, ['a', ISSUE3]])
+  })
+
+  it('[A](B) is one link to B: B earns its a, A nothing', async () => {
+    await postComment(DOC, { text: `see [${urlOf('first', D1)}](${urlOf('second', D2)})` })
+    expect(named('a')).toEqual([PAGE_A, ['a', ISSUE2]])
+  })
+
+  it('a reply linking a block of an issue earns its a and its part, beside the person it mentions', async () => {
+    const root = comment([], 'Too long?')
+    const thread: Thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
+    await postReply(DOC, thread, { text: `nostr:${encodeNpub(QA2)} see ${urlOf('fix-it', D3)}#block-b7` })
+    expect(sent().tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE3], ['part', ISSUE3, 'b7']]))
+  })
+
+  it('an edit carries the a and q its new words earn, and no p, urgent or part', async () => {
+    const root = comment([], 'Too long?')
+    const other = 'e'.repeat(64)
+    const text = `!nostr:${encodeNpub(QA2)} see ${urlOf('fix-it', D1)}, ${urlOf('block', D3)}#block-b7 and ${messageReference(other, 1111)}`
+    expect(await editComment(itemOf(root), { text, urgent: [QA2] })).toEqual({ ok: true })
+    const e = sent()
+    expect(e.kind).toBe(40003)
+    expect(named('a')).toEqual([['a', ISSUE1], ['a', ISSUE3]])
+    expect(named('q')).toEqual([['q', other]])
+    expect(e.tags.some((t) => ['p', 'urgent', 'part'].includes(t[0]))).toBe(false)
+  })
+
+  it('an edit of a reply never names the page it is on by a, nor the comment it answers by q', async () => {
+    const root = comment([], 'Too long?')
+    const answer = reply(root, [], 'Cut it')
+    expect(await editComment(itemOf(answer), { text: `${fileReference(ADDRESS)} ${messageReference(root.id, 1111)} and ${fileReference(ISSUE2)}` })).toEqual({ ok: true })
+    expect(named('a')).toEqual([['a', ISSUE2]])
+    expect(named('q')).toEqual([])
+  })
+
+  it('✕ on a card keeps the a the words still earn', async () => {
+    const root = comment([], `see ${urlOf('fix-it', D1)}`)
+    expect(await removeCard({ ...itemOf(root), cards: [{ value: ISSUE1, layout: 'detailed' }] }, ISSUE1)).toEqual({ ok: true })
+    expect(named('embed')).toEqual([['embed', ISSUE1, 'none']])
+    expect(named('a')).toEqual([['a', ISSUE1]])
+  })
+
+  it('an edit that adds a card carries the whole card set it is given', async () => {
+    const root = comment([['embed', ISSUE2, 'detailed']], `see ${fileReference(ISSUE2)}`)
+    const cards = [{ value: ISSUE2, layout: 'detailed' as const }, { value: ISSUE1, layout: 'detailed' as const }]
+    expect(await editComment({ ...itemOf(root), cards: [cards[0]] }, { text: `see ${urlOf('fix-it', D1)}`, cards })).toEqual({ ok: true })
+    expect(named('embed')).toEqual([['embed', ISSUE2, 'detailed'], ['embed', ISSUE1, 'detailed']])
   })
 })
 

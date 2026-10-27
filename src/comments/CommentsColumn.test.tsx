@@ -809,6 +809,26 @@ describe('editing and deleting your own comment (COMM-5)', () => {
       expect(publish.mock.calls[0][0].content).toBe(`Reworded\n${CARD}`)
     })
 
+    // An edit's set replaces the comment's (§13.6.2), so the card it had rides along with the new file's default one.
+    it('editing your comment with a card to name a new file saves the new file’s card and keeps the one it had', async () => {
+      const SECOND_ADDRESS = `30851:${QA2}:second-file`
+      const SECOND = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'second-file', relays: [] })}`
+      files.known[SECOND] = { ...(files.known[CARD] as object), address: SECOND_ADDRESS, slots: { title: { value: 'Second file' } } }
+      const own = mine([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
+      await open([own])
+      await waitFor(() => expect(cardOf(own.id)?.textContent).toContain('Card under'))
+      await choose(own.id, 'Edit message')
+      act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent(`See ${SECOND} `).run())
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      const e = publish.mock.calls[0][0]
+      expect([e.kind, e.pubkey]).toEqual([40003, ME])
+      expect(e.tags.filter((t) => t[0] === 'embed')).toEqual([
+        ['embed', CARD_ADDRESS, 'detailed'],
+        ['embed', SECOND_ADDRESS, 'detailed'],
+      ])
+    })
+
     it('offers no ✕ on the card under someone else’s comment', async () => {
       const theirs = comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
       await open([theirs])
@@ -1295,6 +1315,43 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       })
       expect(sent.textContent).not.toContain('https://')
       expect(opensAt(row)).toBe(leafUrl)
+    })
+  })
+
+  describe('editing your comment to link an issue (PEEKM-7)', () => {
+    const line = (id: string) => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${id}"]`)
+    const editSaying = async (own: SignedEvent, words: string) => {
+      await open([...EVENTS, own])
+      await waitFor(() => expect(line(own.id)).not.toBeNull())
+      act(() => void fireEvent.click(within(line(own.id)!).getByRole('button', { name: 'More' })))
+      act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+      act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent(words).run())
+    }
+    const saved = async () => {
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      return publish.mock.calls[0][0]
+    }
+
+    it('shows the issue’s card under the edit box, as Peek does, and the edit carries it and the issue’s a, but no part', async () => {
+      const own = { ...comment([], 'Too long?'), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} `)
+      await waitFor(() => expect(under()?.textContent).toContain('Fix it'))
+      const e = await saved()
+      expect([e.kind, e.content]).toEqual([40003, `see ${ISSUE_URL}`])
+      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+      expect(named(e.tags, 'a')).toEqual([['a', ISSUE]])
+      expect(named(e.tags, 'part')).toEqual([])
+    })
+
+    it('✕ under the edit box saves the link with no card, and the issue still gets its a', async () => {
+      const own = { ...comment([], 'Too long?'), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} `)
+      await waitFor(() => expect(under()).not.toBeNull())
+      act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove card' })))
+      const e = await saved()
+      expect(named(e.tags, 'embed')).toEqual([])
+      expect(named(e.tags, 'a')).toEqual([['a', ISSUE]])
     })
   })
 
