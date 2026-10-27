@@ -79,6 +79,12 @@ describe('the Folders tree', () => {
     const under = file({ ref: 'u', naddr: 'naddr1u', address: `30842:${A}:u`, parentRef: `30842:${A}:${D}`, listsChildren: true, slots: { title: { value: 'Minutes' } } })
     const [brief, notes] = groupsOf([folder([top, alone, under])], none)![0].nodes!
     expect(brief.children?.map((n) => n.label)).toEqual(['Minutes'])
+    // It starts closed, as before, and opening it reads nothing: its pages are already listed.
+    expect(brief.open).toBe(false)
+    const asked: string[] = []
+    const watching: Expansion = { ...none, setOpen: (f) => asked.push(`read ${f.ref}`), setFolderOpen: (id) => asked.push(`open ${id}`) }
+    groupsOf([folder([top, alone, under])], watching)![0].nodes![0].onOpenChange?.(true)
+    expect(asked).toEqual(['open p'])
     expect(brief.children?.[0].hasChildren).toBeFalsy()
     expect(brief.children?.[0].children).toBeUndefined()
     expect(notes.hasChildren).toBeFalsy()
