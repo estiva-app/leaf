@@ -923,6 +923,27 @@ describe('attaching a file to a comment (COMM-6)', () => {
     ])
   })
 
+  /* Attach opens the picker with a click on the box's hidden input, inside the thread's card (Katerina, 22 Oct, LFB-2). */
+  it('keeps a reply box open when Attach opens the picker, and the reply names the picked picture by imeta', async () => {
+    blobs.upload.mockResolvedValue({ ok: true, file: PNG })
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    act(() => void page().editor.emit('commentSelect', { id: onParagraph.id }))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    write('Reply…', 'This one')
+    const card = document.querySelector<HTMLElement>('[data-thread-id]')!
+    act(() => void fireEvent.click(within(card).getByRole('button', { name: 'Attach a file' })))
+    expect(screen.queryByRole('textbox', { name: 'Reply…' }), 'the reply box stays open').not.toBeNull()
+    act(() => void fireEvent.change(card.querySelector('input[type=file]')!, { target: { files: [new File(['png'], 'shot.png', { type: 'image/png' })] } }))
+    await waitFor(() => expect(within(card).getByText('shot.png')).toBeTruthy())
+    sendWithEnter('Reply…')
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    const e = publish.mock.calls[0][0]
+    expect([e.kind, e.content]).toEqual([1111, 'This one'])
+    expect(e.tags.filter((t) => t[0] === 'imeta')).toEqual([expect.arrayContaining([`url ${PNG.url}`, 'm image/png', `x ${PNG.x}`, 'filename shot.png'])])
+  })
+
   /* A file added while editing (Miky, 26 Oct, PEEKM-4): the edit box opens with the comment's own, and the save writes the whole set. */
   it('adds a picture while editing your comment, and the edit names it beside the file it had, by imeta', async () => {
     blobs.upload.mockResolvedValue({ ok: true, file: PNG })

@@ -299,24 +299,27 @@ function Box({
     editing && opened
       ? { body: opened, files: editFiles, writesFiles: true, onCancel: editing.onCancel, onSave: (body: JSONContent, files: BoxFile[]) => send(body, files) }
       : undefined
+  // A click inside the box is the box's, never the card's around it: Attach opens the picker with a click on a hidden input, and the card would close the reply under it (LFB-2).
   return (
-    <CommentBox
-      label={placeholder}
-      placeholder={<span>{placeholder}</span>}
-      people={people.people}
-      references={(typed) => commentReferenceSections(scope, typed, people.nameOf)}
-      referencesChanged={subscribeReferences}
-      referenceView={PageLink}
-      insert={INSERT}
-      draft={edit ? undefined : draft}
-      edit={edit}
-      extensions={extensions}
-      upload={upload}
-      send={send}
-      under={under}
-      autoFocus={autoFocus || !!edit}
-      onSent={onSent ? () => onSent() : undefined}
-    />
+    <div data-interactive>
+      <CommentBox
+        label={placeholder}
+        placeholder={<span>{placeholder}</span>}
+        people={people.people}
+        references={(typed) => commentReferenceSections(scope, typed, people.nameOf)}
+        referencesChanged={subscribeReferences}
+        referenceView={PageLink}
+        insert={INSERT}
+        draft={edit ? undefined : draft}
+        edit={edit}
+        extensions={extensions}
+        upload={upload}
+        send={send}
+        under={under}
+        autoFocus={autoFocus || !!edit}
+        onSent={onSent ? () => onSent() : undefined}
+      />
+    </div>
   )
 }
 
