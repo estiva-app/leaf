@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fileReference, messageReference } from '@estiva-app/conversation'
-import { encodeNpub, imetaTag, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { encodeNpub, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 
 const ME = 'a'.repeat(64)
 const publish = vi.hoisted(() => vi.fn<(event: UnsignedEvent) => Promise<{ ok: boolean; reason?: string }>>(async () => ({ ok: true })))
@@ -97,14 +97,17 @@ describe('a comment from the column', () => {
   })
 
   /* An edit is the whole new message (SPEC §6.8): one with no `imeta` takes every file off, so each edit lists what it keeps. */
-  const kept = { url: `/media/${'d'.repeat(64)}.png`, m: 'image/png', x: 'd'.repeat(64), size: 40, dim: '800x600', filename: 'shot.png' }
+  // With the fields another app writes (blurhash, fallback), which an edit must list back as they were read.
+  const kept = { url: `/media/${'d'.repeat(64)}.png`, m: 'image/png', x: 'd'.repeat(64), size: 40, dim: '800x600', blurhash: 'LKO2?U%2Tw=w', fallback: ['https://a.example/shot.png'], filename: 'shot.png' }
+  // Written out: a lossy encoder would pass a check built with `imetaTag`.
+  const KEPT_TAG = ['imeta', `url /media/${'d'.repeat(64)}.png`, 'm image/png', `x ${'d'.repeat(64)}`, 'size 40', 'dim 800x600', 'blurhash LKO2?U%2Tw=w', 'fallback https://a.example/shot.png', 'filename shot.png']
   const imetaOfSent = () => sent().tags.filter((t) => t[0] === 'imeta')
 
-  it('an edit of the words only still lists the files the comment has', async () => {
+  it('an edit of the words only still lists the files the comment has, every field as read', async () => {
     const root = comment([], 'Too long?')
     expect(await editComment({ ...itemOf(root), files: [kept] }, { text: 'Far too long?' })).toEqual({ ok: true })
     expect(sent().content).toBe('Far too long?')
-    expect(imetaOfSent()).toEqual([imetaTag(kept)])
+    expect(imetaOfSent()).toEqual([KEPT_TAG])
   })
 
   it('an edit that takes every file off writes no imeta, not the files the comment had', async () => {
@@ -117,7 +120,7 @@ describe('a comment from the column', () => {
     const root = comment([], 'See it')
     expect(await removeCard({ ...itemOf(root), files: [kept], cards: [{ value: ADDRESS, layout: 'detailed' }] }, ADDRESS)).toEqual({ ok: true })
     expect(sent().tags).toContainEqual(['embed', ADDRESS, 'none'])
-    expect(imetaOfSent()).toEqual([imetaTag(kept)])
+    expect(imetaOfSent()).toEqual([KEPT_TAG])
   })
 
   it('writes a file set an edit changed as the whole set, on the same kind:40003 (PEEKM-4)', async () => {
@@ -126,7 +129,9 @@ describe('a comment from the column', () => {
     expect(await editComment(itemOf(root), { text: 'Too long?', files })).toEqual({ ok: true })
     const e = sent()
     expect(e.kind).toBe(40003)
-    expect(e.tags.filter((t) => t[0] === 'imeta').map((t) => t.find((part) => part.startsWith('x ')))).toEqual([`x ${'a'.repeat(64)}`, `x ${'c'.repeat(64)}`])
+    expect(e.tags.filter((t) => t[0] === 'imeta')).toEqual(
+      ['a', 'c'].map((c) => ['imeta', `url /media/${c.repeat(64)}.png`, 'm image/png', `x ${c.repeat(64)}`, 'size 10']),
+    )
   })
 
   it('deletes your comment with a kind:5 naming it', async () => {
