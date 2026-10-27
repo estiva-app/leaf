@@ -245,10 +245,8 @@ function Box({
   const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
     const attached = filesOf(files)
     if (editing) {
-      // A file added or taken off while editing (Miky, 26 Oct, PEEKM-4) rides the edit as the whole set, only when it changed.
-      // An edit with no `imeta` leaves the set as it was, so no edit can take the last one off.
+      // A file added or taken off while editing (Miky, 26 Oct, PEEKM-4) rides the edit as the whole set, and none takes every one off.
       const before = editing.comment.files
-      if (attached.length === 0 && before.length > 0) return { accepted: false, reason: 'the last file cannot be taken off a comment yet' }
       const same = attached.length === before.length && attached.every((file, i) => file.x === before[i].x)
       const result = await onSend({ ...composerText(body as EditorDocument), ...(same ? {} : { files: attached }) })
       return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
