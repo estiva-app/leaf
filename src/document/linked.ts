@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { linkStateFrom, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
-import { writtenOpenerOf } from '../comments/links'
+import { links } from '../comments/links'
 import { useDirectory } from '../comments/people'
 import { useCardConversation } from './cardConversation'
 import { rereadReference, useFile } from './references'
@@ -48,7 +48,7 @@ function unreadOf(uri: string): { kind: LinkedKind; noun: string } {
  * comes from a manifest anyone may publish.
  */
 function openerOf(object: { openUrl?: string }, written?: string): string {
-  return writtenOpenerOf(written, object.openUrl) ?? (object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : '')
+  return links.opener(written, object.openUrl, window.location.origin) ??(object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : '')
 }
 
 /**

@@ -9,8 +9,10 @@ import {
   composerText,
   createDraftStore,
   draftKeys,
+  embedsToEdit,
   embedsToSend,
   groupReactions,
+  namedBefore,
   offersEditAndDelete,
   openingWords,
   REACTION_EMOJI,
@@ -61,8 +63,9 @@ import { commentReferenceSections, subscribeReferences, type ReferableComment } 
 import { ReferencesProvider, useReferences } from '../document/references'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
-import { linksIn, placeComment, referenceOfValue, ROW_BLOCK, writtenUrlOf, type RowLine } from './commentLines'
-import { askLinks, knownBlockOf, knownLinkValue, linkReferenceOf, linksChanged, MAX_LINKS_ASKED, useKnownLinks } from './links'
+import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
+import { placeComment, referenceOfValue, ROW_BLOCK, writtenUrlOf, type RowLine } from './commentLines'
+import { linkReferenceOf, links, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
 import { deleteComment, editComment, removeCard, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
@@ -174,30 +177,38 @@ function draftStore(): DraftStore {
 const PageHere = createContext<string | undefined>(undefined)
 
 /** A pasted app URL becomes its file's chip, as in Peek (`LinkChips`, §7.7). */
-const linkChips = () => LinkChips.configure({ referenceOf: linkReferenceOf, ask: askLinks })
+const linkChips = () => LinkChips.configure({ referenceOf: linkReferenceOf, ask: links.ask })
+
+/** What an app link names for the box, as answered so far. */
+const LINK_CONTEXT = { resolveLink: links.known, blockOf: links.knownBlock }
+
+/** What a box's document names, read as it will be sent; `previous` makes it an edit's, where only a file named first gets a card. */
+const linksOfBox = (body: JSONContent, here: string | undefined, previous?: readonly string[]) => boxReadOf(body as EditorDocument, { ...LINK_CONTEXT, here, previous })
 
 /**
- * What shows under the box while a new comment is written (COMM-8): the one
- * file it names, as the card it will be sent with, and the live part of each
- * block link — read as Peek reads its box (`boxReadOf`), from what each app
- * link names as answered so far. Each read asks about the links not answered
- * yet; an answer coming back reads again.
+ * What shows under the box while a comment is written or edited (COMM-8): the
+ * one file it names, as the card it will be sent with, and the live part of
+ * each block link — read as Peek reads its box (`boxReadOf`), from what each
+ * app link names as answered so far. Each read asks about the links not
+ * answered yet; an answer coming back reads again. An edit's (`previous`, what
+ * the comment named before) shows a card only for a file it names first, and
+ * the box shows no part under an edit, which carries none.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
  */
-function boxUnder(here: string | undefined): BoxUnder {
+function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUnder {
   return {
     read: (body) => {
-      const links = boxReadOf(body as EditorDocument, { resolveLink: knownLinkValue, blockOf: knownBlockOf, here })
-      void askLinks(links.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
-      const uri = links.card ? referenceOfValue(links.card) : undefined
+      const read = linksOfBox(body, here, previous)
+      void links.ask(read.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
+      const uri = read.card ? referenceOfValue(read.card) : undefined
       return {
-        card: links.card && uri ? { value: links.card, view: <CommentCard uri={uri} /> } : undefined,
-        parts: links.parts.map((part) => ({ key: `${part.address}#${part.block}`, view: <PartView pointer={part} /> })),
-        names: [...links.values, ...links.parts.map((part) => part.address)],
+        card: read.card && uri ? { value: read.card, view: <CommentCard uri={uri} /> } : undefined,
+        parts: read.parts.map((part) => ({ key: `${part.address}#${part.block}`, view: <PartView pointer={part} /> })),
+        names: [...read.values, ...read.parts.map((part) => part.address)],
       }
     },
-    changed: linksChanged,
+    changed: links.changed,
   }
 }
 
@@ -245,9 +256,9 @@ function Box({
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
   const here = useContext(PageHere)
-  // An edit carries no `part` and leaves the cards as sent (✕ on the sent card takes one off), so the edit box shows nothing under it.
-  const isEdit = !!editing
-  const under = useMemo(() => (isEdit ? undefined : boxUnder(here)), [isEdit, here])
+  // What the comment named before the edit, so only a file the edit names first gets a card, as in Peek's edit box.
+  const [previous] = useState(() => (editing ? namedBefore(editing.comment.body, LINK_CONTEXT) : undefined))
+  const under = useMemo(() => boxUnder(here, previous), [here, previous])
   const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
     const attached = filesOf(files)
     if (editing) {
@@ -255,17 +266,18 @@ function Box({
       const before = editing.comment.files
       if (!composerText(body as EditorDocument).text && attached.length === 0) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
       const same = attached.length === before.length && attached.every((file, i) => file.x === before[i].x)
-      const result = await onSend({ ...composerText(body as EditorDocument), ...(same ? {} : { files: attached }) })
+      // A file the edit names first adds its card to the set the comment has, unless ✕ took it off under the box.
+      const read = linksOfBox(body, here, previous)
+      const cards = embedsToEdit(read, new Set(read.card && read.card !== shown.card ? [read.card] : []), editing.comment.cards)
+      const result = await onSend({ ...composerText(body as EditorDocument), ...(same ? {} : { files: attached }), ...(cards ? { cards } : {}) })
       return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
     }
-    // What was under the box as it was sent: the card unless ✕ took it off, and the parts as they read now.
-    const parts = under ? boxReadOf(body as EditorDocument, { resolveLink: knownLinkValue, blockOf: knownBlockOf, here }).parts : []
-    const cards = under ? embedsToSend({ card: shown.card }, new Set()) : []
+    // What was under the box as it was sent: the card unless ✕ took it off. The block links' parts are the send's to tag.
+    const cards = embedsToSend({ card: shown.card }, new Set())
     const written = {
       ...composerText(body as EditorDocument),
       ...(attached.length ? { files: attached } : {}),
       ...(cards.length ? { cards } : {}),
-      ...(parts.length ? { parts } : {}),
     }
     const result = await onSend(written)
     return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
@@ -297,7 +309,7 @@ function Box({
   )
   const edit =
     editing && opened
-      ? { body: opened, files: editFiles, writesFiles: true, onCancel: editing.onCancel, onSave: (body: JSONContent, files: BoxFile[]) => send(body, files) }
+      ? { body: opened, files: editFiles, writesFiles: true, onCancel: editing.onCancel, onSave: send }
       : undefined
   // A click inside the box is the box's, never the card's around it: Attach opens the picker with a click on a hidden input, and the card would close the reply under it (LFB-2).
   return (
@@ -504,7 +516,7 @@ function CommentLine({
   const resolveLink = useKnownLinks()
   // Asked again on each change to the answers, so a read that failed is retried; one already answered or out costs nothing.
   useEffect(() => {
-    void askLinks(linksIn(blocks).slice(0, MAX_LINKS_ASKED)).catch(() => {})
+    void links.ask(linksIn(blocks).slice(0, MAX_LINKS_ASKED)).catch(() => {})
   }, [blocks, resolveLink])
   // The files its app links name, read as its chips are: a link draws as its file only once that file is read (LTX-6).
   const linked = useReferences(linksIn(blocks).flatMap((url) => {

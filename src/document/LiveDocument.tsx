@@ -22,7 +22,8 @@ import type { ChangedBy } from './useLiveDocument'
 import { sessionEnded } from '../auth/estivaId'
 import { heldText, registerHeld, releaseHeld } from '../auth/heldTyping'
 import { FileCard } from '../comments/CommentFiles'
-import { MAX_LINKS_ASKED, askLinks, linkReferenceOf } from '../comments/links'
+import { MAX_LINKS_ASKED } from '@estiva-app/interop'
+import { linkReferenceOf, links } from '../comments/links'
 import { useMentionPeople } from '../comments/people'
 
 /**
@@ -44,7 +45,7 @@ const HOLD: HeldTyping = { text: heldText, release: releaseHeld, register: regis
 const REFERENCES = { sections: referenceSections, subscribe: subscribeReferences, ariaLabel: REFERENCE_COPY.ariaLabel, sectionLabel: REFERENCE_COPY.files }
 
 /** A pasted app URL becomes its file's chip, as in Leaf's comments (`LinkChips`, §7.7). */
-const LINK_CHIPS = { referenceOf: linkReferenceOf, ask: askLinks, limit: MAX_LINKS_ASKED }
+const LINK_CHIPS = { referenceOf: linkReferenceOf, ask: links.ask, limit: MAX_LINKS_ASKED }
 
 /** Markdown pasted as plain text lands as the blocks it spells, tables and links on words included, read as the agent reads a description (LEAF-10). */
 const readMarkdown = (text: string) => toEditorDocument(descriptionTextToBlockDocument(text), { links: true })

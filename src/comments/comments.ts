@@ -12,8 +12,6 @@ import {
   KIND_REACTION,
   mentionTagsFor,
   placeOf,
-  quoteTagsFor,
-  referenceTagsFor,
   urgentTagsFor,
   type ReactionEvent,
 } from '@estiva-app/conversation'
@@ -28,17 +26,17 @@ import {
   embedTagsOf,
   imetaOf,
   imetaTag,
-  partTag,
   quoteOf,
   quoteTag,
+  toRenderTree,
   withCard,
   type Embed,
   type Imeta,
-  type PartPointer,
   type Quote,
   type SignedEvent,
 } from '@estiva-app/protocol'
 import { publish, query, viewerPubkey } from '../relay/bridge'
+import { links } from './links'
 
 /** A document as its comments name it: its address, its Folder (the `h` every comment carries) and its author. */
 export interface Commented {
@@ -204,29 +202,28 @@ export interface Written {
   urgent?: readonly string[]
   /** Uploaded before the send: the relay refuses a comment naming a file it does not hold. An edit's only when it changed them: the whole set after it. */
   files?: readonly Imeta[]
-  /** The card shown under the box as it was sent (`embed`, §13.6.2): none after ✕. A new comment's only. */
+  /**
+   * The cards (`embed`, §13.6.2). A new comment's: the card shown under the box as it was sent, none after ✕.
+   * An edit's: the whole set after it, only when the edit added a card.
+   */
   cards?: readonly Embed[]
-  /** The block links' live parts (`part`, §13.6.1). A new comment's only: an edit carries no `part`. */
-  parts?: readonly PartPointer[]
 }
-
-/** The `embed` and `part` tags a new comment carries for what showed under the box as it was sent. */
-const underTags = (written: Written): string[][] => [...embedTagsOf(written.cards ?? []), ...(written.parts ?? []).map((part) => partTag(part.address, part.block))]
 
 /**
  * The tags a body earns, as Ship and Peek write them (SPEC §13.1): a `p` per
- * person it names, an `urgent` beside each urgent one, an `a` per other file
- * it names and a `q` per message it references — never the page itself, nor
- * the comment a reply already answers by `e`.
+ * person it names and an `urgent` beside each urgent one, then, from the link
+ * reader, an `a` per other file it names and a `q` per message it references,
+ * by a `nostr:` reference or an app link, and a `part` per file a block link
+ * names — never the page itself, nor the comment a reply already answers by `e`.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-urgent-mention-is-a-tag-beside-the-mention.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
  */
-export function earnedTags(written: Written, own: { address: string; event?: string }): string[][] {
+async function earnedTags(written: Written, own: { file: string; parent?: string }): Promise<string[][]> {
   return [
     ...mentionTagsFor(written.text),
     ...urgentTagsFor(written.text, written.urgent ? [...written.urgent] : undefined),
-    ...referenceTagsFor(written.text, own.address),
-    ...quoteTagsFor(written.text, own.event),
+    ...(await links.tagsFor(toRenderTree(written.text, 'marker'), own)),
   ]
 }
 
@@ -240,10 +237,10 @@ const SIGNED_OUT = 'you are signed out'
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  */
-export function postComment(doc: Commented, written: Written, anchor?: Anchor): Promise<WriteResult> {
+export async function postComment(doc: Commented, written: Written, anchor?: Anchor): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const place = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
-  const tags = [...place, ...earnedTags(written, { address: doc.address }), ...underTags(written)]
+  const tags = [...place, ...(await earnedTags(written, { file: doc.address })), ...embedTagsOf(written.cards ?? [])]
   return send(pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }) : null, NOT_SENT, SIGNED_OUT)
 }
 
@@ -256,11 +253,11 @@ export function postComment(doc: Commented, written: Written, anchor?: Anchor): 
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  */
-export function postReply(doc: Commented, thread: Thread, written: Written): Promise<WriteResult> {
+export async function postReply(doc: Commented, thread: Thread, written: Written): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const root = thread.root
-  if (!root) return Promise.resolve({ ok: false, reason: 'the comment was deleted' })
-  const tags = [...earnedTags(written, { address: doc.address, event: thread.id }), ...underTags(written)]
+  if (!root) return { ok: false, reason: 'the comment was deleted' }
+  const tags = [...(await earnedTags(written, { file: doc.address, parent: thread.id })), ...embedTagsOf(written.cards ?? [])]
   const folder = root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
   return send(
     pubkey
@@ -279,24 +276,33 @@ const NOT_SAVED = 'it did not go through'
  * §6.8), in the Folder the comment was filed in. It carries no `block` or
  * `quote`, so the comment stays where it is. A file added or taken off while
  * editing (Miky, 26 Oct, PEEKM-4) rides it as the whole `imeta` set; with no
- * `written.files` the files it has ride it as they are.
+ * `written.files` the files it has ride it as they are. A card the new words
+ * add rides it as the whole card set (`written.cards`), as Peek's edit writes it.
  */
 export function editComment(comment: CommentItem, written: Written): Promise<WriteResult> {
-  return sendEdit(comment, written.text, undefined, written.files)
+  return sendEdit(comment, written.text, written.cards, written.files)
 }
 
 /**
  * A `kind:40003` on `comment`, in the Folder it was filed in: its new body, its whole card set when it changes, and
  * its whole file set always — the files it keeps when they did not change, since an edit with none takes them off.
+ * It carries every `a` and `q` its words earn, so a file lists the comment while its latest words link it, but
+ * never the page it is on nor the comment it answers, and no `p`, `urgent` or `part`: those stay as the send wrote them.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
  */
-function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[], files: readonly Imeta[] = comment.files): Promise<WriteResult> {
+async function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[], files: readonly Imeta[] = comment.files): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
-  if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
+  const tagged = (name: string) => comment.event.tags.find((t) => t[0] === name)?.[1]
+  const folder = tagged('h')
+  if (!folder) return { ok: false, reason: NOT_SAVED }
+  if (!pubkey) return send(null, NOT_SAVED, SIGNED_OUT)
   const changes = { ...(embeds ? { embeds } : {}), mediaTags: files.map(imetaTag) }
-  return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...changes }) : null, NOT_SAVED, SIGNED_OUT)
+  const own = { file: tagged('A'), parent: tagged('e') }
+  const linked = await links.tagsFor(toRenderTree(body, 'marker'), own, { edit: true })
+  const edit = buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...changes })
+  return send({ ...edit, tags: [...edit.tags, ...linked] }, NOT_SAVED, SIGNED_OUT)
 }
 
 /**

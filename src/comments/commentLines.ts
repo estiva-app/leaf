@@ -25,16 +25,6 @@ export function referenceOfValue(value: string): string | undefined {
   return `nostr:${encodeNaddr({ kind: Number(kind), pubkey, identifier: d.join(':'), relays: [] })}`
 }
 
-/** Every URL a comment's body names as a reader counts one (bare, or a link's target; none in code): what Leaf asks the relay about. */
-export function linksIn(blocks: readonly RenderBlock[]): string[] {
-  const urls = new Set<string>()
-  valuesIn(blocks, (url) => {
-    urls.add(url)
-    return undefined
-  })
-  return [...urls]
-}
-
 /**
  * A line of a comment that is only a link to a file or a message, drawn as
  * that file's row in place (SPEC §13.2, §13.6.2; why:
