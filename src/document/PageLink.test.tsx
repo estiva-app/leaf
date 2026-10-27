@@ -1,3 +1,4 @@
+// @vitest-environment-options {"url": "https://leaf.estiva.app/document/plan"}
 import type { ForeignObject } from '@estiva-app/interop'
 import { ToastProvider } from '@estiva-app/ui'
 import { cleanup, render, screen, within } from '@testing-library/react'
@@ -97,5 +98,39 @@ describe('a Ship project linked in a Leaf page', () => {
   it('that cannot be read says so, by what its address says it is', () => {
     render(<Link place="row" read={null} />)
     expect(screen.getByText(/not available/i)).toBeTruthy()
+  })
+})
+
+describe('where a Ship project written as a URL in a Leaf page opens (WBM-11)', () => {
+  // The project's own app opens it at `project.openUrl`, on ship.estiva.app; this page is on leaf.estiva.app.
+  const opens = (written: string) => {
+    render(
+      <ToastProvider>
+        <ReferencesProvider value={{ [PROJECT_URI]: project }}>
+          <PageLink uri={PROJECT_URI} href={written} place="chip" />
+        </ReferencesProvider>
+      </ToastProvider>,
+    )
+    const href = screen.getByText('Widgets 2: build 2').closest('a')?.getAttribute('href')
+    cleanup()
+    return href
+  }
+
+  it('an address on the host its file opens on, or on Leaf’s own, opens as written', () => {
+    expect(opens('https://ship.estiva.app/project/widgets-2')).toBe('https://ship.estiva.app/project/widgets-2')
+    expect(opens('https://leaf.estiva.app/project/widgets-2')).toBe('https://leaf.estiva.app/project/widgets-2')
+  })
+
+  it('another site, a lookalike, user@host, another port, http or javascript: opens the file’s own address instead', () => {
+    for (const written of [
+      'https://evil.example/project/widgets-2',
+      'https://ship.estiva.app.evil.com/project/widgets-2',
+      'https://ship.estiva.app@evil.com/project/widgets-2',
+      'https://ship.estiva.app:8443/project/widgets-2',
+      'http://ship.estiva.app/project/widgets-2',
+      'javascript:alert(1)',
+    ]) {
+      expect(opens(written), written).toBe(project.openUrl)
+    }
   })
 })

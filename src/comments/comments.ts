@@ -238,10 +238,12 @@ const SIGNED_OUT = 'you are signed out'
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  */
 export async function postComment(doc: Commented, written: Written, anchor?: Anchor): Promise<WriteResult> {
+  // Signed out says so at once, not after the links' answers (up to 5 s), as an edit does.
   const pubkey = viewerPubkey()
+  if (!pubkey) return send(null, NOT_SENT, SIGNED_OUT)
   const place = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
   const tags = [...place, ...(await earnedTags(written, { file: doc.address })), ...embedTagsOf(written.cards ?? [])]
-  return send(pubkey ? buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }) : null, NOT_SENT, SIGNED_OUT)
+  return send(buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }), NOT_SENT, SIGNED_OUT)
 }
 
 /**
@@ -257,12 +259,11 @@ export async function postReply(doc: Commented, thread: Thread, written: Written
   const pubkey = viewerPubkey()
   const root = thread.root
   if (!root) return { ok: false, reason: 'the comment was deleted' }
+  if (!pubkey) return send(null, NOT_SENT, SIGNED_OUT)
   const tags = [...(await earnedTags(written, { file: doc.address, parent: thread.id })), ...embedTagsOf(written.cards ?? [])]
   const folder = root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
   return send(
-    pubkey
-      ? buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder, body: written.text, files: written.files, tags })
-      : null,
+    buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder, body: written.text, files: written.files, tags }),
     NOT_SENT,
     SIGNED_OUT,
   )

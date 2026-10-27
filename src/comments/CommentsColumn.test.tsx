@@ -809,6 +809,26 @@ describe('editing and deleting your own comment (COMM-5)', () => {
       expect(publish.mock.calls[0][0].content).toBe(`Reworded\n${CARD}`)
     })
 
+    // An edit's set replaces the comment's (§13.6.2), so the card it had rides along with the new file's default one.
+    it('editing your comment with a card to name a new file saves the new file’s card and keeps the one it had', async () => {
+      const SECOND_ADDRESS = `30851:${QA2}:second-file`
+      const SECOND = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'second-file', relays: [] })}`
+      files.known[SECOND] = { ...(files.known[CARD] as object), address: SECOND_ADDRESS, slots: { title: { value: 'Second file' } } }
+      const own = mine([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
+      await open([own])
+      await waitFor(() => expect(cardOf(own.id)?.textContent).toContain('Card under'))
+      await choose(own.id, 'Edit message')
+      act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent(`See ${SECOND} `).run())
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      const e = publish.mock.calls[0][0]
+      expect([e.kind, e.pubkey]).toEqual([40003, ME])
+      expect(e.tags.filter((t) => t[0] === 'embed')).toEqual([
+        ['embed', CARD_ADDRESS, 'detailed'],
+        ['embed', SECOND_ADDRESS, 'detailed'],
+      ])
+    })
+
     it('offers no ✕ on the card under someone else’s comment', async () => {
       const theirs = comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
       await open([theirs])

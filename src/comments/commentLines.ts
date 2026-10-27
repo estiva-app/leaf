@@ -131,7 +131,7 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
   const blocks: readonly RenderBlock[] =
     resolveLink && readable
       ? linksAsReferences(body, (url) => {
-          // Only a link its chip can open as written (https, `writtenOpenerOf`): any other stays the link it was.
+          // Only a link its chip can open as written (https, `links.opener`): any other stays the link it was.
           if (!/^https:\/\//i.test(url)) return undefined
           const value = resolveLink(url)
           const reference = value ? referenceOfValue(value) : undefined

@@ -48,7 +48,7 @@ function unreadOf(uri: string): { kind: LinkedKind; noun: string } {
  * comes from a manifest anyone may publish.
  */
 function openerOf(object: { openUrl?: string }, written?: string): string {
-  return links.opener(written, object.openUrl, window.location.origin) ??(object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : '')
+  return links.opener(written, object.openUrl, window.location.origin) ?? (object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : '')
 }
 
 /**
