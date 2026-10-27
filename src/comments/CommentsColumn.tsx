@@ -56,7 +56,7 @@ import {
   type SendAnswer,
   type UploadAnswer,
 } from '@estiva-app/ui/editor'
-import { nameOf } from '../document/save'
+import { profileOf } from '../document/save'
 import { commentReferenceSections, subscribeReferences, type ReferableComment } from '../document/referencePicker'
 import { ReferencesProvider, useReferences } from '../document/references'
 import { PageLink } from '../document/PageLink'
@@ -121,23 +121,28 @@ function wholeBlocksLine(editor: Editor | null, place: CommentPlace): string {
   return `On ${types.length} ${types.every((t) => t === types[0]) ? blockNoun(types[0], true) : 'blocks'}`
 }
 
-/** The names of the people in the column, from their profiles: each one as it comes, kept once found. */
-function useNames(pubkeys: readonly string[]): Record<string, string> {
-  const [names, setNames] = useState<Record<string, string>>({})
+/** The names and pictures of the people in the column, from their profiles: each one as it comes, kept once found. */
+function useNames(pubkeys: readonly string[]): { names: Record<string, string>; pictures: Record<string, string> } {
+  const [faces, setFaces] = useState<{ names: Record<string, string>; pictures: Record<string, string> }>({ names: {}, pictures: {} })
   const asked = useRef(new Set<string>())
   const key = [...new Set(pubkeys)].sort().join(',')
   useEffect(() => {
     for (const pk of key ? key.split(',') : []) {
       if (asked.current.has(pk)) continue
       asked.current.add(pk)
-      void nameOf(pk)
+      void profileOf(pk)
         .catch(() => null)
-        .then((name) => {
-          if (name) setNames((was) => ({ ...was, [pk]: name }))
+        .then((profile) => {
+          const { displayName: name, picture } = profile ?? {}
+          if (name || picture)
+            setFaces((was) => ({
+              names: name ? { ...was.names, [pk]: name } : was.names,
+              pictures: picture ? { ...was.pictures, [pk]: picture } : was.pictures,
+            }))
         })
     }
   }, [key])
-  return names
+  return faces
 }
 
 // Ship's `/` Insert rows (Miky, 16 October), after the shared Format section. An edit drops File and Urgent itself.
@@ -435,6 +440,7 @@ function CommentLine({
   names,
   now,
   nameOf,
+  pictures,
   page,
   viewer,
   onReact,
@@ -444,6 +450,8 @@ function CommentLine({
   names: Record<string, string>
   now: number
   nameOf: (pubkey: string) => string | undefined
+  /** The author's face, from their profile; initials without one. */
+  pictures: Record<string, string>
   page: readonly CommentItem[]
   /** Who is looking: their reactions are lit. */
   viewer?: string
@@ -512,7 +520,7 @@ function CommentLine({
     <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 text-body-2-strong text-text-primary">
-          <Person name={names[comment.by] ?? 'Someone'} />
+          <Person name={names[comment.by] ?? 'Someone'} picture={pictures[comment.by]} />
         </span>
         <WithTooltip label={exactly(comment.at * 1000)}>
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
@@ -682,6 +690,7 @@ function ThreadCard({
   where,
   editor,
   names,
+  pictures,
   now,
   active,
   onActivate,
@@ -700,6 +709,7 @@ function ThreadCard({
   where: Where
   editor: Editor | null
   names: Record<string, string>
+  pictures: Record<string, string>
   now: number
   active: boolean
   onActivate: () => void
@@ -739,7 +749,7 @@ function ThreadCard({
           onTyped: edits.onTyped,
         }
       : undefined
-  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
+  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} pictures={pictures} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
   return (
     <Card data-thread-id={thread.id} data-active={active || undefined} data-resolved={thread.resolved || undefined} data-deleted={deleted || undefined} hover="fill" quietUntilHover selected={active} onClick={click} className="flex shrink-0 flex-col gap-3 p-3">
       <div className="flex items-start gap-2">
@@ -851,7 +861,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
 
   const all = useMemo(() => threads ?? [], [threads])
   // Authors and reactors: "who reacted" names them too.
-  const names = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
+  const { names, pictures } = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
   const people = useMentionPeople()
   const page = useMemo(() => all.flatMap(commentsOf), [all])
   const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])
@@ -973,6 +983,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       where={whereOf(t)}
       editor={editor}
       names={names}
+      pictures={pictures}
       now={readAt}
       // A handle's Comment: the draft takes over from the open card.
       active={!draft && t.id === active}

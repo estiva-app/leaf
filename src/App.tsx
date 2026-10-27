@@ -22,11 +22,13 @@ import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument } fro
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
+import { profileOf } from './document/save'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { useFileByAddress } from './pages/useFileByAddress'
 import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
 import { HomePage } from './pages/HomePage'
+import { viewerPubkey } from './relay/bridge'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
 
@@ -69,8 +71,17 @@ function Frame() {
     if (!signedIn) return
     let live = true
     void whoAmI().then((who) => {
-      if (live && who) setMe(who)
+      if (live && who) setMe((was) => ({ ...was, ...who }))
     })
+    // The face is the profile's, as Peek's and Ship's menus draw it: Estiva ID's directory answers no picture.
+    const viewer = viewerPubkey()
+    if (viewer)
+      void profileOf(viewer)
+        .catch(() => null)
+        .then((profile) => {
+          const picture = profile?.picture
+          if (live && picture) setMe((was) => ({ ...was, picture }))
+        })
     return () => {
       live = false
     }
