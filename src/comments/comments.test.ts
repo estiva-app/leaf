@@ -15,7 +15,7 @@ vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
 }))
 
-import { deleteComment, editComment, postComment, postReply, readThreads, setResolved, type CommentItem, type Thread } from './comments'
+import { deleteComment, editComment, postComment, postReply, readThreads, removeCard, setResolved, type CommentItem, type Thread } from './comments'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const AUTHOR = 'b'.repeat(64)
@@ -92,8 +92,35 @@ describe('a comment from the column', () => {
     expect(e.content).toBe('Far too long?')
     expect(e.tags).toEqual(expect.arrayContaining([['h', 'another-folder'], ['e', root.id]]))
     expect(e.tags.some((t) => t[0] === 'block' || t[0] === 'quote')).toBe(false)
-    // No files given: no `imeta`, so the comment's files stay as they are.
+    // A comment with no files: an edit with no `imeta`.
     expect(e.tags.some((t) => t[0] === 'imeta')).toBe(false)
+  })
+
+  /* An edit is the whole new message (SPEC §6.8): one with no `imeta` takes every file off, so each edit lists what it keeps. */
+  // With the fields another app writes (blurhash, fallback), which an edit must list back as they were read.
+  const kept = { url: `/media/${'d'.repeat(64)}.png`, m: 'image/png', x: 'd'.repeat(64), size: 40, dim: '800x600', blurhash: 'LKO2?U%2Tw=w', fallback: ['https://a.example/shot.png'], filename: 'shot.png' }
+  // Written out: a lossy encoder would pass a check built with `imetaTag`.
+  const KEPT_TAG = ['imeta', `url /media/${'d'.repeat(64)}.png`, 'm image/png', `x ${'d'.repeat(64)}`, 'size 40', 'dim 800x600', 'blurhash LKO2?U%2Tw=w', 'fallback https://a.example/shot.png', 'filename shot.png']
+  const imetaOfSent = () => sent().tags.filter((t) => t[0] === 'imeta')
+
+  it('an edit of the words only still lists the files the comment has, every field as read', async () => {
+    const root = comment([], 'Too long?')
+    expect(await editComment({ ...itemOf(root), files: [kept] }, { text: 'Far too long?' })).toEqual({ ok: true })
+    expect(sent().content).toBe('Far too long?')
+    expect(imetaOfSent()).toEqual([KEPT_TAG])
+  })
+
+  it('an edit that takes every file off writes no imeta, not the files the comment had', async () => {
+    const root = comment([], 'Too long?')
+    expect(await editComment({ ...itemOf(root), files: [kept] }, { text: 'Too long?', files: [] })).toEqual({ ok: true })
+    expect(imetaOfSent()).toEqual([])
+  })
+
+  it('✕ on a sent card still lists the files the comment has', async () => {
+    const root = comment([], 'See it')
+    expect(await removeCard({ ...itemOf(root), files: [kept], cards: [{ value: ADDRESS, layout: 'detailed' }] }, ADDRESS)).toEqual({ ok: true })
+    expect(sent().tags).toContainEqual(['embed', ADDRESS, 'none'])
+    expect(imetaOfSent()).toEqual([KEPT_TAG])
   })
 
   it('writes a file set an edit changed as the whole set, on the same kind:40003 (PEEKM-4)', async () => {
@@ -102,7 +129,9 @@ describe('a comment from the column', () => {
     expect(await editComment(itemOf(root), { text: 'Too long?', files })).toEqual({ ok: true })
     const e = sent()
     expect(e.kind).toBe(40003)
-    expect(e.tags.filter((t) => t[0] === 'imeta').map((t) => t.find((part) => part.startsWith('x ')))).toEqual([`x ${'a'.repeat(64)}`, `x ${'c'.repeat(64)}`])
+    expect(e.tags.filter((t) => t[0] === 'imeta')).toEqual(
+      ['a', 'c'].map((c) => ['imeta', `url /media/${c.repeat(64)}.png`, 'm image/png', `x ${c.repeat(64)}`, 'size 10']),
+    )
   })
 
   it('deletes your comment with a kind:5 naming it', async () => {

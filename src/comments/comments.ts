@@ -279,18 +279,23 @@ const NOT_SAVED = 'it did not go through'
  * §6.8), in the Folder the comment was filed in. It carries no `block` or
  * `quote`, so the comment stays where it is. A file added or taken off while
  * editing (Miky, 26 Oct, PEEKM-4) rides it as the whole `imeta` set; with no
- * `written.files` it carries none, so its files stay as they are.
+ * `written.files` the files it has ride it as they are.
  */
 export function editComment(comment: CommentItem, written: Written): Promise<WriteResult> {
   return sendEdit(comment, written.text, undefined, written.files)
 }
 
-/** A `kind:40003` on `comment`, in the Folder it was filed in: its new body, and its whole card set and file set when either changes. */
-function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[], files?: readonly Imeta[]): Promise<WriteResult> {
+/**
+ * A `kind:40003` on `comment`, in the Folder it was filed in: its new body, its whole card set when it changes, and
+ * its whole file set always — the files it keeps when they did not change, since an edit with none takes them off.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
+ */
+function sendEdit(comment: CommentItem, body: string, embeds?: readonly Embed[], files: readonly Imeta[] = comment.files): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const folder = comment.event.tags.find((t) => t[0] === 'h')?.[1]
   if (!folder) return Promise.resolve({ ok: false, reason: NOT_SAVED })
-  const changes = { ...(embeds ? { embeds } : {}), ...(files ? { mediaTags: files.map(imetaTag) } : {}) }
+  const changes = { ...(embeds ? { embeds } : {}), mediaTags: files.map(imetaTag) }
   return send(pubkey ? buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...changes }) : null, NOT_SAVED, SIGNED_OUT)
 }
 
