@@ -94,6 +94,17 @@ export async function uploadFile(file: File): Promise<Uploaded> {
   }
 }
 
+/**
+ * `uploadFile` as a page's text asks for it (`/` → Upload, a pasted picture):
+ * the `imeta` the attachment block keeps, or an error whose message is the
+ * words the editor shows under the page (LED-2).
+ */
+export async function uploadIntoText(file: File): Promise<Imeta> {
+  const answer = await uploadFile(file)
+  if (!answer.ok) throw new Error(`${file.name}: ${answer.reason}`)
+  return answer.file
+}
+
 /** The words under a file the relay did not take, short enough for the file's card. `uploadBlob` throws `upload failed: <status> <body>`. */
 export function uploadRefusal(error: unknown): string {
   const status = Number(/^upload failed: (\d{3})/.exec(error instanceof Error ? error.message : '')?.[1])

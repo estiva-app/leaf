@@ -269,6 +269,45 @@ describe('a picture in the text', () => {
     expect(attachments(reopen.mock.calls[0][0].content)).toMatchObject([{ attrs: { x: SHOT.x } }])
   })
 
+  /* `/upload` and Enter, then the file chosen in the picker the row opens. */
+  const pickThroughSlash = async (box: EditorBox, file: File) => {
+    type(box, ' /upload')
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent?.replace('↩ Enter', ''))).toEqual(['Upload'])
+    await act(async () => {
+      box.editor.view.someProp('handleKeyDown', (handle) => handle(box.editor.view, new KeyboardEvent('keydown', { key: 'Enter' })))
+    })
+    const picker = document.querySelector<HTMLInputElement>('input[type=file]')
+    expect(picker).not.toBeNull()
+    await act(async () => void fireEvent.change(picker!, { target: { files: [file] } }))
+    // The window has focus again once the picker closes, as a browser says it.
+    act(() => void window.dispatchEvent(new Event('focus')))
+  }
+
+  it('goes in from / → Upload, and the save keeps the uploaded file (LED-2)', async () => {
+    const onCommit = vi.fn<Commit>(async () => true)
+    const upload = vi.fn(async () => SHOT)
+    render(<LiveDocument value="mine" format="marker" changedBy={KATERINA} onCommit={onCommit} onLeftUnsaved={vi.fn()} upload={upload} />)
+    const box = await ready()
+    const file = new File(['png'], 'shot.png', { type: 'image/png' })
+    await pickThroughSlash(box, file)
+    expect(upload).toHaveBeenCalledWith(file)
+    await waitFor(() => expect(box.querySelector('[data-attachment="image"]')).not.toBeNull())
+    leave(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
+    expect(attachments(onCommit.mock.calls[0][0].content)).toMatchObject([{ attrs: { x: SHOT.x, url: SHOT.url } }])
+  })
+
+  it('a refused upload says why under the page and adds nothing', async () => {
+    const upload = vi.fn(async () => {
+      throw new Error('big.png: Too large')
+    })
+    render(<LiveDocument value="mine" format="marker" changedBy={KATERINA} onCommit={vi.fn()} onLeftUnsaved={vi.fn()} upload={upload} />)
+    const box = await ready()
+    await pickThroughSlash(box, new File(['png'], 'big.png', { type: 'image/png' }))
+    expect(await screen.findByText('big.png: Too large')).toBeTruthy()
+    expect(box.querySelector('[data-attachment]')).toBeNull()
+  })
+
   it('whose stored attributes are not a file draws as words, and the page still opens', async () => {
     const hostile = JSON.stringify({ type: 'doc', content: [{ type: 'attachment', id: 'b1', attrs: { ...SHOT, m: 5, filename: { a: 1 } } }] })
     render(<LiveDocument value={hostile} format="blocks" changedBy={KATERINA} onCommit={vi.fn()} onLeftUnsaved={vi.fn()} />)
