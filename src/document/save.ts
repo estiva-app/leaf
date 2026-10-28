@@ -1,8 +1,8 @@
 import { KIND_CHANNEL_METADATA, createPeopleCache, resolveForeignObject, resolveForeignObjects, resolveManifest, type ForeignObject } from '@estiva-app/interop'
 import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
-import { publish, query, viewerPubkey } from '../relay/bridge'
-import { projections as manifests } from '../relay/manifests'
+import { publish, viewerPubkey } from '../relay/bridge'
+import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
 export const CHANGE = 1851
