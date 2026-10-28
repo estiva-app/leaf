@@ -9,14 +9,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** What the relay holds outside any listing (an archived page), and what reading each `naddr` on its own gives. */
-const relay = vi.hoisted(() => ({ documents: [] as { kind: number; pubkey: string; d: string }[], read: {} as Record<string, unknown> }))
+/**
+ * Also: each `d` asked for, and a gate the Folder reads wait on, so a test can hold the tree while the page is read.
+ */
+const relay = vi.hoisted(() => ({
+  documents: [] as { kind: number; pubkey: string; d: string }[],
+  read: {} as Record<string, unknown>,
+  askedD: [] as string[],
+  tree: null as Promise<void> | null,
+}))
 
 vi.mock('./relay/bridge', () => ({
   viewerPubkey: () => 'a'.repeat(64),
-  query: async (filters: { kinds?: number[]; '#d'?: string[] }[]) =>
-    relay.documents
+  query: async (filters: { kinds?: number[]; '#d'?: string[] }[]) => {
+    for (const f of filters) relay.askedD.push(...(f['#d'] ?? []))
+    return relay.documents
       .filter((e) => filters.some((f) => f.kinds?.includes(e.kind) && f['#d']?.includes(e.d)))
-      .map((e) => ({ id: e.pubkey, kind: e.kind, pubkey: e.pubkey, created_at: 1, content: '', tags: [['d', e.d]], sig: '' })),
+      .map((e) => ({ id: e.pubkey, kind: e.kind, pubkey: e.pubkey, created_at: 1, content: '', tags: [['d', e.d]], sig: '' }))
+  },
   publish: async (): Promise<PublishResult> => ({ ok: true }) as PublishResult,
 }))
 
@@ -53,7 +63,10 @@ vi.mock('./folders/workspace', async () => {
   return {
     ...actual,
     readFolders: async () => folders,
-    readFolder: async (id: string): Promise<FolderContents> => ({ ...folders.find((f) => f.id === id)!, files: listed[id] ?? [], source: 'state' }),
+    readFolder: async (id: string): Promise<FolderContents> => {
+      await relay.tree
+      return { ...folders.find((f) => f.id === id)!, files: listed[id] ?? [], source: 'state' }
+    },
   }
 })
 
@@ -75,7 +88,16 @@ beforeEach(() => {
   for (const id of Object.keys(listed)) delete listed[id]
   relay.documents = []
   relay.read = {}
+  relay.askedD = []
+  relay.tree = null
 })
+
+/** Hold every Folder's read until the returned function is called. */
+function holdTree(): () => void {
+  let release!: () => void
+  relay.tree = new Promise((resolve) => (release = resolve))
+  return release
+}
 afterEach(cleanup)
 
 describe("a document's link", () => {
@@ -116,6 +138,55 @@ describe("a document's link", () => {
     expect(window.location.pathname).toBe(`/document/plan-${D}`)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
+  })
+
+  it('shows the page by its link while the Folders are still being read (APP-3)', async () => {
+    const release = holdTree()
+    const mine = page('a'.repeat(64), naddrOf(`30842:${'a'.repeat(64)}:${D}`), 'Read by its address.')
+    relay.documents = [{ kind: 30842, pubkey: 'a'.repeat(64), d: D }]
+    relay.read[mine.naddr!] = mine
+    window.history.replaceState(null, '', `/document/plan-${D}`)
+    render(<App />)
+    expect(await screen.findByText('Read by its address.')).toBeTruthy()
+    release()
+  })
+
+  it('keeps the open page when the Folders arrive and list it, so text being typed stays (APP-3)', async () => {
+    const release = holdTree()
+    const mine = page('a'.repeat(64), naddrOf(`30842:${'a'.repeat(64)}:${D}`), 'Read by its address.')
+    relay.documents = [{ kind: 30842, pubkey: 'a'.repeat(64), d: D }]
+    relay.read[mine.naddr!] = mine
+    listed[QA] = [mine]
+    window.history.replaceState(null, '', `/document/plan-${D}`)
+    render(<App />)
+    const before = await screen.findByText('Read by its address.')
+    release()
+    // The sidebar lists it once the tree is read; the editor drawn before is the one still on screen, not a new one.
+    await waitFor(() => expect(screen.getAllByText('Plan').length).toBeGreaterThan(1))
+    expect(screen.getByText('Read by its address.')).toBe(before)
+  })
+
+  it('gives an old /f/ link its own link before the Folders are read, without asking for the page again (APP-3)', async () => {
+    const release = holdTree()
+    const naddr = naddrOf(`30842:${'a'.repeat(64)}:${D}`)
+    relay.read[naddr] = page('a'.repeat(64), naddr, 'Read by its address.')
+    window.history.replaceState(null, '', `/f/${naddr}`)
+    render(<App />)
+    expect(await screen.findByText('Read by its address.')).toBeTruthy()
+    await waitFor(() => expect(window.location.pathname).toBe(`/document/plan-${D}`))
+    expect(relay.askedD).not.toContain(D)
+    release()
+  })
+
+  it('says a link names nothing only once the Folders are read without it (APP-3)', async () => {
+    const release = holdTree()
+    const missing = 'a1b2c3d4-0000-4000-8000-00000000000c'
+    window.history.replaceState(null, '', `/document/plan-${missing}`)
+    render(<App />)
+    await waitFor(() => expect(relay.askedD).toContain(missing))
+    expect(screen.queryByText('This could not be found, or you cannot read it.')).toBeNull()
+    release()
+    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
   })
 
   it('opens nothing when two authors hold the d of a page no Folder lists', async () => {

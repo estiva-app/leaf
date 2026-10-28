@@ -97,10 +97,10 @@ function Frame() {
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   const listedDocument = route.page === 'document' ? findDocument(folders, children, route.d) : null
   // Another app's address for a file, with Leaf's host (`/issue/<slug>-<d>`): the manifests say which file it names.
-  // A document's own link that no listing holds — an archived page, which every listing drops — is read by its `d`
-  // once the tree has been read without it, so its link still opens it (LED-4).
+  // A document's own link is read by its `d` at once, beside the tree, so its text shows before the tree is read
+  // (APP-3) — and an archived page, which every listing drops, still opens by its link (LED-4).
   const named = usePathAddress(
-    route.page === 'path' ? route : route.page === 'document' && !listedDocument && !reading ? { word: 'document', ref: route.d } : null,
+    route.page === 'path' ? route : route.page === 'document' && !listedDocument ? { word: 'document', ref: route.d } : null,
   )
   const open =
     route.page === 'file'
@@ -112,19 +112,20 @@ function Frame() {
           : null
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
-  // A file no listing holds, opened by its address: read on its own once the tree has been read without it.
+  // The file opened by its address, read on its own while the tree is still read and until the tree lists it (APP-3):
+  // the tree's copy takes over then, keyed the same, so the open editor stays.
   const naddr = route.page === 'file' ? route.naddr : named.address ? naddrOf(named.address) : null
-  const byAddress = useFileByAddress(naddr && !open && !reading ? naddr : null)
+  const byAddress = useFileByAddress(naddr && !open ? naddr : null)
   /*
     The address bar holds the link every app reads (SPEC §7.7). A document opened by its old `/f/<naddr>` link gets
     its own link, block included; another app's file gets its own app's path on Leaf's host, slug refreshed, so
     swapping the host opens it there (RFC 0.5 §7.7 rule 4).
   */
   const shown = route.page === 'file' || route.page === 'path' ? (open?.file ?? byAddress.file) : null
-  const elsewhere = shown && !shown.unreachable && !isDocument(shown) ? shown : null
+  const readable = shown && !shown.unreachable ? shown : null
+  const elsewhere = readable && !isDocument(readable) ? readable : null
   const ownerPath = useOwnerPath(elsewhere)
-  const relink =
-    open && shown === open.file && isDocument(open.file) ? pagePath({ ...open.file, title: open.file.slots.title?.value }) : elsewhere ? ownerPath : null
+  const relink = readable && isDocument(readable) ? pagePath({ ...readable, title: readable.slots.title?.value }) : elsewhere ? ownerPath : null
   useEffect(() => {
     if (!relink || relink === window.location.pathname) return
     if (shown?.address) rememberPath(relink, shown.address)
