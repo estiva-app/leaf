@@ -25,6 +25,7 @@ import { useReferencePage } from './document/referencePicker'
 import { profileOf } from './document/save'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
+import { useFold } from './frame/folds'
 import { useFileByAddress } from './pages/useFileByAddress'
 import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
 import { HomePage } from './pages/HomePage'
@@ -59,6 +60,7 @@ function Frame() {
   const recent = useRecent(workspace.folders, route.page === 'home')
   const { showToast } = useToast()
   const [making, setMaking] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useFold('sidebar')
   const [unlisted, setUnlisted] = useState<Unlisted | null>(null)
   /*
     New document on one Folder, from a link another app offered it by
@@ -207,6 +209,8 @@ function Frame() {
       <AppShell
         variant="inset"
         logo={APP_TITLE}
+        navOpen={sidebarOpen}
+        onNavOpenChange={setSidebarOpen}
         identity={<IdentityMenu me={me} signedIn={signedIn} idBase={ID_CONFIG?.base} onSignOut={signedIn ? beginSignOut : undefined} />}
         nav={
           <Sidebar>
