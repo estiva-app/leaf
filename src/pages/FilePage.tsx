@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
+import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -19,8 +19,13 @@ import { isDocument, titleOf, typeOf } from '../folders/tree'
 import { OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
-import { useFold } from '../frame/folds'
+import { useFold, useNarrow } from '../frame/folds'
 import { DocumentMenu } from './DocumentMenu'
+import { Members } from './Members'
+import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
+import { useDirectory } from '../comments/people'
+import { exactly } from '../home/recent'
+import { viewerPubkey } from '../relay/bridge'
 
 /**
  * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
@@ -69,6 +74,16 @@ export function FilePage({
   return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} folders={folders} onChanged={onChanged} />
 }
 
+/** Now, in ms, moved on each minute: what "Edited 2 minutes ago" counts from. */
+function useMinute(): number {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
+}
+
 /** Whether the comments column is shown, and its toggle. */
 type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
 
@@ -91,6 +106,11 @@ function DocumentView({
 }) {
   const { file, changedBy } = useLiveDocument(opened)
   const { showToast } = useToast()
+  const facts = useFileFacts(file)
+  const directory = useDirectory()
+  const narrow = useNarrow()
+  const now = useMinute()
+  const me = viewerPubkey()
   const own = isDocument(file)
   const writes = writableFields(file)
   // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
@@ -197,18 +217,45 @@ function DocumentView({
     setDraft(anchor)
     if (anchor && !comments.open) comments.onOpenChange(true)
   }
+  // Who is in it and its last edit, left of the buttons, 12px clear of them as Peek's header (LED-6). In a narrow
+  // window the last edit heads the ⋯ menu; a file with no menu keeps it in the bar.
+  const edited = facts.lastEdit === undefined ? undefined : lastEditLine(facts.lastEdit, me, (pubkey) => directory[pubkey]?.displayName, now)
+  const editedInMenu = narrow && own
+  async function addMembers(people: string[]): Promise<boolean> {
+    const answers = await Promise.all(people.map((person) => setMember(file, person, true)))
+    facts.reread()
+    if (answers.every(Boolean)) return true
+    showToast({ label: 'Could not add everyone. Try again.', type: 'error' })
+    return false
+  }
+  async function setMine(member: boolean): Promise<boolean> {
+    const ok = !!me && (await setMember(file, me, member))
+    facts.reread()
+    if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error' })
+    return ok
+  }
   // Top right of the header, as the prototype draws it, with a Leaf page's ⋯ menu beside it (LED-4).
   const actions = (
-    <Toolbar aria-label="Page actions" surface={false}>
-      <ToolbarButton
-        tooltip={comments.open ? 'Hide comments' : 'Show comments'}
-        aria-label={comments.open ? 'Hide comments' : 'Show comments'}
-        onClick={() => comments.onOpenChange(!comments.open)}
-      >
-        {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
-      </ToolbarButton>
-      {own && <DocumentMenu file={file} folders={folders} onChanged={onChanged} />}
-    </Toolbar>
+    <>
+      <div className="flex items-center gap-3 pr-2">
+        {edited && !editedInMenu && (
+          <WithTooltip inline label={facts.lastEdit ? exactly(facts.lastEdit.at) : edited}>
+            <span className="whitespace-nowrap text-body-2 text-text-secondary">{edited}</span>
+          </WithTooltip>
+        )}
+        <Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />
+      </div>
+      <Toolbar aria-label="Page actions" surface={false}>
+        <ToolbarButton
+          tooltip={comments.open ? 'Hide comments' : 'Show comments'}
+          aria-label={comments.open ? 'Hide comments' : 'Show comments'}
+          onClick={() => comments.onOpenChange(!comments.open)}
+        >
+          {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
+        </ToolbarButton>
+        {own && <DocumentMenu file={file} folders={folders} onChanged={onChanged} heading={editedInMenu ? edited : undefined} />}
+      </Toolbar>
+    </>
   )
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { IconDots } from '@tabler/icons-react'
-import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
+import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, MenuSeparator, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
 import {
   archiveDocument,
@@ -34,10 +34,13 @@ export function DocumentMenu({
   file,
   folders = [],
   onChanged,
+  heading,
 }: {
   file: ForeignObject
   folders?: readonly FolderSummary[]
   onChanged?: (folder: string) => void | Promise<void>
+  /** A line drawn first and not chosen: the last edit, in a narrow window. */
+  heading?: string
 }) {
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan; words: string } | Moving | null>(null)
@@ -139,6 +142,9 @@ export function DocumentMenu({
         }
         align="right"
       >
+        {/* A narrow window: the last edit leaves the bar and heads the menu, as the LED-1 prototype draws it. */}
+        {heading && <MenuItem label={heading} disabled />}
+        {heading && <MenuSeparator />}
         {/* Not on a page archived by itself; one archived with a page above it may move out of it (SPEC §6.5). */}
         {!archivedSelf && <MenuItem label="Move…" onClick={openMove} />}
         <MenuItem

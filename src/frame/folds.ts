@@ -3,7 +3,7 @@
  * documents and reloads, until unfolded (Miky, 28 Oct); a window too narrow for both columns opens with both folded
  * (Katerina, 28 Oct), whatever was kept.
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export type Fold = 'sidebar' | 'comments'
 
@@ -20,6 +20,19 @@ const now = new Map<Fold, boolean>()
 
 function narrow(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches
+}
+
+/** Whether the window is narrow now, kept current as it is resized: the last edit moves into the ⋯ menu (Katerina, 28 Oct). */
+export function useNarrow(): boolean {
+  const [is, setIs] = useState(narrow)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(NARROW)
+    const changed = () => setIs(media.matches)
+    media.addEventListener('change', changed)
+    return () => media.removeEventListener('change', changed)
+  }, [])
+  return is
 }
 
 function kept(): Partial<Record<Fold, boolean>> {
