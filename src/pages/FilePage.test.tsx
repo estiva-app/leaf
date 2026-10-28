@@ -1,7 +1,8 @@
-import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
+import { BODY_SLOT, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { Editor } from '@tiptap/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -198,18 +199,20 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     await locked()
   })
 
-  it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive', async () => {
+  it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive or Move', async () => {
     render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Move…' })).toBeNull()
   })
 
-  it('the ⋯ menu of a page archived with a page above it offers no Unarchive: that is done on the page above', async () => {
+  it('the ⋯ menu of a page archived with a page above it offers Move out of it, and no Unarchive: that is done on the page above', async () => {
     render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     expect(await screen.findByRole('menuitem', { name: 'Delete' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Move…' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Unarchive' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
   })
@@ -444,5 +447,40 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     expect(published.map((e) => e.kind)).toEqual([5])
     expect(screen.getByRole('button', { name: 'Delete page' })).toBeTruthy()
     expect(window.location.pathname).toBe('/document/friday-notes-page-1')
+  })
+})
+
+describe('Move from a page’s ⋯ menu (LED-5)', () => {
+  const STEER = '11111111-1111-4111-8111-111111111111'
+  const folders = [
+    { id: FOLDER, name: 'QA', hasState: true, addresses: [ADDRESS] },
+    { id: STEER, name: 'Steer', hasState: true, addresses: [] },
+  ] as unknown as FolderSummary[]
+
+  // A pointer, as a person picks: the list chooses on pointer events, which a bare click does not send.
+  async function pick(name: string, option: string) {
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('combobox', { name }))
+    await user.click(await screen.findByRole('option', { name: option }))
+  }
+
+  it('to the top of another Folder: the add there, the remove here, then both Folders read again so the sidebar shows it there', async () => {
+    const reread: string[] = []
+    render(
+      <ToastProvider>
+        <FilePage file={doc()} loading={false} folders={folders} onChanged={(id) => void reread.push(id)} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    await pick('Folder', 'Steer')
+    await pick('Put it under', 'The top of Steer')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect(await screen.findByText('Moved to Steer')).toBeTruthy()
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op')])).toEqual([
+      [1852, STEER, 'add'],
+      [1852, FOLDER, 'remove'],
+    ])
+    expect(reread).toEqual([STEER, FOLDER])
   })
 })

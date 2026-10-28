@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
-import { BODY_SLOT, isArchived, type ForeignObject } from '@estiva-app/interop'
+import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
 import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
@@ -33,10 +33,13 @@ import { DocumentMenu } from './DocumentMenu'
 export function FilePage({
   file: listed,
   loading,
+  folders,
   onChanged,
 }: {
   file: ForeignObject | null
   loading: boolean
+  /** The Folders the sidebar read: where Move may put a page. */
+  folders?: readonly FolderSummary[]
   /** A page was archived, unarchived or deleted from its menu: read its Folder again. */
   onChanged?: (folder: string) => void | Promise<void>
 }) {
@@ -63,7 +66,7 @@ export function FilePage({
       />
     )
   }
-  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} onChanged={onChanged} />
+  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} folders={folders} onChanged={onChanged} />
 }
 
 /** Whether the comments column is shown, and its toggle. */
@@ -75,7 +78,17 @@ type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
  * (LEAF-3). Keyed by the document, so opening another one starts afresh and
  * the one you left saves on the way out.
  */
-function DocumentView({ opened, comments, onChanged }: { opened: ForeignObject; comments: CommentsFold; onChanged?: (folder: string) => void | Promise<void> }) {
+function DocumentView({
+  opened,
+  comments,
+  folders,
+  onChanged,
+}: {
+  opened: ForeignObject
+  comments: CommentsFold
+  folders?: readonly FolderSummary[]
+  onChanged?: (folder: string) => void | Promise<void>
+}) {
   const { file, changedBy } = useLiveDocument(opened)
   const { showToast } = useToast()
   const own = isDocument(file)
@@ -194,7 +207,7 @@ function DocumentView({ opened, comments, onChanged }: { opened: ForeignObject; 
       >
         {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
       </ToolbarButton>
-      {own && <DocumentMenu file={file} onChanged={onChanged} />}
+      {own && <DocumentMenu file={file} folders={folders} onChanged={onChanged} />}
     </Toolbar>
   )
   return (
