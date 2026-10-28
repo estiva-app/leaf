@@ -20,6 +20,7 @@ import { OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
 import { useFold } from '../frame/folds'
+import { DocumentMenu } from './DocumentMenu'
 
 /**
  * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
@@ -29,7 +30,16 @@ import { useFold } from '../frame/folds'
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
-export function FilePage({ file: listed, loading }: { file: ForeignObject | null; loading: boolean }) {
+export function FilePage({
+  file: listed,
+  loading,
+  onChanged,
+}: {
+  file: ForeignObject | null
+  loading: boolean
+  /** A page was archived, unarchived or deleted from its menu: read its Folder again. */
+  onChanged?: (folder: string) => void | Promise<void>
+}) {
   // Above the document, so it holds from one document to the next (LED-3).
   const [commentsOpen, setCommentsOpen] = useFold('comments')
   const comments = { open: commentsOpen, onOpenChange: setCommentsOpen }
@@ -53,7 +63,7 @@ export function FilePage({ file: listed, loading }: { file: ForeignObject | null
       />
     )
   }
-  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} />
+  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} onChanged={onChanged} />
 }
 
 /** Whether the comments column is shown, and its toggle. */
@@ -65,13 +75,13 @@ type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
  * (LEAF-3). Keyed by the document, so opening another one starts afresh and
  * the one you left saves on the way out.
  */
-function DocumentView({ opened, comments }: { opened: ForeignObject; comments: CommentsFold }) {
+function DocumentView({ opened, comments, onChanged }: { opened: ForeignObject; comments: CommentsFold; onChanged?: (folder: string) => void | Promise<void> }) {
   const { file, changedBy } = useLiveDocument(opened)
   const { showToast } = useToast()
   const own = isDocument(file)
   const writes = writableFields(file)
   // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
-  // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), and Leaf has no Unarchive.
+  // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), from the ⋯ menu (LED-4).
   const locked = isArchived(file)
   const { field: fieldLine, comment: commentLine } = useArchivedLines(file, own)
   const title = titleOf(file)
@@ -174,7 +184,7 @@ function DocumentView({ opened, comments }: { opened: ForeignObject; comments: C
     setDraft(anchor)
     if (anchor && !comments.open) comments.onOpenChange(true)
   }
-  // Top right of the header, as the prototype draws it; the ⋯ menu joins it beside (LED-4).
+  // Top right of the header, as the prototype draws it, with a Leaf page's ⋯ menu beside it (LED-4).
   const actions = (
     <Toolbar aria-label="Page actions" surface={false}>
       <ToolbarButton
@@ -184,6 +194,7 @@ function DocumentView({ opened, comments }: { opened: ForeignObject; comments: C
       >
         {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
       </ToolbarButton>
+      {own && <DocumentMenu file={file} onChanged={onChanged} />}
     </Toolbar>
   )
   return (
@@ -261,8 +272,8 @@ function DocumentView({ opened, comments }: { opened: ForeignObject; comments: C
 
 /**
  * The two lines on an archived file (PEEKM-8). In the comment box's place, the words every app shows ("Archived.
- * Unarchive it to comment.", "Unarchive the project to comment."), and "in Peek" on a Leaf page archived itself, since
- * Leaf has no Unarchive. Over its locked text, the file to unarchive and where: "Unarchive the project in Estiva Ship
+ * Unarchive it to comment.", "Unarchive the project to comment."), with no "in Peek" on a Leaf page now that its menu
+ * has Unarchive (LED-4). Over its locked text, the file to unarchive and where: "Unarchive the project in Estiva Ship
  * to edit." The closest archived file above is named once its manifest is read; until then no line, never "the parent".
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
@@ -283,8 +294,8 @@ function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; 
   }, [withAddress])
   if (!archive) return {}
   if (!withAddress) {
-    const where = own ? 'Peek' : (file.appName ?? 'its app')
-    return { field: archivedLine(archive, undefined, { in: where, to: 'edit' }), comment: archivedLine(archive, undefined, own ? { in: 'Peek' } : {}) }
+    const where = own ? undefined : (file.appName ?? 'its app')
+    return { field: archivedLine(archive, undefined, { in: where, to: 'edit' }), comment: archivedLine(archive) }
   }
   if (above?.of !== withAddress) return {}
   return { field: archivedLine(archive, above.noun, { in: above.app, to: 'edit' }), comment: archivedLine(archive, above.noun) }

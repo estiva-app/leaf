@@ -180,20 +180,50 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
   }
 
-  it('a Leaf page archived itself: unarchived in Peek, said over its text and in the comment box’s place', async () => {
+  it('a Leaf page archived itself: unarchived here, said over its text and in the comment box’s place, never "in Peek"', async () => {
     render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Archived. Unarchive it in Peek to edit.')).toBeTruthy()
-    expect(screen.getByText('Archived. Unarchive it in Peek to comment.')).toBeTruthy()
+    expect(await screen.findByText('Archived. Unarchive it to edit.')).toBeTruthy()
+    expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
+    expect(screen.queryByText(/in Peek/)).toBeNull()
     await locked()
   })
 
-  it('a page under an archived page: names the document, unarchived in Peek', async () => {
+  it('a page under an archived page: names the document, with no app to go to', async () => {
     const { buildManifest } = await import('../manifest')
     manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
     render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Unarchive the document in Peek to edit.')).toBeTruthy()
+    expect(await screen.findByText('Unarchive the document to edit.')).toBeTruthy()
     expect(screen.getByText('Unarchive the document to comment.')).toBeTruthy()
+    expect(screen.queryByText(/in Peek/)).toBeNull()
     await locked()
+  })
+
+  it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive', async () => {
+    render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
+  })
+
+  it('the ⋯ menu of a page archived with a page above it offers no Unarchive: that is done on the page above', async () => {
+    render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Unarchive' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
+  })
+
+  it('Unarchive on an archived page writes `archived` empty in its own Folder and says so', async () => {
+    published.length = 0
+    render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Unarchive' }))
+    expect(await screen.findByText(/^Unarchived “/)).toBeTruthy()
+    const change = published.find((e) => e.kind === 1851 && e.tags.some((t) => t[0] === 'field' && t[1] === 'archived'))!
+    expect(change.tags).toContainEqual(['value', ''])
+    expect(change.tags).toContainEqual(['a', doc().address])
+    expect(change.tags).toContainEqual(['h', doc().folder])
   })
 
   it('a Ship issue archived itself: the comment line is the one every app shows', async () => {

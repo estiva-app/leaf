@@ -1,0 +1,166 @@
+import { useRef, useState } from 'react'
+import type { ForeignObject } from '@estiva-app/interop'
+import { IconDots } from '@tabler/icons-react'
+import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
+import { copyLink } from '../document/blockLink'
+import { archiveDocument, archiveHides, countOf, deleteDocument, readDeletePlan, type DeletePlan } from '../document/fileMenu'
+import { titleOf } from '../folders/tree'
+import { documentPath, dOf, navigate, pagePath } from '../route'
+
+/**
+ * A Leaf document's ⋯ menu, as the LED-1 prototype draws it: Copy link, Archive… or Unarchive, and Delete (LED-4).
+ * Archive is offered beside Delete, never as two styles of one control; an archived page keeps Unarchive and Delete,
+ * and one archived with a page above it is unarchived there (SPEC §6.5). `onChanged` re-reads the page's Folder.
+ */
+export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChanged?: (folder: string) => void | Promise<void> }) {
+  const { showToast } = useToast()
+  const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan } | null>(null)
+  // One read at a time: a second press while the count is read would open a second dialog over the first.
+  const reading = useRef(false)
+  const title = titleOf(file)
+  const refuse = (label: string) => showToast({ label, type: 'error' })
+  const changed = () => {
+    if (file.folder) void onChanged?.(file.folder)
+  }
+
+  async function setArchived(archived: boolean, resolution?: string): Promise<boolean> {
+    const result = await archiveDocument(file, archived, resolution)
+    if (!result.ok) {
+      refuse(result.reason)
+      return false
+    }
+    changed()
+    // Undo, then Peek's Archive view or its link, bring it back (Miky, LED-4 kickoff).
+    showToast(
+      archived
+        ? { label: `Archived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchived(false) }
+        : { label: `Unarchived “${title}”`, type: 'success' },
+    )
+    return true
+  }
+
+  function read<T>(what: Promise<T>, open: (found: T) => void, failed: string) {
+    if (reading.current) return
+    reading.current = true
+    void what
+      .then(open, () => refuse(failed))
+      .finally(() => {
+        reading.current = false
+      })
+  }
+
+  async function remove(plan: DeletePlan): Promise<boolean> {
+    const result = await deleteDocument(file, plan)
+    if (!result.ok) {
+      refuse(result.reason)
+      return false
+    }
+    navigate(plan.to ? pagePath({ ...plan.to, title: titleOf(plan.to) }) : '/')
+    changed()
+    const after = [
+      result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the Folder’s top.`,
+      result.stillListed && 'It is still listed in a Folder; reload and try again.',
+    ].filter(Boolean)
+    showToast({ label: [`Deleted “${title}”.`, ...after].join(' '), type: after.length ? 'warning' : 'success' })
+    return true
+  }
+
+  const archivedSelf = !!file.archived && !file.archived.with
+  return (
+    <>
+      <Menu
+        trigger={
+          <ToolbarButton tooltip="More" aria-label="More">
+            <IconDots size={16} stroke={1.5} />
+          </ToolbarButton>
+        }
+        align="right"
+      >
+        <MenuItem
+          label="Copy link"
+          onClick={() => {
+            if (file.address) void copyLink(`${window.location.origin}${documentPath(dOf(file.address), title)}`, (label) => showToast({ label }))
+          }}
+        />
+        {archivedSelf ? (
+          <MenuItem label="Unarchive" onClick={() => void setArchived(false)} />
+        ) : (
+          !file.archived && (
+            <MenuItem
+              label="Archive…"
+              onClick={() =>
+                file.address &&
+                read(archiveHides(file.address), (hides) => setDialog({ kind: 'archive', hides }), 'What archiving would hide could not be read, so nothing was archived. Try again.')
+              }
+            />
+          )
+        )}
+        <MenuItem
+          label="Delete"
+          destructive
+          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan }), 'The Folder could not be read, so nothing was deleted. Try again.')}
+        />
+      </Menu>
+      {dialog?.kind === 'archive' && (
+        <ArchiveDialog title={title} hides={dialog.hides} onArchive={(resolution) => setArchived(true, resolution || undefined)} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === 'delete' && (
+        <ConfirmDialog title={`Delete “${title}”?`} confirmLabel="Delete page" destructive onConfirm={() => remove(dialog.plan)} onClose={() => setDialog(null)}>
+          <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
+          {deleteWords(file, dialog.plan) && <p>{deleteWords(file, dialog.plan)}</p>}
+          {!file.archived && <p className="text-text-secondary">Archiving is reversible and usually what you want.</p>}
+        </ConfirmDialog>
+      )}
+    </>
+  )
+}
+
+/**
+ * Where the pages under a deleted page go, in words: "The 1 page under it moves up into Leaf feedback." On a page
+ * archived itself, the pages archived with it come back, live, and are not archived on the way (Miky, LED-4 kickoff).
+ * Never "erased". Empty when nothing is under it.
+ */
+export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeletePlan): string {
+  const { children } = plan
+  if (children.length === 0) return ''
+  const place = plan.to ? titleOf(plan.to) : (plan.folderName ?? 'its Folder')
+  const kinds = new Set(children.map((child) => child.kind))
+  const what = kinds.size === 1 ? countOf(children[0].kind, children.length) : `${children.length} files`
+  const one = children.length === 1
+  if (file.archived && !file.archived.with) return `The ${what} under it ${one ? 'comes' : 'come'} back into ${place}.`
+  return `The ${what} under it ${one ? 'moves' : 'move'} up into ${place}.`
+}
+
+/** "Archive …?" for a Leaf page: what it hides with it, that nothing is deleted, and an optional resolution (the prototype's words). */
+function ArchiveDialog({ title, hides, onArchive, onClose }: { title: string; hides: string; onArchive: (resolution: string) => Promise<boolean>; onClose: () => void }) {
+  const [resolution, setResolution] = useState('')
+  const archive = async () => {
+    if (await onArchive(resolution.trim())) onClose()
+  }
+  return (
+    <DialogShell
+      title={`Archive “${title}”?`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="muted" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" form="archive-form">
+            Archive page
+          </Button>
+        </>
+      }
+    >
+      <Form id="archive-form" onSubmit={archive}>
+        <div className="flex flex-col gap-2 text-body-2 text-text-primary">
+          <p>{hides ? `This hides the page and the ${hides} under it from every list, in Leaf, Peek and Ship.` : 'This hides the page from every list, in Leaf, Peek and Ship.'}</p>
+          <p className="text-text-secondary">Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.</p>
+        </div>
+        <Field label="Resolution (optional)">
+          <Textarea value={resolution} rows={3} placeholder="What happened with this page? Shown first to anyone who opens it." onChange={(event) => setResolution(event.target.value)} />
+        </Field>
+      </Form>
+    </DialogShell>
+  )
+}
