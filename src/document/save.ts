@@ -25,8 +25,8 @@ export function readDocuments(naddrs: readonly string[]): Promise<Record<string,
 
 /**
  * The closest archived file above an archived file, for the lines that name it (PEEKM-8): what its app calls it —
- * "project", "document", from its manifest's projection — and where it is unarchived. Leaf has no Unarchive, so its
- * own pages, and Folders, are unarchived in Peek; anything else in its own app. Read through the tab's manifest cache,
+ * "project", "document", from its manifest's projection — and where it is unarchived: a Folder in Peek, Leaf's own
+ * pages here (no app named, LED-4), anything else in its own app. Read through the tab's manifest cache,
  * which the file's own read has already filled. Either is absent when nobody declares it.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
@@ -41,7 +41,8 @@ export async function archivedAbove(address: string): Promise<{ noun?: string; a
   if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'folder', app: 'Peek' }
   const found = await resolveManifest(pointer, query, manifests).catch(() => null)
   const noun = found?.manifest.projections?.[String(pointer.kind)]?.noun
-  return { noun, app: pointer.kind === KIND.DOCUMENT ? 'Peek' : found?.manifest.name }
+  // Leaf calls its own documents pages, as the LED-1 prototype's lines do.
+  return pointer.kind === KIND.DOCUMENT ? { noun: 'page' } : { noun, app: found?.manifest.name }
 }
 
 /**

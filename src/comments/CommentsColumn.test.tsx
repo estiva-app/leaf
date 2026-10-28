@@ -1395,13 +1395,15 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     const theirs = comment([['block', PARAGRAPH]], 'Too long?')
     await openArchived([own, theirs, reaction(own.id)])
     await waitFor(() => expect(line(own.id)?.querySelector('[data-card="detailed"]')?.textContent).toContain('Card on an archived page'))
-    expect(screen.getByText('Archived. Unarchive it in Peek to comment.')).toBeTruthy()
+    expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
     // Chosen, a thread opens no reply box.
     act(() => void fireEvent.click(line(theirs.id)!.closest<HTMLElement>('[data-thread-id]')!))
     act(() => void fireEvent.click(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!))
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
-    for (const name of ['Resolve', 'Reopen', 'Add a reaction', 'Remove card', 'More']) expect(screen.queryByRole('button', { name })).toBeNull()
+    for (const name of ['Resolve', 'Reopen', 'Add a reaction', 'Remove card']) expect(screen.queryByRole('button', { name })).toBeNull()
+    // A comment's own ⋯ (Edit, Delete); the page's ⋯ in the header is the page's (LED-4).
+    for (const thread of document.querySelectorAll<HTMLElement>('[data-thread-id]')) expect(within(thread).queryByRole('button', { name: 'More' })).toBeNull()
     const pill = await screen.findByRole('button', { name: 'Makes sense, 1' })
     act(() => void fireEvent.click(pill))
     await act(async () => {})
