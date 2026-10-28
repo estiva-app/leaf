@@ -15,8 +15,9 @@ const KIND_MANIFEST = 31990
 const DECLARED_LIMIT = 500
 
 /**
- * The manifests apps publish (kind 31990), read once per tab and again after as long as the projection cache keeps
- * a manifest, so a republished one is seen as soon as before. An empty or failed read is asked again next time.
+ * The manifests apps publish (kind 31990), newest first, read once per tab and again after as long as the projection
+ * cache keeps a manifest. A resolve that cache keeps may have been answered from a read that old, so a republished
+ * manifest is seen within twice that, ten minutes. An empty or failed read is asked again next time.
  */
 let manifests: { at: number; read: Promise<SignedEvent[]> } | null = null
 export function declaredManifests(): Promise<SignedEvent[]> {
@@ -24,7 +25,7 @@ export function declaredManifests(): Promise<SignedEvent[]> {
   const read = query([{ kinds: [KIND_MANIFEST], limit: DECLARED_LIMIT }]).then(
     (found) => {
       if (found.length === 0 && manifests?.read === read) manifests = null
-      return found
+      return [...found].sort((a, b) => b.created_at - a.created_at)
     },
     (error: unknown) => {
       if (manifests?.read === read) manifests = null
@@ -45,9 +46,8 @@ export function declaredManifests(): Promise<SignedEvent[]> {
 export function withDeclaredManifests(read: QueryFn): QueryFn {
   return async (filters) => {
     if (filters.length === 0 || !filters.every(isServed)) return read(filters)
-    const declared = await declaredManifests().catch(() => null)
-    if (!declared?.length || declared.length >= DECLARED_LIMIT) return read(filters)
-    const newest = [...declared].sort((a, b) => b.created_at - a.created_at)
+    const newest = await declaredManifests().catch(() => null)
+    if (!newest?.length || newest.length >= DECLARED_LIMIT) return read(filters)
     const found = new Map<string, SignedEvent>()
     for (const filter of filters) {
       const limit = typeof filter.limit === 'number' ? filter.limit : Infinity
