@@ -122,6 +122,13 @@ describe("a page's header", () => {
     expect(await screen.findByText('Not edited since it was made')).toBeTruthy()
   })
 
+  it('does not name someone whose title change was signed in another Folder, which changed nothing', async () => {
+    held.push(event(1851, JAN, NOW - 60_000, [['a', ADDRESS], ['field', 'title'], ['value', 'Hijacked'], ['h', 'b78e60b1-a41f-48c9-bcb0-6ceacdee8c69']]))
+    show()
+    expect(await screen.findByText('Edited 2 hours ago by Katerina')).toBeTruthy()
+    expect(screen.queryByText(/by Jana/)).toBeNull()
+  })
+
   it('moves the last edit into the ⋯ menu in a narrow window', async () => {
     const was = window.matchMedia
     window.matchMedia = ((query: string) => ({ matches: true, media: query, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia

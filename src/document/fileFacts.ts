@@ -27,11 +27,24 @@ export function factsFilters({ address, eventId }: { address: string; eventId: s
   ]
 }
 
-/** The newest edit among `events` to the file at `address`, or `null` when it has none since it was made. */
-export function lastEditOf(address: string, events: readonly SignedEvent[]): LastEdit | null {
+/**
+ * The newest edit among `events` to the file at `address`, or `null` when it has none since it was made. Only a change
+ * written in the file's own Folder counts, as interop folds them (SPEC §6.12): the relay checks a change's signer
+ * against its own `h`, so one signed in another Folder changed nothing and must not name its signer here.
+ */
+export function lastEditOf(
+  { address, eventId, folder }: { address: string; eventId: string; folder?: string },
+  events: readonly SignedEvent[],
+): LastEdit | null {
+  // The Folders the root is placed in, as interop reads them; the one it was opened in until the root is held.
+  const root = events.find((e) => e.id === eventId)
+  const folders = new Set<string>(root ? root.tags.filter((t) => (t[0] === 'h' || t[0] === 'buzz-channel') && t[1]).map((t) => t[1]) : folder ? [folder] : [])
   let last: LastEdit | null = null
   for (const event of events) {
     if (!isEdit(event) || !event.tags.some((t) => t[0] === 'a' && t[1] === address)) continue
+    // The first `h` with a value, as the relay reads it.
+    const own = event.tags.find((t) => t[0] === 'h' && t[1])?.[1]
+    if (!own || !folders.has(own)) continue
     const at = timeOf(event)
     if (!last || at > last.at) last = { by: event.pubkey, at }
   }
@@ -106,7 +119,7 @@ export function useFileFacts(file: ForeignObject): FileFacts & { reread: () => v
         const all = [...events.values()]
         setFacts({
           members: membersOf(address, all),
-          lastEdit: lastEditOf(address, all),
+          lastEdit: lastEditOf({ address, eventId, folder: file.folder }, all),
         })
       },
       // A refused read keeps what was drawn; the next change asks again.
