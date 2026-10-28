@@ -180,7 +180,6 @@ function DocumentView({ opened, comments }: { opened: ForeignObject; comments: C
       <ToolbarButton
         tooltip={comments.open ? 'Hide comments' : 'Show comments'}
         aria-label={comments.open ? 'Hide comments' : 'Show comments'}
-        aria-pressed={comments.open}
         onClick={() => comments.onOpenChange(!comments.open)}
       >
         {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
@@ -239,22 +238,22 @@ function DocumentView({ opened, comments }: { opened: ForeignObject; comments: C
           </div>
         </Panel>
       </div>
-      {comments.open && (
-        <>
-          <Divider orientation="vertical" />
-          <div className="flex w-96 flex-none flex-col">
-            <CommentsColumn
-              doc={{ address: file.address, folder: file.folder }}
-              addressable={addressable}
-              editor={editor}
-              docBody={docBody}
-              draft={locked ? null : draft}
-              onDraft={setDraft}
-              closed={locked ? (commentLine ?? '') : undefined}
-            />
-          </div>
-        </>
-      )}
+      {/* Hidden, not taken away: an edit open in it is still there when it comes back. */}
+      <div className="contents" hidden={!comments.open}>
+        <Divider orientation="vertical" />
+        <div className="flex w-96 flex-none flex-col">
+          <CommentsColumn
+            doc={{ address: file.address, folder: file.folder }}
+            addressable={addressable}
+            editor={editor}
+            docBody={docBody}
+            draft={locked ? null : draft}
+            onDraft={setDraft}
+            closed={locked ? (commentLine ?? '') : undefined}
+            hidden={!comments.open}
+          />
+        </div>
+      </div>
     </div>
   )
 }

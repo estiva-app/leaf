@@ -10,7 +10,13 @@ export type Fold = 'sidebar' | 'comments'
 const KEY = 'leaf.folded'
 
 /** Below this the page, the sidebar and the comments column do not fit side by side. */
-export const NARROW = '(max-width: 1023px)'
+const NARROW = '(max-width: 1023px)'
+
+/**
+ * Each fold as it stands since this page loaded. A narrow window folds both when the page loads, not each time a
+ * document opens: after that the person's choice holds.
+ */
+const now = new Map<Fold, boolean>()
 
 function narrow(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches
@@ -18,7 +24,8 @@ function narrow(): boolean {
 
 function kept(): Partial<Record<Fold, boolean>> {
   try {
-    return JSON.parse(window.localStorage.getItem(KEY) ?? '{}') as Partial<Record<Fold, boolean>>
+    const value: unknown = JSON.parse(window.localStorage.getItem(KEY) ?? '{}')
+    return value && typeof value === 'object' ? (value as Partial<Record<Fold, boolean>>) : {}
   } catch {
     return {}
   }
@@ -26,10 +33,14 @@ function kept(): Partial<Record<Fold, boolean>> {
 
 /** Open or folded, and the setter that remembers it. */
 export function useFold(fold: Fold): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(() => !narrow() && !kept()[fold])
+  const [open, setOpen] = useState(() => {
+    if (!now.has(fold)) now.set(fold, !narrow() && !kept()[fold])
+    return now.get(fold) as boolean
+  })
   const change = useCallback(
     (next: boolean) => {
       setOpen(next)
+      now.set(fold, next)
       try {
         window.localStorage.setItem(KEY, JSON.stringify({ ...kept(), [fold]: !next }))
       } catch {

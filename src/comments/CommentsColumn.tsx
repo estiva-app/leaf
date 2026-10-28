@@ -836,10 +836,12 @@ export interface CommentsColumnProps {
   onDraft: (anchor: Anchor | null) => void
   /** The file is archived: this line takes the box's place, and the comments only show (PEEKM-8). '' is closed too, while the line is read. */
   closed?: string
+  /** The column is hidden (LED-3): it keeps an open edit and the chosen thread, and draws no comment on the text. */
+  hidden?: boolean
 }
 
 /** The comments column of a Leaf document. */
-export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed }: CommentsColumnProps) {
+export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed, hidden = false }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
   const { showToast } = useToast()
   const [held] = useState(() => heldComments(doc.address))
@@ -928,13 +930,13 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     }
   }, [editor, onDraft])
 
-  // Draw every open comment on its blocks, and what the draft is on while it is written.
+  // Draw every open comment on its blocks, and what the draft is on while it is written; nothing while hidden.
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
-    const anchors = addressable ? all.flatMap((t) => (t.resolved ? [] : [anchorOf(t)].filter((a): a is CommentAnchor => !!a))) : []
-    if (draft) anchors.push({ id: DRAFT, ...draft })
-    setCommentAnchors(editor, anchors, draft ? DRAFT : active)
-  }, [editor, all, draft, active, addressable])
+    const anchors = addressable && !hidden ? all.flatMap((t) => (t.resolved ? [] : [anchorOf(t)].filter((a): a is CommentAnchor => !!a))) : []
+    if (draft && !hidden) anchors.push({ id: DRAFT, ...draft })
+    setCommentAnchors(editor, anchors, hidden ? null : draft ? DRAFT : active)
+  }, [editor, all, draft, active, addressable, hidden])
 
   // A card chosen: its blocks come into view. A highlight chosen: its card does.
   useEffect(() => {
