@@ -91,12 +91,20 @@ export function textTargets(saves: SignedEvent[], limit = HOME_ROWS * 3): string
  */
 function pageOf(event: SignedEvent, pages: ReadonlyMap<string, unknown>): string | null {
   const naming = (name: string) => event.tags.find((t) => t[0] === name && pages.has(t[1]))?.[1] ?? null
-  if (event.kind === CHANGE) {
-    // A `1851` also sets `member:`, `archived` or `parent` (SPEC §11.8): only the text, the title and the summary are an edit.
-    const field = event.tags.find((t) => t[0] === 'field')?.[1]
-    return field === 'title' || field === 'summary' || field === 'description' ? naming('a') : null
-  }
+  if (event.kind === CHANGE) return isEdit(event) ? naming('a') : null
   return event.kind === KIND.COMMENT ? naming('A') : null
+}
+
+/**
+ * Whether a change is an edit: to the text, the title or the summary. A `1851` also sets `member:`, `archived` or
+ * `parent` (SPEC §11.8), which are not. Home and a page's "Edited …" both ask this, so both follow the text when its
+ * saves move out of `1851`.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-type-is-a-shared-meaning-any-app-extends.md
+ */
+export function isEdit(event: SignedEvent): boolean {
+  if (event.kind !== CHANGE) return false
+  const field = event.tags.find((t) => t[0] === 'field')?.[1]
+  return field === 'title' || field === 'summary' || field === 'description'
 }
 
 /**
@@ -105,7 +113,7 @@ function pageOf(event: SignedEvent, pages: ReadonlyMap<string, unknown>): string
  * A `ts` is the signer's word alone: unbounded, one far in the future would
  * keep a page on top of everyone's Home.
  */
-function timeOf(event: SignedEvent): number {
+export function timeOf(event: SignedEvent): number {
   const ts = Number(event.tags.find((t) => t[0] === 'ts')?.[1])
   return Number.isFinite(ts) && Math.floor(ts / 1000) === event.created_at ? ts : event.created_at * 1000
 }
