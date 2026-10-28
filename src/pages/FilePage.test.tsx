@@ -509,5 +509,9 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     await pick('Put it under', 'The top of Steer')
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op')])).toEqual([
+      [1852, STEER, 'add'],
+      [1852, FOLDER, 'remove'],
+    ])
   })
 })
