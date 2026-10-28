@@ -167,11 +167,13 @@ export async function deleteDocument(file: Document, plan: DeletePlan): Promise<
       unmoved++
       continue
     }
-    // A file that may sit only under one kind (a Ship issue's project) goes to the top rather than under another kind.
-    const fits = plan.to?.address && (!child.parentKind || child.parentKind === plan.to.kind)
-    const moved = await publish(
-      buildChange(pubkey, now, { target: child.address, field: child.parentField ?? 'parent', value: fits ? plan.to!.address! : '', folder: child.folder }),
-    )
+    // A page or a topic nests by `parent` (§6.7), as Leaf's own manifest says; never a field named by a manifest read
+    // off the relay, which anyone may publish. Any other kind under it stays at the top, where readers draw it.
+    if (child.kind !== KIND.DOCUMENT && child.kind !== KIND_BARE_FILE) {
+      unmoved++
+      continue
+    }
+    const moved = await publish(buildChange(pubkey, now, { target: child.address, field: 'parent', value: plan.to?.address ?? '', folder: child.folder }))
     if (!moved.ok) {
       console.warn('[relay] move up refused', moved)
       unmoved++
