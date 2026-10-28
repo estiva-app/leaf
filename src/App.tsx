@@ -94,19 +94,24 @@ function Frame() {
     () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
     [folders, children, opened, setOpen, setFolderOpen],
   )
+  const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
+  const listedDocument = route.page === 'document' ? findDocument(folders, children, route.d) : null
   // Another app's address for a file, with Leaf's host (`/issue/<slug>-<d>`): the manifests say which file it names.
-  const named = usePathAddress(route.page === 'path' ? route : null)
+  // A document's own link that no listing holds — an archived page, which every listing drops — is read by its `d`
+  // once the tree has been read without it, so its link still opens it (LED-4).
+  const named = usePathAddress(
+    route.page === 'path' ? route : route.page === 'document' && !listedDocument && !reading ? { word: 'document', ref: route.d } : null,
+  )
   const open =
     route.page === 'file'
       ? findFile(folders, children, route.naddr)
       : route.page === 'document'
-        ? findDocument(folders, children, route.d)
+        ? listedDocument
         : route.page === 'path' && named.address
           ? findFileAt(folders, children, named.address)
           : null
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
-  const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   // A file no listing holds, opened by its address: read on its own once the tree has been read without it.
   const naddr = route.page === 'file' ? route.naddr : named.address ? naddrOf(named.address) : null
   const byAddress = useFileByAddress(naddr && !open && !reading ? naddr : null)

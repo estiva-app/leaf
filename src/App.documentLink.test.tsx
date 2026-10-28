@@ -5,14 +5,25 @@
  */
 import { BODY_SLOT, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult } from '@estiva-app/protocol'
-import { render, screen, waitFor } from '@testing-library/react'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+/** What the relay holds outside any listing (an archived page), and what reading each `naddr` on its own gives. */
+const relay = vi.hoisted(() => ({ documents: [] as { kind: number; pubkey: string; d: string }[], read: {} as Record<string, unknown> }))
 
 vi.mock('./relay/bridge', () => ({
   viewerPubkey: () => 'a'.repeat(64),
-  query: async () => [],
+  query: async (filters: { kinds?: number[]; '#d'?: string[] }[]) =>
+    relay.documents
+      .filter((e) => filters.some((f) => f.kinds?.includes(e.kind) && f['#d']?.includes(e.d)))
+      .map((e) => ({ id: e.pubkey, kind: e.kind, pubkey: e.pubkey, created_at: 1, content: '', tags: [['d', e.d]], sig: '' })),
   publish: async (): Promise<PublishResult> => ({ ok: true }) as PublishResult,
 }))
+
+vi.mock('./document/save', async () => {
+  const actual = await vi.importActual<typeof import('./document/save')>('./document/save')
+  return { ...actual, readDocument: async (naddr: string) => relay.read[naddr] ?? null }
+})
 
 const QA = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
 const HQ = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b'
@@ -47,6 +58,7 @@ vi.mock('./folders/workspace', async () => {
 })
 
 const { App } = await import('./App')
+const { naddrOf } = await import('./fileAddress')
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text nodes, and ProseMirror calls them on every change. */
 beforeAll(() => {
@@ -61,7 +73,10 @@ beforeAll(() => {
 
 beforeEach(() => {
   for (const id of Object.keys(listed)) delete listed[id]
+  relay.documents = []
+  relay.read = {}
 })
+afterEach(cleanup)
 
 describe("a document's link", () => {
   it('opens the page it names', async () => {
@@ -86,6 +101,32 @@ describe("a document's link", () => {
     listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
     listed[HQ] = [page('b'.repeat(64), 'naddr1theirs', 'Planted by someone else.')]
     window.history.replaceState(null, '', `/document/plan-${D}`)
+    render(<App />)
+    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    expect(screen.queryByText('Planted by someone else.')).toBeNull()
+  })
+
+  it('opens an archived page, which no Folder lists, so it can be unarchived', async () => {
+    const archived = { ...page('a'.repeat(64), 'naddr1archived', 'Archived by QA-1.'), archived: { by: 'a'.repeat(64), at: 1 } }
+    relay.documents = [{ kind: 30842, pubkey: 'a'.repeat(64), d: D }]
+    relay.read[naddrOf(`30842:${'a'.repeat(64)}:${D}`)] = archived
+    window.history.replaceState(null, '', `/document/plan-${D}`)
+    render(<App />)
+    expect(await screen.findByText('Archived by QA-1.')).toBeTruthy()
+    expect(window.location.pathname).toBe(`/document/plan-${D}`)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
+  })
+
+  it('opens nothing when two authors hold the d of a page no Folder lists', async () => {
+    // Its own `d`: a link already read is remembered for the tab.
+    const other = 'a1b2c3d4-0000-4000-8000-00000000000b'
+    relay.documents = [
+      { kind: 30842, pubkey: 'a'.repeat(64), d: other },
+      { kind: 30842, pubkey: 'b'.repeat(64), d: other },
+    ]
+    for (const author of ['a', 'b']) relay.read[naddrOf(`30842:${author.repeat(64)}:${other}`)] = page(author.repeat(64), `naddr1${author}`, 'Planted by someone else.')
+    window.history.replaceState(null, '', `/document/plan-${other}`)
     render(<App />)
     expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
     expect(screen.queryByText('Planted by someone else.')).toBeNull()
