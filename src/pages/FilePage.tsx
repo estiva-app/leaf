@@ -238,8 +238,9 @@ function DocumentView({ opened, comments }: { opened: ForeignObject; comments: C
           </div>
         </Panel>
       </div>
-      {/* Hidden, not taken away: an edit open in it is still there when it comes back. */}
-      <div className="contents" hidden={!comments.open}>
+      {/* Hidden, not taken away: an edit open in it is still there when it comes back. By the class too: Tailwind 3's
+          `[hidden]` loses to `.contents`, and the column stayed drawn (LED-3, found on production). */}
+      <div className={comments.open ? 'contents' : 'hidden'} hidden={!comments.open}>
         <Divider orientation="vertical" />
         <div className="flex w-96 flex-none flex-col">
           <CommentsColumn
