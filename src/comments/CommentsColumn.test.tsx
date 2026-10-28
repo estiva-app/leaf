@@ -34,7 +34,7 @@ const blobs = vi.hoisted(() => ({
   upload: vi.fn<(file: File) => Promise<{ ok: true; file: Record<string, unknown> } | { ok: false; reason: string }>>(),
   read: vi.fn<(url: string) => Promise<string>>(async () => 'blob:leaf/1'),
 }))
-vi.mock('../relay/blobs', () => ({ uploadFile: blobs.upload, blobObjectUrl: blobs.read }))
+vi.mock('../relay/blobs', () => ({ uploadFile: blobs.upload, uploadIntoText: blobs.upload, blobObjectUrl: blobs.read }))
 
 /* Files another app owns, by reference: interop's projection of one needs its app's manifest, which is interop's own contract and tested there. */
 const files = vi.hoisted(() => ({ known: {} as Record<string, unknown> }))

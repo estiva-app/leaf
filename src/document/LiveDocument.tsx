@@ -11,7 +11,9 @@ import {
   type ContentFormat,
   imetaFromAttrs,
   type EditorDocument,
+  type Imeta,
 } from '@estiva-app/protocol'
+import { uploadIntoText } from '../relay/blobs'
 import type { FileText } from '@estiva-app/conversation'
 import { MenuItem } from '@estiva-app/ui'
 import { DocumentEditor, type AttachmentViewProps, type DocumentCodec, type HeldTyping, type MentionPerson, type SelectionAnchor } from '@estiva-app/ui/editor'
@@ -76,9 +78,12 @@ export function LiveDocument({
   onEditor,
   onCommentOn,
   onCopyLink,
+  upload = uploadIntoText,
   readOnly = false,
 }: {
   value: string
+  /** `/` → Upload and a pasted picture: put the file on the relay and answer its `imeta`, or throw the words to show (LED-2). */
+  upload?: (file: File) => Promise<Imeta>
   /** Read only, as an archived file's text is (SPEC §6.5): nothing is typed or saved. Its page leaves out `onCommentOn` too (PEEKM-8). */
   readOnly?: boolean
   /** Where its unsaved text is held when the sign-in ends while it is open (AUT-5): the document's address. */
@@ -147,6 +152,12 @@ export function LiveDocument({
       {...(onCommentOn ? { onCommentOnSelection: onCommentOn } : {})}
       {...(blockRows ? { blockRows } : {})}
       referenceView={PageLink}
+      // Given while read only too: the editor is built once, and a page unarchived live must offer Upload. A locked page takes no
+      // paste or "/", and the editor calls the latest one, so a read-only page refuses here as well (SPEC §6.5).
+      upload={async (file) => {
+        if (readOnly) throw new Error(`${file.name}: Read only`)
+        return { ...(await upload(file)) }
+      }}
       attachmentView={PageFile}
       wrap={(children, editor) => (
         <PageReferences editor={editor} nameOf={people.nameOf}>

@@ -18,7 +18,7 @@ vi.mock('./bridge', () => ({
   }),
 }))
 
-import { blobObjectUrl, clearBlobCache, uploadFile } from './blobs'
+import { blobObjectUrl, clearBlobCache, uploadFile, uploadIntoText } from './blobs'
 
 /* A PNG as a capture tool writes it: its picture, and a `tEXt` and a `pHYs` the relay refuses. */
 const crcTable = Array.from({ length: 256 }, (_, n) => {
@@ -90,6 +90,19 @@ describe('uploading a file for a comment', () => {
     signed.ended = true
     vi.stubGlobal('fetch', vi.fn(async () => ({ status: 401, text: async () => 'unauthorized' })))
     expect(await uploadFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toEqual({ ok: false, reason: 'Sign in again' })
+  })
+})
+
+describe('uploading a file into a page (LED-2)', () => {
+  it('answers the imeta the relay stored, and a refusal as the file and the words the page shows', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: ArrayBuffer; headers: Record<string, string> }) => ({
+      status: 200,
+      text: async () => JSON.stringify({ url: `${RELAY}/media/${init.headers['x-sha-256']}.pdf`, sha256: init.headers['x-sha-256'], size: init.body.byteLength, type: 'application/pdf' }),
+    })))
+    const file = await uploadIntoText(new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    expect(file).toMatchObject({ url: `${RELAY}/media/${file.x}.pdf`, m: 'application/pdf', filename: 'plan.pdf' })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 413, text: async () => 'file too large' })))
+    await expect(uploadIntoText(new File(['x'], 'big.pdf', { type: 'application/pdf' }))).rejects.toThrow('big.pdf: Too large')
   })
 })
 
