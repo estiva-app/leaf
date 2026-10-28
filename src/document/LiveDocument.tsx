@@ -79,7 +79,7 @@ export function LiveDocument({
   readOnly = false,
 }: {
   value: string
-  /** Read only, as an archived file's text is (SPEC §6.5): nothing is typed or saved, and comments stay open. */
+  /** Read only, as an archived file's text is (SPEC §6.5): nothing is typed or saved. Its page leaves out `onCommentOn` too (PEEKM-8). */
   readOnly?: boolean
   /** Where its unsaved text is held when the sign-in ends while it is open (AUT-5): the document's address. */
   holdKey?: string

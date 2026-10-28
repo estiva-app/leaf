@@ -9,8 +9,8 @@ import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
-import { readSummary, saveField, saveText } from '../document/save'
-import type { FileText } from '@estiva-app/conversation'
+import { archivedAbove, readSummary, saveField, saveText } from '../document/save'
+import { archivedLine, type FileText } from '@estiva-app/conversation'
 import { knownName } from '../comments/people'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { writableFields, sharesText } from '../document/writable'
@@ -62,10 +62,10 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const { showToast } = useToast()
   const own = isDocument(file)
   const writes = writableFields(file)
-  // Another app's file archived, itself or with the closest archived file above it at any depth (interop's walk,
-  // PEEKM-2): its fields wait for it to be unarchived in that app (SPEC §6.5). Leaf's own pages and the comment box are
-  // as before until PEEKM-8, with no Unarchive in Leaf (project Later list).
-  const locked = !own && isArchived(file)
+  // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
+  // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), and Leaf has no Unarchive.
+  const locked = isArchived(file)
+  const { field: fieldLine, comment: commentLine } = useArchivedLines(file, own)
   const title = titleOf(file)
   const body = file.slots[BODY_SLOT]
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
@@ -95,6 +95,11 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   async function rename(value: string): Promise<boolean> {
     const next = value.trim()
     if (!next || next === title) return true
+    // Archived while it was being typed: read-only now, nothing is written, and it says so (PEEKM-8).
+    if (locked) {
+      showToast({ label: `Not renamed. ${fieldLine ?? 'It was archived.'}`, type: 'error' })
+      return false
+    }
     const result = await saveField(target.current, 'title', next)
     if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
     return result.ok
@@ -127,6 +132,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const wholeNow = cut ? whole : null
   const summary = wholeNow ?? slot
   async function summarize(value: string): Promise<true | string> {
+    if (locked) return fieldLine ?? 'It was archived.'
     const result = await saveField(target.current, 'summary', value)
     return result.ok ? true : result.reason
   }
@@ -191,7 +197,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               />
             </div>
             {!own && <OwnerRow file={file} />}
-            {locked && <FieldLine tone="helper">{`Archived. Unarchive it in ${file.appName ?? 'its app'} to edit.`}</FieldLine>}
+            {fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}
@@ -201,7 +207,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               onCommit={commitText}
               onLeftUnsaved={leftUnsaved}
               onEditor={setEditor}
-              onCommentOn={addressable ? setDraft : undefined}
+              onCommentOn={addressable && !locked ? setDraft : undefined}
               onCopyLink={addressable && linksBlocks ? copyBlockLink : undefined}
             />
           </div>
@@ -209,8 +215,47 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
       </div>
       <Divider orientation="vertical" />
       <div className="flex w-96 flex-none flex-col">
-        <CommentsColumn doc={{ address: file.address, folder: file.folder }} addressable={addressable} editor={editor} docBody={docBody} draft={draft} onDraft={setDraft} />
+        <CommentsColumn
+          doc={{ address: file.address, folder: file.folder }}
+          addressable={addressable}
+          editor={editor}
+          docBody={docBody}
+          draft={locked ? null : draft}
+          onDraft={setDraft}
+          closed={locked ? (commentLine ?? '') : undefined}
+        />
       </div>
     </div>
   )
+}
+
+/**
+ * The two lines on an archived file (PEEKM-8). In the comment box's place, the words every app shows ("Archived.
+ * Unarchive it to comment.", "Unarchive the project to comment."), and "in Peek" on a Leaf page archived itself, since
+ * Leaf has no Unarchive. Over its locked text, the file to unarchive and where: "Unarchive the project in Estiva Ship
+ * to edit." The closest archived file above is named once its manifest is read; until then no line, never "the parent".
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
+ */
+function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; comment?: string } {
+  const archive = file.archived
+  const withAddress = archive?.with
+  const [above, setAbove] = useState<{ of: string; noun?: string; app?: string } | null>(null)
+  useEffect(() => {
+    if (!withAddress) return
+    let live = true
+    void archivedAbove(withAddress).then((found) => {
+      if (live) setAbove({ of: withAddress, ...found })
+    })
+    return () => {
+      live = false
+    }
+  }, [withAddress])
+  if (!archive) return {}
+  if (!withAddress) {
+    const where = own ? 'Peek' : (file.appName ?? 'its app')
+    return { field: archivedLine(archive, undefined, { in: where, to: 'edit' }), comment: archivedLine(archive, undefined, own ? { in: 'Peek' } : {}) }
+  }
+  if (above?.of !== withAddress) return {}
+  return { field: archivedLine(archive, above.noun, { in: above.app, to: 'edit' }), comment: archivedLine(archive, above.noun) }
 }
