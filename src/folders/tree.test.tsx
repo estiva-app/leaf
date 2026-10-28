@@ -72,6 +72,13 @@ describe('the Folders tree', () => {
     expect(groupsOf([folder(null)], none)![0].nodes).toBeNull()
   })
 
+  it('draws the files a Folder kept through a busy re-read, not "could not be read" in their place (APP-9)', () => {
+    const doc = file({ ref: 'd', naddr: 'naddr1d', address: `30842:${A}:${D}`, slots: { title: { value: 'Minutes' } } })
+    const [group] = groupsOf([folder([doc], true)], none)!
+    expect(group.message).toBeUndefined()
+    expect(group.nodes!.map((n) => n.label)).toEqual(['Minutes'])
+  })
+
   it('lets a page open only when a page is filed under it', () => {
     const D2 = 'a1b2c3d4-0000-4000-8000-00000000000b'
     const top = file({ ref: 'p', naddr: 'naddr1p', address: `30842:${A}:${D}`, listsChildren: true, slots: { title: { value: 'Brief' } } })
