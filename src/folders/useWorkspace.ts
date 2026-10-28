@@ -48,7 +48,11 @@ export function useWorkspace(): Workspace {
       () => ({ folder, contents: null, failed: true }),
     )
     if (latest.current.get(folder.id) !== turn) return
-    setFolders((now) => now?.map((f) => (f.folder.id === folder.id ? next : f)) ?? null)
+    // A read that fails after one landed keeps what the tree shows: a relay busy past its quiet retries does not
+    // blank a Folder (APP-9). Only a Folder never read says it could not be.
+    setFolders(
+      (now) => now?.map((f) => (f.folder.id !== folder.id ? f : next.contents === null && f.contents ? f : next)) ?? null,
+    )
   }, [])
 
   const reload = useCallback(async () => {

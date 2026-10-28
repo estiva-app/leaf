@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 type Filter = Record<string, unknown>
 
-const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], sent: [] as SignedEvent[] }))
+const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], sent: [] as SignedEvent[], busy: false }))
 
 const matches = (f: Filter, e: SignedEvent) => {
   if (Array.isArray(f.kinds) && !f.kinds.includes(e.kind)) return false
@@ -31,6 +31,8 @@ vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => 'a'.repeat(64),
   publish: async () => ({ ok: true }),
   query: async (filters: Filter[]) => {
+    // What the protocol's client throws once its quiet retries are spent.
+    if (relay.busy) throw new Error('the relay is busy, try again in a moment')
     const out = filters.flatMap((f) =>
       relay.events
         .filter((e) => matches(f, e))
@@ -137,5 +139,20 @@ describe('the tree reads each change once per load', () => {
     relay.events.push(change(north, 'status', 'requeened', APIARY))
     await act(() => result.current.reload())
     expect(statusOf(result.current, APIARY, addressOf(north))).toBe('requeened')
+  })
+})
+
+describe('a busy relay (APP-9)', () => {
+  it('a Folder read again while the relay stays busy keeps the files it showed', async () => {
+    relay.events = world()
+    relay.busy = false
+    const { result } = await loaded()
+    relay.busy = true
+    try {
+      await act(() => result.current.reloadFolder(APIARY))
+    } finally {
+      relay.busy = false
+    }
+    expect(statusOf(result.current, APIARY, addressOf(north))).toBe('swarming')
   })
 })
