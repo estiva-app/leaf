@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type ForeignObject } from '@estiva-app/interop'
-import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, useToast } from '@estiva-app/ui'
+import { IconMessage, IconMessageOff } from '@tabler/icons-react'
+import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -18,6 +19,7 @@ import { isDocument, titleOf, typeOf } from '../folders/tree'
 import { OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
+import { useFold } from '../frame/folds'
 
 /**
  * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
@@ -28,6 +30,9 @@ import { useOwnerBlockLinker } from './usePathAddress'
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
 export function FilePage({ file: listed, loading }: { file: ForeignObject | null; loading: boolean }) {
+  // Above the document, so it holds from one document to the next (LED-3).
+  const [commentsOpen, setCommentsOpen] = useFold('comments')
+  const comments = { open: commentsOpen, onOpenChange: setCommentsOpen }
   // A project's issues come from its row's read, which carries no actions: such a file is read on its own before it
   // is taken for one Leaf cannot write.
   const recheck = listed && !listed.unreachable && listed.naddr && !sharesText(listed) ? listed.naddr : null
@@ -48,8 +53,11 @@ export function FilePage({ file: listed, loading }: { file: ForeignObject | null
       />
     )
   }
-  return <DocumentView key={file.address ?? file.ref} opened={file} />
+  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} />
 }
+
+/** Whether the comments column is shown, and its toggle. */
+type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
 
 /**
  * A document, written in place: its title at the top and its text below,
@@ -57,7 +65,7 @@ export function FilePage({ file: listed, loading }: { file: ForeignObject | null
  * (LEAF-3). Keyed by the document, so opening another one starts afresh and
  * the one you left saves on the way out.
  */
-function DocumentView({ opened }: { opened: ForeignObject }) {
+function DocumentView({ opened, comments }: { opened: ForeignObject; comments: CommentsFold }) {
   const { file, changedBy } = useLiveDocument(opened)
   const { showToast } = useToast()
   const own = isDocument(file)
@@ -161,10 +169,27 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   }
   // Opened at `#block-<id>`: scrolled to it, or told it is gone (Ship's issue page says the same).
   const [missing, dismissMissing] = useLinkedBlock(body?.value ?? '', body?.format ?? 'marker')
+  // Commenting on a block brings a hidden comments column back, where the comment is written.
+  function commentOn(anchor: Anchor | null) {
+    setDraft(anchor)
+    if (anchor && !comments.open) comments.onOpenChange(true)
+  }
+  // Top right of the header, as the prototype draws it; the ⋯ menu joins it beside (LED-4).
+  const actions = (
+    <Toolbar aria-label="Page actions" surface={false}>
+      <ToolbarButton
+        tooltip={comments.open ? 'Hide comments' : 'Show comments'}
+        aria-label={comments.open ? 'Hide comments' : 'Show comments'}
+        onClick={() => comments.onOpenChange(!comments.open)}
+      >
+        {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
+      </ToolbarButton>
+    </Toolbar>
+  )
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={title} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
+        <Panel title={title} actions={actions} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {missing && (
               <Banner tone="info" onDismiss={dismissMissing}>
@@ -207,23 +232,27 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
               onCommit={commitText}
               onLeftUnsaved={leftUnsaved}
               onEditor={setEditor}
-              onCommentOn={addressable && !locked ? setDraft : undefined}
+              onCommentOn={addressable && !locked ? commentOn : undefined}
               onCopyLink={addressable && linksBlocks ? copyBlockLink : undefined}
             />
           </div>
         </Panel>
       </div>
-      <Divider orientation="vertical" />
-      <div className="flex w-96 flex-none flex-col">
-        <CommentsColumn
-          doc={{ address: file.address, folder: file.folder }}
-          addressable={addressable}
-          editor={editor}
-          docBody={docBody}
-          draft={locked ? null : draft}
-          onDraft={setDraft}
-          closed={locked ? (commentLine ?? '') : undefined}
-        />
+      {/* Hidden, not taken away: an edit open in it is still there when it comes back. */}
+      <div className="contents" hidden={!comments.open}>
+        <Divider orientation="vertical" />
+        <div className="flex w-96 flex-none flex-col">
+          <CommentsColumn
+            doc={{ address: file.address, folder: file.folder }}
+            addressable={addressable}
+            editor={editor}
+            docBody={docBody}
+            draft={locked ? null : draft}
+            onDraft={setDraft}
+            closed={locked ? (commentLine ?? '') : undefined}
+            hidden={!comments.open}
+          />
+        </div>
       </div>
     </div>
   )

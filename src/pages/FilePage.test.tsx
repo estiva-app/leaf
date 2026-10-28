@@ -330,3 +330,59 @@ describe('a page opened at one of its blocks', () => {
     expect(await screen.findByText('The paragraph a link names.')).toBeTruthy()
   })
 })
+
+describe('the comments column hides and comes back (LED-3)', () => {
+  afterEach(() => {
+    window.localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+  /* Leaf loaded afresh, as a reload does: what this page load remembers starts over, the browser's storage stays. */
+  async function reload() {
+    vi.resetModules()
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    return () => render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
+  }
+  /* The column's text, unless the column is hidden. */
+  const shownComments = () => {
+    const empty = screen.queryByText(/No comments yet/)
+    return !!empty && !empty.closest('[hidden]')
+  }
+  const narrowWindow = () =>
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width'), media: query, addEventListener() {}, removeEventListener() {} }))
+
+  it('hides from the header and comes back with one click', async () => {
+    ;(await reload())()
+    await waitFor(() => expect(shownComments()).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Hide comments' }))
+    expect(shownComments()).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Show comments' }))
+    expect(shownComments()).toBe(true)
+  })
+
+  it('stays hidden after a reload, until it is shown again', async () => {
+    const { unmount } = (await reload())()
+    fireEvent.click(await screen.findByRole('button', { name: 'Hide comments' }))
+    unmount()
+    ;(await reload())()
+    expect(await screen.findByRole('button', { name: 'Show comments' })).toBeTruthy()
+    expect(shownComments()).toBe(false)
+  })
+
+  it('starts hidden in a window too narrow for it', async () => {
+    narrowWindow()
+    ;(await reload())()
+    expect(await screen.findByRole('button', { name: 'Show comments' })).toBeTruthy()
+    expect(shownComments()).toBe(false)
+  })
+
+  it('stays shown on the next document in a narrow window, once shown', async () => {
+    narrowWindow()
+    const page = await reload()
+    const { unmount } = page()
+    fireEvent.click(await screen.findByRole('button', { name: 'Show comments' }))
+    unmount()
+    page()
+    expect(await screen.findByRole('button', { name: 'Hide comments' })).toBeTruthy()
+    await waitFor(() => expect(shownComments()).toBe(true))
+  })
+})
