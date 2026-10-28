@@ -13,8 +13,8 @@ import {
 } from '@estiva-app/interop'
 import { buildDocument, encodeNaddr, KIND, type PublishResult } from '@estiva-app/protocol'
 import { summaryText } from '../document/summary'
-import { publish, query, viewerPubkey } from '../relay/bridge'
-import { projections as manifests } from '../relay/manifests'
+import { publish, viewerPubkey } from '../relay/bridge'
+import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 
 /*
   Leaf's reads of the workspace: the same interop calls Peek's and Ship's trees

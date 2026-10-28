@@ -30,6 +30,7 @@ import { useFileByAddress } from './pages/useFileByAddress'
 import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
 import { HomePage } from './pages/HomePage'
 import { viewerPubkey } from './relay/bridge'
+import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
 
@@ -72,6 +73,8 @@ function Frame() {
   useEffect(() => {
     if (!signedIn) return
     let live = true
+    // The tab's manifests, read beside the tree's listing: an opened page's resolve is answered from them (APP-3).
+    void declaredManifests().catch(() => null)
     void whoAmI().then((who) => {
       if (live && who) setMe((was) => ({ ...was, ...who }))
     })
