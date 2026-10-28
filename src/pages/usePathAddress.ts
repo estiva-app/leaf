@@ -2,13 +2,19 @@ import { useEffect, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { addressOfPath, documentAddressOf, ownerBlockLinker, ownerPathOf } from '../fileAddress'
 import { declaredManifests } from '../relay/manifests'
+import { routeOf } from '../route'
 
 /** Paths already known to name an address: the one Leaf just put in the address bar opens without a second read. */
 const known = new Map<string, string>()
 
-/** Say that `path` (`/<word>/<ref>`) names `address`, before going there. */
+/**
+ * Say that `path` (`/<word>/<ref>`) names `address`, before going there. A document's own link is known by its `d`,
+ * as its route reads it, whatever slug is in front: a page read by its address gets its link before the tree lists
+ * it, and must not be read again on arriving there (APP-3).
+ */
 export function rememberPath(path: string, address: string): void {
-  known.set(path, address)
+  const route = routeOf(path)
+  known.set(route.page === 'document' ? `/document/${route.d}` : path, address)
 }
 
 /**
