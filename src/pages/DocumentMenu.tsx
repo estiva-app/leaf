@@ -22,7 +22,8 @@ import { readFolder } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
 import { MoveDialog } from './MoveDialog'
 
-type Moving = { kind: 'move'; from: MoveFolder[]; folders: MoveFolder[]; targets: MoveTarget[]; under: string }
+// The Folders it may go to are drawn from the current `folders`, so a Move opened before the sidebar read them fills in.
+type Moving = { kind: 'move'; from: MoveFolder[]; targets: MoveTarget[]; under: string }
 
 /**
  * A Leaf document's ⋯ menu, as the LED-1 prototype draws it: Move…, Copy link, Archive… or Unarchive, and Delete
@@ -107,7 +108,6 @@ export function DocumentMenu({
         setDialog({
           kind: 'move',
           from,
-          folders: moveFoldersFor(file, from[0], folders),
           targets: moveTargetsIn(files, file, { sameFolder: true }),
           under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
         })
@@ -178,7 +178,7 @@ export function DocumentMenu({
           title={title}
           under={dialog.under}
           from={dialog.from[0].id}
-          folders={dialog.folders}
+          folders={moveFoldersFor(file, dialog.from[0], folders)}
           targets={dialog.targets}
           targetsIn={async (id) => moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === dialog.from[0].id })}
           onMove={(to, parent) => relocate(dialog, to, parent)}

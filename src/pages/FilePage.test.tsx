@@ -4,7 +4,7 @@ import { ToastProvider } from '@estiva-app/ui'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Editor } from '@tiptap/react'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 const ME = 'a'.repeat(64)
 const FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
@@ -13,6 +13,8 @@ let answers: PublishResult[] = []
 let changes: SignedEvent[] = []
 /* The apps' manifests (kind 31990) the relay holds, answered to a claim on a kind (`#k`). */
 let manifests: SignedEvent[] = []
+/* The Folder states (kind 30890) and their Folders (kind 39000) the relay holds, answered by kind. */
+let folderEvents: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
@@ -21,6 +23,8 @@ vi.mock('../relay/bridge', () => ({
     // An app's manifest the relay never answers for: its author is HANGS.
     filters[0]?.authors?.includes('e'.repeat(64))
       ? new Promise<never>(() => {})
+      : filters[0]?.kinds?.[0] === 30890 || filters[0]?.kinds?.[0] === 39000
+      ? folderEvents.filter((e) => e.kind === filters[0].kinds![0])
       : filters[0]?.kinds?.[0] === 31990
       ? manifests.filter((m) => m.tags.some((t) => t[0] === 'k' && filters[0]['#k']?.includes(t[1])))
       : filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`)
@@ -482,5 +486,28 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
       [1852, FOLDER, 'remove'],
     ])
     expect(reread).toEqual([STEER, FOLDER])
+  })
+
+  it('opened before the sidebar has read the Folders, the Folder list fills in once they are read (LED-8)', async () => {
+    const page = (read: FolderSummary[]) => (
+      <ToastProvider>
+        <FilePage file={doc()} loading={false} folders={read} />
+      </ToastProvider>
+    )
+    // Where it is comes from the relay; only the other Folders wait on the sidebar.
+    folderEvents = [
+      { kind: 30890, pubkey: ME, tags: [['d', FOLDER], ['a', ADDRESS]] },
+      { kind: 39000, pubkey: ME, tags: [['d', FOLDER]] },
+    ] as unknown as SignedEvent[]
+    onTestFinished(() => void (folderEvents = []))
+    const { rerender } = render(page([]))
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    await screen.findByRole('dialog', { name: 'Move' })
+    rerender(page(folders))
+    await pick('Folder', 'Steer')
+    await pick('Put it under', 'The top of Steer')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect(await screen.findByText('Moved to Steer')).toBeTruthy()
   })
 })
