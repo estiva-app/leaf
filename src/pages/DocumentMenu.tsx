@@ -22,17 +22,18 @@ import { readFolder } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
 import { MoveDialog } from './MoveDialog'
 
-type Moving = { kind: 'move'; from: MoveFolder[]; folders: MoveFolder[]; targets: MoveTarget[]; under: string }
+// The Folders it may go to are drawn from the current `folders`, so a Move opened before the sidebar read them fills in.
+type Moving = { kind: 'move'; from: MoveFolder[]; targets: MoveTarget[]; under: string }
 
 /**
  * A Leaf document's ⋯ menu, as the LED-1 prototype draws it: Move…, Copy link, Archive… or Unarchive, and Delete
  * (LED-4, LED-5). Archive is offered beside Delete, never as two styles of one control; an archived page keeps
  * Unarchive and Delete, and one archived with a page above it is unarchived there (SPEC §6.5), and may move out of it.
- * `folders` are the Folders the sidebar read; `onChanged` re-reads one Folder's files.
+ * `folders` are the Folders the sidebar read, undefined until it has; `onChanged` re-reads one Folder's files.
  */
 export function DocumentMenu({
   file,
-  folders = [],
+  folders: sidebarFolders,
   onChanged,
   heading,
 }: {
@@ -42,6 +43,7 @@ export function DocumentMenu({
   /** A line drawn first and not chosen: the last edit, in a narrow window. */
   heading?: string
 }) {
+  const folders = sidebarFolders ?? []
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan; words: string } | Moving | null>(null)
   // One read at a time: a second press while the count is read would open a second dialog over the first.
@@ -107,7 +109,6 @@ export function DocumentMenu({
         setDialog({
           kind: 'move',
           from,
-          folders: moveFoldersFor(file, from[0], folders),
           targets: moveTargetsIn(files, file, { sameFolder: true }),
           under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
         })
@@ -178,7 +179,7 @@ export function DocumentMenu({
           title={title}
           under={dialog.under}
           from={dialog.from[0].id}
-          folders={dialog.folders}
+          folders={sidebarFolders && moveFoldersFor(file, dialog.from[0], sidebarFolders)}
           targets={dialog.targets}
           targetsIn={async (id) => moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === dialog.from[0].id })}
           onMove={(to, parent) => relocate(dialog, to, parent)}
