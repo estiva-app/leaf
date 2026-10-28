@@ -1,26 +1,55 @@
 import { useRef, useState } from 'react'
-import type { ForeignObject } from '@estiva-app/interop'
+import { listedBeneath, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconDots } from '@tabler/icons-react'
 import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
-import { archiveDocument, archiveHides, countOf, deleteDocument, readDeletePlan, type DeletePlan } from '../document/fileMenu'
+import {
+  archiveDocument,
+  archiveHides,
+  countOf,
+  deleteDocument,
+  moveDocument,
+  moveFoldersFor,
+  moveTargetsIn,
+  readDeletePlan,
+  readMovePlace,
+  type DeletePlan,
+  type MoveFolder,
+  type MoveTarget,
+} from '../document/fileMenu'
 import { titleOf } from '../folders/tree'
+import { readFolder } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
+import { MoveDialog } from './MoveDialog'
+
+type Moving = { kind: 'move'; from: MoveFolder[]; folders: MoveFolder[]; targets: MoveTarget[]; under: string }
 
 /**
- * A Leaf document's ⋯ menu, as the LED-1 prototype draws it: Copy link, Archive… or Unarchive, and Delete (LED-4).
- * Archive is offered beside Delete, never as two styles of one control; an archived page keeps Unarchive and Delete,
- * and one archived with a page above it is unarchived there (SPEC §6.5). `onChanged` re-reads the page's Folder.
+ * A Leaf document's ⋯ menu, as the LED-1 prototype draws it: Move…, Copy link, Archive… or Unarchive, and Delete
+ * (LED-4, LED-5). Archive is offered beside Delete, never as two styles of one control; an archived page keeps
+ * Unarchive and Delete, and one archived with a page above it is unarchived there (SPEC §6.5), and may move out of it.
+ * `folders` are the Folders the sidebar read; `onChanged` re-reads one Folder's files.
  */
-export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChanged?: (folder: string) => void | Promise<void> }) {
+export function DocumentMenu({
+  file,
+  folders = [],
+  onChanged,
+}: {
+  file: ForeignObject
+  folders?: readonly FolderSummary[]
+  onChanged?: (folder: string) => void | Promise<void>
+}) {
   const { showToast } = useToast()
-  const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan; words: string } | null>(null)
+  const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan; words: string } | Moving | null>(null)
   // One read at a time: a second press while the count is read would open a second dialog over the first.
   const reading = useRef(false)
   const title = titleOf(file)
   const refuse = (label: string) => showToast({ label, type: 'error' })
+  // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
+  const [movedTo, setMovedTo] = useState<string>()
+  const listedIn = movedTo ?? folders.find((folder) => folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))?.id ?? file.folder
   const changed = () => {
-    if (file.folder) void onChanged?.(file.folder)
+    if (listedIn) void onChanged?.(listedIn)
   }
 
   async function setArchived(archived: boolean, resolution?: string): Promise<boolean> {
@@ -67,6 +96,39 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
     return true
   }
 
+  /** Open Move on where the page is now, read from the relay, and that Folder's places; another Folder's are read when picked. */
+  function openMove() {
+    read(
+      readMovePlace(file, folders),
+      ({ from, files }) => {
+        const beneath = listedBeneath(files, files.find((one) => one.ref === file.ref) ?? file)
+        setDialog({
+          kind: 'move',
+          from,
+          folders: moveFoldersFor(file, from[0].id, folders),
+          targets: moveTargetsIn(files, file, { sameFolder: true }),
+          under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
+        })
+      },
+      'The Folder it is in could not be read, so nothing was moved. Try again.',
+    )
+  }
+
+  async function relocate(moving: Moving, to: MoveFolder, parent: MoveTarget): Promise<boolean> {
+    const result = await moveDocument(file, { from: moving.from, to, parent: parent.address })
+    if (!result.ok) {
+      refuse(result.reason)
+      return false
+    }
+    setMovedTo(to.id)
+    // Both ends, the Folder it went to first, so the open page is found in one of them throughout.
+    for (const id of new Set([to.id, ...moving.from.map((folder) => folder.id)])) await onChanged?.(id)
+    if (result.stillIn.length) refuse(`Moved to ${to.name}, but ${result.stillIn.map((folder) => folder.name).join(' and ')} still lists it too. Try moving it again.`)
+    else if (result.unplaced) refuse(`Moved to ${to.name}, but not all of it: ${result.unplaced}. Try moving it again.`)
+    else showToast({ label: `Moved to ${parent.path.at(-1) ?? to.name}`, type: 'success' })
+    return true
+  }
+
   const archivedSelf = !!file.archived && !file.archived.with
   return (
     <>
@@ -78,6 +140,8 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
         }
         align="right"
       >
+        {/* Not on a page archived by itself; one archived with a page above it may move out of it (SPEC §6.5). */}
+        {!archivedSelf && <MenuItem label="Move…" onClick={openMove} />}
         <MenuItem
           label="Copy link"
           onClick={() => {
@@ -104,6 +168,18 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
           onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan, words: deleteWords(file, plan) }), 'The Folder could not be read, so nothing was deleted. Try again.')}
         />
       </Menu>
+      {dialog?.kind === 'move' && (
+        <MoveDialog
+          title={title}
+          under={dialog.under}
+          from={dialog.from[0].id}
+          folders={dialog.folders}
+          targets={dialog.targets}
+          targetsIn={async (id) => moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === dialog.from[0].id })}
+          onMove={(to, parent) => relocate(dialog, to, parent)}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog?.kind === 'archive' && (
         <ArchiveDialog title={title} hides={dialog.hides} onArchive={(resolution) => setArchived(true, resolution || undefined)} onClose={() => setDialog(null)} />
       )}
@@ -134,6 +210,12 @@ export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeleteP
   const one = children.length === 1
   if (back) return `The ${what} under it ${one ? 'comes' : 'come'} back into ${place}.`
   return `The ${what} under it ${one ? 'moves' : 'move'} up into ${place}.`
+}
+
+/** What moves with a page, in words: "2 pages", or "3 files" when they are of more than one kind. */
+function moveCount(beneath: readonly ForeignObject[]): string {
+  const kinds = new Set(beneath.map((one) => one.kind))
+  return kinds.size === 1 ? countOf(beneath[0].kind, beneath.length) : `${beneath.length} files`
 }
 
 /** "Archive …?" for a Leaf page: what it hides with it, that nothing is deleted, and an optional resolution (the prototype's words). */

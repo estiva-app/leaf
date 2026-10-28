@@ -131,7 +131,8 @@ function Frame() {
     if (shown?.address) rememberPath(relink, shown.address)
     replace(`${relink}${window.location.hash}`)
   }, [relink, shown])
-  const takers = (workspace.folders ?? []).map((f) => f.folder).filter(takesNewDocuments)
+  const summaries = (workspace.folders ?? []).map((f) => f.folder)
+  const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
   useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(true))
   /*
@@ -207,7 +208,7 @@ function Frame() {
         action={{ label: 'Try again', onClick: () => void relist(unlisted) }}
       />
     ) : (
-      <FilePage file={open?.file ?? byAddress.file} loading={reading || named.loading || byAddress.loading} onChanged={workspace.reloadFolder} />
+      <FilePage file={open?.file ?? byAddress.file} loading={reading || named.loading || byAddress.loading} folders={summaries} onChanged={workspace.reloadFolder} />
     )
 
   return (

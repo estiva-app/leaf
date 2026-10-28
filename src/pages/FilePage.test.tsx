@@ -198,18 +198,20 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     await locked()
   })
 
-  it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive', async () => {
+  it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive or Move', async () => {
     render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Move…' })).toBeNull()
   })
 
-  it('the ⋯ menu of a page archived with a page above it offers no Unarchive: that is done on the page above', async () => {
+  it('the ⋯ menu of a page archived with a page above it offers Move out of it, and no Unarchive: that is done on the page above', async () => {
     render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     expect(await screen.findByRole('menuitem', { name: 'Delete' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Move…' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Unarchive' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
   })

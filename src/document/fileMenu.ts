@@ -7,10 +7,14 @@ import {
   KIND_CHANNEL_METADATA,
   KIND_FOLDER_STATE,
   nestingOf,
+  planMoveFromFolders,
   resolveFolderContents,
+  type FolderRef,
+  type FolderSummary,
   type ForeignObject,
 } from '@estiva-app/interop'
 import { addressToPointer, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { isListed, titleOf } from '../folders/tree'
 import { manifestContent } from '../manifest'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
@@ -180,6 +184,170 @@ export async function deleteDocument(file: Document, plan: DeletePlan): Promise<
     }
   }
   return { ok: true, stillListed, unmoved }
+}
+
+/** A Folder a document's Move reads or writes: the summary's own fields, with its name for the dialog's words. */
+export type MoveFolder = FolderRef & { name: string }
+
+const moveFolderOf = (folder: FolderSummary): MoveFolder => ({
+  id: folder.id,
+  name: folder.name ?? 'Untitled Folder',
+  hasState: folder.hasState,
+  ...(folder.private ? { private: true } : {}),
+  addresses: folder.addresses ?? [],
+})
+
+/**
+ * Where a document is now: every Folder whose state lists it (`listedIn`, read from the relay), the move's sources.
+ * The listing, not its `h` — a move leaves the `h` where it was filed (SPEC §3.3), so after one move `file.folder`
+ * names the Folder it left. Listed nowhere, it is in its own Folder, as that Folder's read says, so the planner
+ * refuses a stateless one rather than skipping it. The first is the one the dialog opens its targets on.
+ */
+export function moveSourcesOf(file: Pick<ForeignObject, 'address' | 'folder'>, listedIn: readonly string[], folders: readonly FolderSummary[]): MoveFolder[] {
+  const named = (id: string) => folders.find((folder) => folder.id === id)
+  if (listedIn.length === 0) {
+    const own = file.folder ? named(file.folder) : undefined
+    return own ? [moveFolderOf(own)] : []
+  }
+  return listedIn.map((id) => {
+    const folder = named(id)
+    return { id, name: folder?.name ?? 'Untitled Folder', hasState: true, ...(folder?.private ? { private: true } : {}), addresses: file.address ? [file.address] : [] }
+  })
+}
+
+/** What Move opens on: where the document is, and the files of the Folder it is in, live ones only, as the tree draws them. */
+export interface MovePlace {
+  from: MoveFolder[]
+  files: ForeignObject[]
+}
+
+/** Read where a document is now, from the relay's Folder states naming it, and that Folder's files. Throws when unread. */
+export async function readMovePlace(file: Pick<ForeignObject, 'address' | 'folder'>, folders: readonly FolderSummary[]): Promise<MovePlace> {
+  const states = file.address ? await relayStates({ kinds: [KIND_FOLDER_STATE], '#a': [file.address], limit: 500 }) : []
+  const from = moveSourcesOf(file, states.map(dOf).filter((id): id is string => !!id), folders)
+  if (from.length === 0) throw new Error('The Folder it is in is not one this page can see.')
+  const contents = await resolveFolderContents(from[0].id, query, people.viaRelay(query), manifests)
+  return { from, files: contents.files }
+}
+
+/**
+ * The Folders Move offers: the one it is in, for a new place inside it, and every other the planner would take —
+ * one with state, and a private one only when it is the document's own `h` (record: moving a file never changes who
+ * can read it). Only moves that can succeed are offered; one the relay still refuses says why in the dialog.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/moving-a-file-never-changes-who-can-read-it.md
+ */
+export function moveFoldersFor(file: Pick<ForeignObject, 'folder'>, from: string | undefined, folders: readonly FolderSummary[]): MoveFolder[] {
+  return folders.filter((folder) => folder.id === from || (folder.hasState && (!folder.private || folder.id === file.folder))).map(moveFolderOf)
+}
+
+/** One place in a Folder a document may be put under: `address` empty for the Folder's top. */
+export interface MoveTarget {
+  address: string
+  /** The target's titles, outermost first; empty for the top. */
+  path: string[]
+}
+
+/**
+ * Where a document may go in a Folder whose listing is `files`: the top, then anything Leaf's tree draws there —
+ * pages, a Ship project or issue — by its path (Miky, LED-5 kickoff). Never the document or what is under it, and in
+ * the Folder it is in, never where it already is, so every row is a move that does something.
+ */
+export function moveTargetsIn(files: readonly ForeignObject[], file: ForeignObject, { sameFolder }: { sameFolder: boolean }): MoveTarget[] {
+  // The tree's own rows, nested as the tree nests them, so a target's path is what the sidebar shows.
+  const drawn = files.filter(isListed)
+  const nesting = nestingOf(drawn)
+  const here = drawn.find((candidate) => candidate.ref === file.ref) ?? file
+  const targets = nesting.moveTargetsOf(here)
+  const under = targets
+    .filter((target): target is ForeignObject => !!target?.address)
+    .map((target) => ({ address: target.address!, path: [...nesting.ancestorsOf(target), target].map(titleOf) }))
+  const top = !sameFolder || targets.includes(undefined)
+  return top ? [{ address: '', path: [] }, ...under] : under
+}
+
+/** How a move ended: refused before anything changed, or done, with the part that did not follow. */
+export type MoveOutcome =
+  | { ok: false; reason: string }
+  | {
+      ok: true
+      /** The Folders that still list it too: their remove was refused after the add landed. */
+      stillIn: MoveFolder[]
+      /** Why it did not take its new place, when the Folder change landed and that did not. */
+      unplaced?: string
+    }
+
+/** A source's files, archived ones included, so an archived page under the document moves with it. Throws when unread. */
+async function readMoveListing(id: string): Promise<ForeignObject[]> {
+  return (await resolveFolderContents(id, query, people.viaRelay(query), manifests, { includeArchived: true })).files
+}
+
+/**
+ * Move a document to `to`, under `parent` (an address, `''` for the top), as Peek moves a topic (FOL-45): first its
+ * listing — one `1852 add` in the target naming it and everything listed under it, then a `remove` in each source,
+ * planned by interop's `planMoveFromFolders` (SPEC §3.3) — then its place, the manifest's `move`, a `1851` on
+ * `parent`. Each source is read again here, at the move. `parent` absent leaves it where it is in the new Folder.
+ */
+export async function moveDocument(
+  file: Document & Pick<ForeignObject, 'ref' | 'parentRef' | 'scopedTo'>,
+  move: { from: readonly MoveFolder[]; to: MoveFolder; parent?: string },
+  read: (id: string) => Promise<ForeignObject[]> = readMoveListing,
+): Promise<MoveOutcome> {
+  const pubkey = viewerPubkey()
+  if (!pubkey) return { ok: false, reason: 'Sign in to move it.' }
+  if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be moved from here.' }
+  const sources = move.from.filter((folder) => folder.id !== move.to.id)
+  let moved = false
+  const stillIn: MoveFolder[] = []
+  if (sources.length > 0) {
+    let listings
+    try {
+      listings = new Map(await Promise.all(sources.map(async (folder) => [folder.id, await read(folder.id)] as const)))
+    } catch {
+      return { ok: false, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
+    }
+    const plan = planMoveFromFolders(pubkey, Date.now(), { file, from: sources, to: move.to, listings })
+    if (!plan.ok) return { ok: false, reason: refusalWords[plan.reason] }
+    if (plan.add) {
+      const added = await publish(plan.add)
+      if (!added.ok) {
+        console.warn('[relay] move refused', added)
+        return { ok: false, reason: 'Nothing was moved. Try again.' }
+      }
+      moved = true
+    }
+    // It did arrive, so a Folder that refused to let it go is named, and the move goes on to its place (Peek's order).
+    for (const { folder, event } of plan.removes) {
+      const removed = await publish(event)
+      if (!removed.ok) {
+        console.warn('[relay] unlist refused', removed)
+        stillIn.push(sources.find((source) => source.id === folder) ?? { id: folder, name: 'another Folder', hasState: true })
+      }
+    }
+  }
+  if (move.parent === undefined || move.parent === (file.parentRef ?? '')) return { ok: true, stillIn }
+  const built = buildActionEvent({
+    manifest: OWN_MANIFEST,
+    kind: file.kind,
+    address: file.address,
+    objectAuthor: addressToPointer(file.address).pubkey,
+    folder: file.folder,
+    actionId: 'move',
+    value: move.parent,
+    pubkey,
+    createdAtMs: Date.now(),
+  })
+  const placed = typeof built === 'string' ? null : await publish(built as UnsignedEvent)
+  if (placed?.ok) return { ok: true, stillIn }
+  if (placed) console.warn('[relay] move under refused', placed)
+  return moved ? { ok: true, stillIn, unplaced: 'the relay refused its new place' } : { ok: false, reason: 'Nothing was moved. Try again.' }
+}
+
+/** The planner's refusals in Peek's words (`moveFileAsViewer`). */
+const refusalWords: Record<'source-has-no-state' | 'target-has-no-state' | 'target-is-private', string> = {
+  'source-has-no-state': 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.',
+  'target-has-no-state': 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
+  'target-is-private': 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.',
 }
 
 /**
