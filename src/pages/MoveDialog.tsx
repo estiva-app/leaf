@@ -25,7 +25,8 @@ export function MoveDialog({
   under: string
   /** The Folder it is in now. */
   from: string
-  folders: MoveFolder[]
+  /** Undefined while the sidebar is still reading them: the dialog says so rather than "nowhere". */
+  folders: MoveFolder[] | undefined
   /** Where it may go in `from`, already read by the caller. */
   targets: MoveTarget[]
   /** Where it may go in another Folder. A rejection is said in the dialog, beside a Try again. */
@@ -60,7 +61,7 @@ export function MoveDialog({
     readTargets(id)
   }
 
-  const chosen = folders.find((candidate) => candidate.id === folder)
+  const chosen = folders?.find((candidate) => candidate.id === folder)
   const folderName = chosen?.name ?? 'this folder'
   const status = folder ? read[folder] : undefined
   const targets = Array.isArray(status) ? status : []
@@ -68,7 +69,7 @@ export function MoveDialog({
   const parent = targets.find((target) => valueOf(target) === picked)
   const ready = !!chosen && !!parent
   // Nowhere to go: no other Folder takes it, and in its own it is already at the only place there is.
-  const nowhere = folders.every((candidate) => candidate.id === from) && initialTargets.length === 0
+  const nowhere = !!folders?.every((candidate) => candidate.id === from) && initialTargets.length === 0
 
   async function move() {
     if (!chosen || !parent || moving) return
@@ -105,11 +106,11 @@ export function MoveDialog({
             <Select
               value={folder}
               onChange={chooseFolder}
-              options={folders.map((candidate) => ({
+              options={(folders ?? []).map((candidate) => ({
                 value: candidate.id,
                 label: candidate.name,
               }))}
-              placeholder="Pick a folder"
+              placeholder={folders ? 'Pick a folder' : 'Reading…'}
               ariaLabel="Folder"
             />
           </Field>

@@ -489,7 +489,7 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
   })
 
   it('opened before the sidebar has read the Folders, the Folder list fills in once they are read (LED-8)', async () => {
-    const page = (read: FolderSummary[]) => (
+    const page = (read: FolderSummary[] | undefined) => (
       <ToastProvider>
         <FilePage file={doc()} loading={false} folders={read} />
       </ToastProvider>
@@ -500,10 +500,12 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
       { kind: 39000, pubkey: ME, tags: [['d', FOLDER]] },
     ] as unknown as SignedEvent[]
     onTestFinished(() => void (folderEvents = []))
-    const { rerender } = render(page([]))
+    const { rerender } = render(page(undefined))
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
-    await screen.findByRole('dialog', { name: 'Move' })
+    // Alone at the top of its Folder, it would have nowhere to go there: unread is not "nowhere".
+    expect((await screen.findByRole('combobox', { name: 'Folder' })).textContent).toContain('Reading…')
+    expect(screen.queryByText('There is no other folder it can be moved to.')).toBeNull()
     rerender(page(folders))
     await pick('Folder', 'Steer')
     await pick('Put it under', 'The top of Steer')

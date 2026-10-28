@@ -211,7 +211,7 @@ function Frame() {
         action={{ label: 'Try again', onClick: () => void relist(unlisted) }}
       />
     ) : (
-      <FilePage file={open?.file ?? byAddress.file} loading={reading || named.loading || byAddress.loading} folders={summaries} onChanged={workspace.reloadFolder} />
+      <FilePage file={open?.file ?? byAddress.file} loading={reading || named.loading || byAddress.loading} folders={workspace.folders || workspace.failed ? summaries : undefined} onChanged={workspace.reloadFolder} />
     )
 
   return (
