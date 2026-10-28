@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ForeignObject } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, type ForeignObject } from '@estiva-app/interop'
 import { relayClient } from '../relay/client'
 import { viewerPubkey } from '../relay/bridge'
-import { CHANGE, nameOf, readDocument } from './save'
+import { CHANGE, archiveFolderOf, nameOf, readDocument } from './save'
 
 /** Who saved the document's text last, when it was not you: the name in "<name> saved a newer version". */
 export type ChangedBy = { pubkey: string; name: string | null }
@@ -42,7 +42,10 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
       [folder],
       (_folder, event) => {
         if (!event || event.kind !== CHANGE || seen.current.has(event.id)) return
-        if (!event.tags.some((t) => t[0] === 'a' && t[1] === address)) return
+        // A file above this one archived or unarchived — its project, the page it sits under — changes whether this one
+        // is read-only (PEEKM-8), so any archive in the Folder is read again; there are few.
+        const archives = event.tags.some((t) => t[0] === 'field' && t[1] === ARCHIVED_FIELD)
+        if (!archives && !event.tags.some((t) => t[0] === 'a' && t[1] === address)) return
         seen.current.add(event.id)
         if (event.pubkey !== me && event.tags.some((t) => t[0] === 'field' && t[1] === 'description')) {
           const pubkey = event.pubkey
@@ -63,6 +66,42 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
     }
   }, [address, folder, naddr])
 
+  // Archived with a file above it whose archive is written in another Folder — an issue's project — the unarchive
+  // arrives there, so that Folder is heard too while it lasts (PEEKM-8).
+  const file = read?.file ?? opened
+  const above = file.archived?.with
+  const [aboveFolder, setAboveFolder] = useState<{ of: string; folder?: string } | null>(null)
+  useEffect(() => {
+    if (!above) return
+    let live = true
+    void archiveFolderOf(above).then((found) => {
+      if (live) setAboveFolder({ of: above, folder: found })
+    })
+    return () => {
+      live = false
+    }
+  }, [above])
+  const watched = above && aboveFolder?.of === above ? aboveFolder.folder : undefined
+  useEffect(() => {
+    const client = relayClient()
+    if (!client || !watched || watched === folder || !naddr) return
+    let live = true
+    const watch = client.watchFolders(
+      [watched],
+      (_folder, event) => {
+        if (!event || event.kind !== CHANGE || !event.tags.some((t) => t[0] === 'field' && t[1] === ARCHIVED_FIELD)) return
+        void readDocument(naddr).then((found) => {
+          if (live && found) setRead({ file: found })
+        })
+      },
+      { kinds: [CHANGE], since: Math.floor(Date.now() / 1000) },
+    )
+    return () => {
+      live = false
+      watch.stop()
+    }
+  }, [watched, folder, naddr])
+
   // The page is keyed by the document's address, so a read here is always this document's.
-  return { file: read?.file ?? opened, changedBy }
+  return { file, changedBy }
 }

@@ -10,12 +10,18 @@ const FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
 const published: UnsignedEvent[] = []
 let answers: PublishResult[] = []
 let changes: SignedEvent[] = []
+/* The apps' manifests (kind 31990) the relay holds, answered to a claim on a kind (`#k`). */
+let manifests: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
   // The page's changes, only to a read that asks for them by its address.
-  query: async (filters: { kinds?: number[]; '#a'?: string[] }[]) =>
-    filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`) ? changes : [],
+  query: async (filters: { kinds?: number[]; '#a'?: string[]; '#k'?: string[] }[]) =>
+    filters[0]?.kinds?.[0] === 31990
+      ? manifests.filter((m) => m.tags.some((t) => t[0] === 'k' && filters[0]['#k']?.includes(t[1])))
+      : filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`)
+        ? changes
+        : [],
   publish: async (event: UnsignedEvent) => {
     published.push(event)
     return answers.shift() ?? { ok: true }
@@ -23,7 +29,7 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 const { FilePage } = await import('./FilePage')
-const { shipIssue } = await import('./fixtures/shipFiles')
+const { shipIssue, shipProject } = await import('./fixtures/shipFiles')
 const ADDRESS = `30842:${ME}:page-1`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 
@@ -80,6 +86,7 @@ afterEach(() => {
   published.length = 0
   answers = []
   changes = []
+  manifests = []
 })
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
@@ -152,6 +159,66 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
     write(box, 'Typed into an archived issue.')
     leave(box)
+    await act(async () => {})
+    expect(published).toHaveLength(0)
+  })
+})
+
+describe('an archived file is read-only, its comments included (PEEKM-8)', () => {
+  const archived = (file: ForeignObject, withAddress?: string): ForeignObject => ({ ...file, archived: { by: ME, at: 1_760_000_000, ...(withAddress ? { with: withAddress } : {}) } })
+  const manifestEvent = (event: UnsignedEvent): SignedEvent => ({ ...event, id: event.pubkey.slice(0, 63) + '1', sig: '' }) as SignedEvent
+
+  async function locked() {
+    for (const name of ['Title', 'Summary', 'Document']) {
+      const box = (await screen.findByRole('textbox', { name })) as EditorBox
+      await waitFor(() => expect(box.editor?.isInitialized).toBe(true))
+      expect(box.editor.isEditable).toBe(false)
+    }
+    expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
+  }
+
+  it('a Leaf page archived itself: unarchived in Peek, said over its text and in the comment box’s place', async () => {
+    render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
+    expect(await screen.findByText('Archived. Unarchive it in Peek to edit.')).toBeTruthy()
+    expect(screen.getByText('Archived. Unarchive it in Peek to comment.')).toBeTruthy()
+    await locked()
+  })
+
+  it('a page under an archived page: names the document, unarchived in Peek', async () => {
+    const { buildManifest } = await import('../manifest')
+    manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
+    render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
+    expect(await screen.findByText('Unarchive the document in Peek to edit.')).toBeTruthy()
+    expect(screen.getByText('Unarchive the document to comment.')).toBeTruthy()
+    await locked()
+  })
+
+  it('a Ship issue archived itself: the comment line is the one every app shows', async () => {
+    render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
+    expect(await screen.findByText('Archived. Unarchive it to comment.')).toBeTruthy()
+    expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
+    await locked()
+  })
+
+  it('a Ship issue archived with its project: names the project, and Estiva Ship from its manifest', async () => {
+    const shipManifest = (await import('./fixtures/ship-manifest.json')).default
+    manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']], content: JSON.stringify(shipManifest) })]
+    render(<ToastProvider><FilePage file={archived(shipIssue(), shipProject().address)} loading={false} /></ToastProvider>)
+    expect(await screen.findByText('Unarchive the project in Estiva Ship to edit.')).toBeTruthy()
+    expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
+    await locked()
+  })
+
+  it('writes nothing for its text, title or summary, even what was being typed when the archive came', async () => {
+    render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
+    const box = (await screen.findByRole('textbox', { name: 'Document' })) as EditorBox
+    await waitFor(() => expect(box.editor?.isInitialized).toBe(true))
+    write(box, 'Typed into an archived page.')
+    leave(box)
+    for (const field of [await titleBox(), await summaryBox()]) {
+      write(field, 'Typed as it was archived')
+      leave(field)
+    }
     await act(async () => {})
     expect(published).toHaveLength(0)
   })

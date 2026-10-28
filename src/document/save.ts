@@ -1,5 +1,5 @@
-import { createPeopleCache, resolveForeignObject, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
-import { attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { ARCHIVED_FIELD, KIND_CHANNEL_METADATA, createPeopleCache, resolveForeignObject, resolveForeignObjects, resolveManifest, type ForeignObject } from '@estiva-app/interop'
+import { KIND, addressToPointer, attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
@@ -21,6 +21,45 @@ export function readDocument(naddr: string): Promise<ForeignObject | null> {
 /** Several files read as {@link readDocument} reads one, in one request: keyed by the `naddr` given. */
 export function readDocuments(naddrs: readonly string[]): Promise<Record<string, ForeignObject | null>> {
   return resolveForeignObjects(naddrs, query, people.viaRelay(query), manifests, { archivedWith: true })
+}
+
+/**
+ * The closest archived file above an archived file, for the lines that name it (PEEKM-8): what its app calls it —
+ * "project", "document", from its manifest's projection — and where it is unarchived. Leaf has no Unarchive, so its
+ * own pages, and Folders, are unarchived in Peek; anything else in its own app. Read through the tab's manifest cache,
+ * which the file's own read has already filled. Either is absent when nobody declares it.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
+ */
+export async function archivedAbove(address: string): Promise<{ noun?: string; app?: string }> {
+  let pointer
+  try {
+    pointer = addressToPointer(address)
+  } catch {
+    return {}
+  }
+  if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'folder', app: 'Peek' }
+  const found = await resolveManifest(pointer, query, manifests).catch(() => null)
+  const noun = found?.manifest.projections?.[String(pointer.kind)]?.noun
+  return { noun, app: pointer.kind === KIND.DOCUMENT ? 'Peek' : found?.manifest.name }
+}
+
+/**
+ * The Folder a file's archive is written to, so its unarchive can be heard (PEEKM-8): a Folder's own, or the `h` of
+ * the file's newest archive change. A Ship project's is its record Folder, not the one its issues live in.
+ * Absent when it cannot be read.
+ */
+export async function archiveFolderOf(address: string): Promise<string | undefined> {
+  let pointer
+  try {
+    pointer = addressToPointer(address)
+  } catch {
+    return undefined
+  }
+  if (pointer.kind === KIND_CHANNEL_METADATA) return pointer.identifier
+  const changes = await query([{ kinds: [CHANGE], '#a': [address], limit: 50 }]).catch(() => [] as SignedEvent[])
+  const newest = [...changes].sort((a, b) => b.created_at - a.created_at)
+  return newest.find((c) => c.tags.some((t) => t[0] === 'field' && t[1] === ARCHIVED_FIELD))?.tags.find((t) => t[0] === 'h')?.[1]
 }
 
 /**

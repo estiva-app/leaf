@@ -240,6 +240,7 @@ function Box({
   autoFocus,
   onSent,
   editing,
+  closed,
 }: {
   /** Said in the empty box, and its accessible name. */
   placeholder: string
@@ -252,6 +253,8 @@ function Box({
   onSent?: () => void
   /** The comment being edited, and how to stop: Save is `onSend`. `typed`: the words held through a sign-in ending, to open with instead. */
   editing?: { comment: CommentItem; onCancel: () => void; typed?: () => JSONContent | null; onTyped?: (body: JSONContent) => void }
+  /** Why nothing can be written here — an archived file's line (PEEKM-8) — said in the box's place. */
+  closed?: string
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
@@ -330,6 +333,7 @@ function Box({
         under={under}
         autoFocus={autoFocus || !!edit}
         onSent={onSent ? () => onSent() : undefined}
+        closed={closed ? { reason: closed } : undefined}
       />
     </div>
   )
@@ -719,6 +723,7 @@ function ThreadCard({
   onDelete,
   onRemoveCard,
   edits,
+  closed,
 }: {
   thread: Thread
   where: Where
@@ -739,6 +744,8 @@ function ThreadCard({
   onDelete: (comment: CommentItem) => Promise<WriteResult>
   onRemoveCard: (comment: CommentItem, value: string) => Promise<WriteResult>
   edits: OpenEdit
+  /** An archived file: the thread only shows — no reply, reaction, Resolve or Reopen, and no Edit or Delete, your own included (PEEKM-8). */
+  closed?: boolean
 }) {
   const own = useMemo(() => commentsOf(thread), [thread])
   const scope = useMemo(() => ({ here: own, rest: page.filter((c) => !own.includes(c)) }), [own, page])
@@ -749,7 +756,7 @@ function ThreadCard({
   // Its comment deleted, the thread takes no new replies and has nothing to resolve, as in Peek (PER-24).
   const deleted = !thread.root
   const actionsOn = (c: CommentItem): OwnActions | undefined =>
-    offersEditAndDelete({ viewer, author: c.by })
+    !closed && offersEditAndDelete({ viewer, author: c.by })
       ? {
           people,
           scope,
@@ -764,14 +771,14 @@ function ThreadCard({
           onTyped: edits.onTyped,
         }
       : undefined
-  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} pictures={pictures} page={page} viewer={viewer} onReact={onReact} own={actionsOn(c)} />
+  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} pictures={pictures} page={page} viewer={viewer} onReact={closed ? undefined : onReact} own={actionsOn(c)} />
   return (
     <Card data-thread-id={thread.id} data-active={active || undefined} data-resolved={thread.resolved || undefined} data-deleted={deleted || undefined} hover="fill" quietUntilHover selected={active} onClick={click} className="flex shrink-0 flex-col gap-3 p-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <AnchorLine thread={thread} where={where} editor={editor} names={names} />
         </div>
-        {deleted ? null : thread.resolved ? (
+        {deleted || closed ? null : thread.resolved ? (
           <IconButton tooltip="Reopen" aria-label="Reopen" onClick={() => onResolve(false)}>
             <IconArrowBackUp size={16} stroke={1.5} />
           </IconButton>
@@ -783,7 +790,7 @@ function ThreadCard({
       </div>
       {deleted && <p className="text-body-2 italic text-text-muted">This comment was deleted.</p>}
       {own.map(line)}
-      {active && !thread.resolved && !deleted && <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} />}
+      {active && !thread.resolved && !deleted && !closed && <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} />}
     </Card>
   )
 }
@@ -827,10 +834,12 @@ export interface CommentsColumnProps {
   /** What a comment is being written on — a block from its handle, or the selection from the strip; `null` for the whole document. */
   draft: Anchor | null
   onDraft: (anchor: Anchor | null) => void
+  /** The file is archived: this line takes the box's place, and the comments only show (PEEKM-8). */
+  closed?: string
 }
 
 /** The comments column of a Leaf document. */
-export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft }: CommentsColumnProps) {
+export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
   const { showToast } = useToast()
   const [held] = useState(() => heldComments(doc.address))
@@ -1016,6 +1025,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       onDelete={remove}
       onRemoveCard={removeCardOf}
       edits={edits}
+      closed={!!closed}
     />
   )
 
@@ -1033,7 +1043,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
           bodyClassName="flex flex-col gap-3 p-3"
           footer={
             <div className="flex flex-col gap-2 p-3">
-              {draft && (
+              {draft && !closed && (
                 <div className="flex items-center gap-2">
                   <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
                     <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
@@ -1053,7 +1063,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
                 onSend={send}
                 // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
                 onSent={() => onDraft(null)}
-                autoFocus={!!draft}
+                autoFocus={!!draft && !closed}
+                closed={closed}
               />
             </div>
           }

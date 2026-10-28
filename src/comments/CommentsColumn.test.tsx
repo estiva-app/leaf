@@ -1369,3 +1369,42 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     expect(drawn.textContent).toContain('still')
   })
 })
+
+describe("an archived page's comments only show (PEEKM-8)", () => {
+  const CARD_ADDRESS = `30851:${QA2}:archived-card`
+  const CARD = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'archived-card', relays: [] })}`
+  beforeAll(() => {
+    files.known[CARD] = { ref: 'r', kind: 30851, eventId: 'e', widget: 'card', noun: 'issue', meta: [], actions: [], viaRecommendation: false, address: CARD_ADDRESS, slots: { title: { value: 'Card on an archived page' } } }
+  })
+  const line = (id: string) => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${id}"]`)
+  const reaction = (target: string): SignedEvent => ({ id: '7'.repeat(64), pubkey: QA2, created_at: 1_760_000_100, kind: 7, tags: [['e', target]], content: '👍', sig: '' })
+
+  async function openArchived(events: SignedEvent[]) {
+    relay.events = events
+    const file = { ...fileWith(BODY), archived: { by: QA2, at: 1_760_000_050 } } as ForeignObject
+    render(
+      <ToastProvider>
+        <FilePage file={file} loading={false} />
+      </ToastProvider>,
+    )
+    await waitFor(() => expect(page().editor.isInitialized).toBe(true))
+  }
+
+  it('says why in the box’s place, and offers no reply, reaction, Resolve, Edit, Delete or card ✕, your own comment included', async () => {
+    const own = { ...comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`), pubkey: ME }
+    const theirs = comment([['block', PARAGRAPH]], 'Too long?')
+    await openArchived([own, theirs, reaction(own.id)])
+    await waitFor(() => expect(line(own.id)?.querySelector('[data-card="detailed"]')?.textContent).toContain('Card on an archived page'))
+    expect(screen.getByText('Archived. Unarchive it in Peek to comment.')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
+    // Chosen, a thread opens no reply box.
+    act(() => void fireEvent.click(line(theirs.id)!.closest<HTMLElement>('[data-thread-id]')!))
+    act(() => void fireEvent.click(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!))
+    expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
+    for (const name of ['Resolve', 'Reopen', 'Add a reaction', 'Remove card', 'More']) expect(screen.queryByRole('button', { name })).toBeNull()
+    const pill = await screen.findByRole('button', { name: 'Makes sense, 1' })
+    act(() => void fireEvent.click(pill))
+    await act(async () => {})
+    expect(publish).not.toHaveBeenCalled()
+  })
+})
