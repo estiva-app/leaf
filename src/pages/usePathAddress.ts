@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { addressOfPath, ownerBlockLinker, ownerPathOf } from '../fileAddress'
+import { addressOfPath, documentAddressOf, ownerBlockLinker, ownerPathOf } from '../fileAddress'
 import { declaredManifests } from '../relay/manifests'
 
 /** Paths already known to name an address: the one Leaf just put in the address bar opens without a second read. */
@@ -13,7 +13,8 @@ export function rememberPath(path: string, address: string): void {
 
 /**
  * The address another app's path names (`/issue/<slug>-<d>` on Leaf's host), read once per path; `path` is null on
- * any other route. A path that names nothing, or a read that failed, is `address: null` once it is done.
+ * any other route. A path that names nothing, or a read that failed, is `address: null` once it is done. Leaf's own
+ * `/document/<d>` is read by its `d`: a page no listing holds, such as an archived one (LED-4).
  */
 export function usePathAddress(path: { word: string; ref: string } | null): { address: string | null; loading: boolean } {
   const word = path?.word
@@ -25,7 +26,7 @@ export function usePathAddress(path: { word: string; ref: string } | null): { ad
     const at = `/${word}/${ref}`
     if (known.has(at)) return
     let live = true
-    void addressOfPath(word, ref)
+    void (word === 'document' ? documentAddressOf(ref) : addressOfPath(word, ref))
       .catch(() => null)
       .then((address) => {
         if (address) known.set(at, address)

@@ -13,7 +13,7 @@
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
 import { blockUrlOf, eventIdFromRef, identifierFromRef, matchObjectUrl, objectRef, urlPatternsOf, type ForeignObject } from '@estiva-app/interop'
-import { encodeNaddr } from '@estiva-app/protocol'
+import { encodeNaddr, KIND } from '@estiva-app/protocol'
 import { query } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
 import { isOtherAppsWord } from './route'
@@ -105,6 +105,16 @@ export async function addressOfPath(word: string, ref: string): Promise<string |
   const found = await query([{ kinds: lookup.kinds, '#d': [lookup.identifier], limit: 2 }])
   const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
   return authors.size === 1 ? `${[...authors][0]}:${lookup.identifier}` : null
+}
+
+/**
+ * The address of the document a `/document/<slug>-<d>` link names when no listing holds it — an archived page, which
+ * every listing drops (LED-4). One author holds the `d`, as {@link addressOfPath} asks.
+ */
+export async function documentAddressOf(d: string): Promise<string | null> {
+  const found = await query([{ kinds: [KIND.DOCUMENT], '#d': [d], limit: 2 }])
+  const authors = new Set(found.map((event) => event.pubkey))
+  return authors.size === 1 ? `${KIND.DOCUMENT}:${[...authors][0]}:${d}` : null
 }
 
 /** The `naddr` of an address `<kind>:<pubkey>:<d>`: what the tree and `/f/` know a file by. */
