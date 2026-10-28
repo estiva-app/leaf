@@ -253,7 +253,7 @@ function Box({
   onSent?: () => void
   /** The comment being edited, and how to stop: Save is `onSend`. `typed`: the words held through a sign-in ending, to open with instead. */
   editing?: { comment: CommentItem; onCancel: () => void; typed?: () => JSONContent | null; onTyped?: (body: JSONContent) => void }
-  /** Why nothing can be written here — an archived file's line (PEEKM-8) — said in the box's place. */
+  /** Why nothing can be written here — an archived file's line (PEEKM-8) — said in the box's place; '' while the line is read, still closed. */
   closed?: string
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
@@ -333,7 +333,7 @@ function Box({
         under={under}
         autoFocus={autoFocus || !!edit}
         onSent={onSent ? () => onSent() : undefined}
-        closed={closed ? { reason: closed } : undefined}
+        closed={closed !== undefined ? { reason: closed } : undefined}
       />
     </div>
   )
@@ -834,7 +834,7 @@ export interface CommentsColumnProps {
   /** What a comment is being written on — a block from its handle, or the selection from the strip; `null` for the whole document. */
   draft: Anchor | null
   onDraft: (anchor: Anchor | null) => void
-  /** The file is archived: this line takes the box's place, and the comments only show (PEEKM-8). */
+  /** The file is archived: this line takes the box's place, and the comments only show (PEEKM-8). '' is closed too, while the line is read. */
   closed?: string
 }
 
@@ -1025,7 +1025,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       onDelete={remove}
       onRemoveCard={removeCardOf}
       edits={edits}
-      closed={!!closed}
+      closed={closed !== undefined}
     />
   )
 
@@ -1043,7 +1043,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
           bodyClassName="flex flex-col gap-3 p-3"
           footer={
             <div className="flex flex-col gap-2 p-3">
-              {draft && !closed && (
+              {draft && closed === undefined && (
                 <div className="flex items-center gap-2">
                   <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
                     <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
@@ -1063,7 +1063,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
                 onSend={send}
                 // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
                 onSent={() => onDraft(null)}
-                autoFocus={!!draft && !closed}
+                autoFocus={!!draft && closed === undefined}
                 closed={closed}
               />
             </div>

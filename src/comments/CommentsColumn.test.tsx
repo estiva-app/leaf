@@ -1407,4 +1407,26 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     await act(async () => {})
     expect(publish).not.toHaveBeenCalled()
   })
+
+  it('offers no Comment on selected words of its text', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await openArchived([])
+      const editor = page().editor
+      // jsdom has no layout: the strip needs the view focused and somewhere to stand, as in LEAF-7's tests.
+      vi.spyOn(editor.view, 'hasFocus').mockReturnValue(true)
+      vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 10, bottom: 20, left: 10, right: 20 })
+      let from = 0
+      editor.state.doc.descendants((node, pos) => {
+        const at = !from && node.isText ? (node.text ?? '').indexOf('wrote this') : -1
+        if (at !== -1) from = pos + at
+        return !from
+      })
+      act(() => void editor.commands.setTextSelection({ from, to: from + 'wrote this'.length }))
+      await act(async () => void (await vi.advanceTimersByTimeAsync(400)))
+      expect(screen.queryByRole('button', { name: 'Comment' })).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

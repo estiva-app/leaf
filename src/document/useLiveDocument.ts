@@ -86,21 +86,28 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
     const client = relayClient()
     if (!client || !watched || watched === folder || !naddr) return
     let live = true
+    let timer: ReturnType<typeof setTimeout> | undefined
     const watch = client.watchFolders(
       [watched],
       (_folder, event) => {
         if (!event || event.kind !== CHANGE || !event.tags.some((t) => t[0] === 'field' && t[1] === ARCHIVED_FIELD)) return
-        void readDocument(naddr).then((found) => {
-          if (live && found) setRead({ file: found })
-        })
+        if (!event.tags.some((t) => t[0] === 'a' && t[1] === above)) return
+        // An archive and an unarchive in a burst are one read, of where they ended.
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          void readDocument(naddr).then((found) => {
+            if (live && found) setRead({ file: found })
+          })
+        }, 250)
       },
       { kinds: [CHANGE], since: Math.floor(Date.now() / 1000) },
     )
     return () => {
       live = false
+      clearTimeout(timer)
       watch.stop()
     }
-  }, [watched, folder, naddr])
+  }, [watched, above, folder, naddr])
 
   // The page is keyed by the document's address, so a read here is always this document's.
   return { file, changedBy }

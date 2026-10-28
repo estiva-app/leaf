@@ -94,8 +94,12 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error' }), [showToast])
   async function rename(value: string): Promise<boolean> {
     const next = value.trim()
-    // Archived while it was being typed: read-only now, and nothing is written (PEEKM-8).
-    if (!next || next === title || locked) return true
+    if (!next || next === title) return true
+    // Archived while it was being typed: read-only now, nothing is written, and it says so (PEEKM-8).
+    if (locked) {
+      showToast({ label: `Not renamed. ${fieldLine ?? 'It was archived.'}`, type: 'error' })
+      return false
+    }
     const result = await saveField(target.current, 'title', next)
     if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
     return result.ok
@@ -128,7 +132,7 @@ function DocumentView({ opened }: { opened: ForeignObject }) {
   const wholeNow = cut ? whole : null
   const summary = wholeNow ?? slot
   async function summarize(value: string): Promise<true | string> {
-    if (locked) return true
+    if (locked) return fieldLine ?? 'It was archived.'
     const result = await saveField(target.current, 'summary', value)
     return result.ok ? true : result.reason
   }

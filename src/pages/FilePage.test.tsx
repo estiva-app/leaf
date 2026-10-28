@@ -16,8 +16,11 @@ let manifests: SignedEvent[] = []
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
   // The page's changes, only to a read that asks for them by its address.
-  query: async (filters: { kinds?: number[]; '#a'?: string[]; '#k'?: string[] }[]) =>
-    filters[0]?.kinds?.[0] === 31990
+  query: async (filters: { kinds?: number[]; '#a'?: string[]; '#k'?: string[]; authors?: string[] }[]) =>
+    // An app's manifest the relay never answers for: its author is HANGS.
+    filters[0]?.authors?.includes('e'.repeat(64))
+      ? new Promise<never>(() => {})
+      : filters[0]?.kinds?.[0] === 31990
       ? manifests.filter((m) => m.tags.some((t) => t[0] === 'k' && filters[0]['#k']?.includes(t[1])))
       : filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`)
         ? changes
@@ -207,6 +210,12 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(await screen.findByText('Unarchive the project in Estiva Ship to edit.')).toBeTruthy()
     expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
     await locked()
+  })
+
+  it('takes no comment while the file above it is still being read, and names nothing yet', async () => {
+    render(<ToastProvider><FilePage file={archived(shipIssue(), `30850:${'e'.repeat(64)}:never-read`)} loading={false} /></ToastProvider>)
+    await locked()
+    expect(screen.queryByText(/Unarchive/)).toBeNull()
   })
 
   it('writes nothing for its text, title or summary, even what was being typed when the archive came', async () => {

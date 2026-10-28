@@ -1,5 +1,5 @@
-import { ARCHIVED_FIELD, KIND_CHANNEL_METADATA, createPeopleCache, resolveForeignObject, resolveForeignObjects, resolveManifest, type ForeignObject } from '@estiva-app/interop'
-import { KIND, addressToPointer, attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { KIND_CHANNEL_METADATA, createPeopleCache, resolveForeignObject, resolveForeignObjects, resolveManifest, type ForeignObject } from '@estiva-app/interop'
+import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
@@ -45,9 +45,9 @@ export async function archivedAbove(address: string): Promise<{ noun?: string; a
 }
 
 /**
- * The Folder a file's archive is written to, so its unarchive can be heard (PEEKM-8): a Folder's own, or the `h` of
- * the file's newest archive change. A Ship project's is its record Folder, not the one its issues live in.
- * Absent when it cannot be read.
+ * The Folder a file's archive is written to, so its unarchive can be heard (PEEKM-8): its own Folder, the only one
+ * its archive counts in (SPEC §6.2) — a Ship project's record Folder, not the one its issues live in. Read from the
+ * file itself, never from a change's `h`, which anyone can write. Absent when it cannot be read.
  */
 export async function archiveFolderOf(address: string): Promise<string | undefined> {
   let pointer
@@ -57,9 +57,8 @@ export async function archiveFolderOf(address: string): Promise<string | undefin
     return undefined
   }
   if (pointer.kind === KIND_CHANNEL_METADATA) return pointer.identifier
-  const changes = await query([{ kinds: [CHANGE], '#a': [address], limit: 50 }]).catch(() => [] as SignedEvent[])
-  const newest = [...changes].sort((a, b) => b.created_at - a.created_at)
-  return newest.find((c) => c.tags.some((t) => t[0] === 'field' && t[1] === ARCHIVED_FIELD))?.tags.find((t) => t[0] === 'h')?.[1]
+  const found = await resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null)
+  return found?.folder
 }
 
 /**
