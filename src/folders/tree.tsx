@@ -88,7 +88,8 @@ export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion
       open: expansion.opened.has(folder.id),
       onOpenChange: (open) => expansion.setFolderOpen(folder.id, open),
       nodes: nesting ? nesting.roots.map((f) => nodeOf(f, nesting.childrenOf, expansion)) : failed ? [] : null,
-      message: failed ? 'This could not be read. Reload to try again.' : readable?.length === 0 ? 'Nothing in this yet.' : undefined,
+      // Said in the rows' place, so a Folder that kept its files through a busy re-read (APP-9) shows them, not this.
+      message: !nesting && failed ? 'This could not be read. Reload to try again.' : readable?.length === 0 ? 'Nothing in this yet.' : undefined,
     }
   })
 }

@@ -11,7 +11,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 type Filter = Record<string, unknown>
 
-const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], sent: [] as SignedEvent[], busy: false }))
+/*
+  `failing` refuses every read it matches, as the protocol's client fails one: `busy`, a `RelayBusyError` once its
+  quiet retries are spent; `refused`, any other error (a 403 after this person was removed from the Folder).
+*/
+type Failing = { as: 'busy' | 'refused'; when: (filters: Filter[]) => boolean }
+const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], sent: [] as SignedEvent[], failing: null as Failing | null }))
 
 const matches = (f: Filter, e: SignedEvent) => {
   if (Array.isArray(f.kinds) && !f.kinds.includes(e.kind)) return false
@@ -31,8 +36,11 @@ vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => 'a'.repeat(64),
   publish: async () => ({ ok: true }),
   query: async (filters: Filter[]) => {
-    // What the protocol's client throws once its quiet retries are spent.
-    if (relay.busy) throw new Error('the relay is busy, try again in a moment')
+    if (relay.failing?.when(filters)) {
+      if (relay.failing.as === 'refused') throw new Error('403 restricted: not a member of this group')
+      const { RelayBusyError } = await import('@estiva-app/protocol')
+      throw new RelayBusyError(503)
+    }
     const out = filters.flatMap((f) =>
       relay.events
         .filter((e) => matches(f, e))
@@ -45,6 +53,8 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 const { useWorkspace } = await import('./useWorkspace')
+const { groupsOf } = await import('./tree')
+type Expansion = import('./tree').Expansion
 
 const KEEPER = 'a'.repeat(64)
 const RELAY = 'f'.repeat(64)
@@ -142,17 +152,58 @@ describe('the tree reads each change once per load', () => {
   })
 })
 
+const always = () => true
+// A read about the Apiary alone: its contents, never the listing, which names every Folder.
+const apiaryOnly = (filters: Filter[]) => {
+  const named = JSON.stringify(filters)
+  return named.includes(APIARY) && !named.includes(ORCHARD)
+}
+const none: Expansion = { children: {}, opened: new Set(), setOpen: () => {}, setFolderOpen: () => {} }
+const apiaryOf = (workspace: ReturnType<typeof useWorkspace>) => workspace.folders?.find((f) => f.folder.id === APIARY)
+
+async function failingWhile<T>(failing: Failing, run: () => Promise<T>) {
+  relay.failing = failing
+  try {
+    await act(run)
+  } finally {
+    relay.failing = null
+  }
+}
+
 describe('a busy relay (APP-9)', () => {
   it('a Folder read again while the relay stays busy keeps the files it showed', async () => {
     relay.events = world()
-    relay.busy = false
     const { result } = await loaded()
-    relay.busy = true
-    try {
-      await act(() => result.current.reloadFolder(APIARY))
-    } finally {
-      relay.busy = false
-    }
+    await failingWhile({ as: 'busy', when: always }, () => result.current.reloadFolder(APIARY))
     expect(statusOf(result.current, APIARY, addressOf(north))).toBe('swarming')
+  })
+
+  it('a Folder never read, whose read stays busy, says it could not be read', async () => {
+    relay.events = world()
+    relay.failing = { as: 'busy', when: apiaryOnly }
+    try {
+      const view = renderHook(() => useWorkspace())
+      await waitFor(() => expect(apiaryOf(view.result.current)?.failed).toBe(true), { timeout: 4000 })
+      const apiary = groupsOf(view.result.current.folders, none)!.find((g) => g.id === APIARY)!
+      expect(apiary.message).toBe('This could not be read. Reload to try again.')
+    } finally {
+      relay.failing = null
+    }
+  })
+
+  it('Reload while the relay stays busy keeps the tree drawn', async () => {
+    relay.events = world()
+    const { result } = await loaded()
+    await failingWhile({ as: 'busy', when: always }, () => result.current.reload())
+    expect(result.current.failed).toBe(false)
+    expect(statusOf(result.current, APIARY, addressOf(north))).toBe('swarming')
+  })
+
+  it('a Folder read again and refused, not busy, drops the files it showed: someone removed loses them at once', async () => {
+    relay.events = world()
+    const { result } = await loaded()
+    await failingWhile({ as: 'refused', when: always }, () => result.current.reloadFolder(APIARY))
+    expect(apiaryOf(result.current)).toMatchObject({ contents: null, failed: true })
+    expect(groupsOf(result.current.folders, none)!.find((g) => g.id === APIARY)!.message).toBe('This could not be read. Reload to try again.')
   })
 })

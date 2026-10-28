@@ -1,4 +1,5 @@
 import type { FolderContents, FolderSummary, ForeignObject, QueryFn } from '@estiva-app/interop'
+import { RelayBusyError } from '@estiva-app/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadQuery, readChildren, readFolder, readFolders } from './workspace'
 
@@ -43,17 +44,27 @@ export function useWorkspace(): Workspace {
   const readInto = useCallback(async (folder: FolderSummary, read: QueryFn = loadQuery()) => {
     const turn = (latest.current.get(folder.id) ?? 0) + 1
     latest.current.set(folder.id, turn)
-    const next: WorkspaceFolder = await readFolder(folder.id, read).then(
-      (contents) => ({ folder, contents }),
-      () => ({ folder, contents: null, failed: true }),
-    )
+    let next: WorkspaceFolder
+    let busy = false
+    try {
+      next = { folder, contents: await readFolder(folder.id, read) }
+    } catch (error) {
+      busy = error instanceof RelayBusyError
+      next = { folder, contents: null, failed: true }
+    }
     if (latest.current.get(folder.id) !== turn) return
-    // A read that fails after one landed keeps what the tree shows: a relay busy past its quiet retries does not
-    // blank a Folder (APP-9). Only a Folder never read says it could not be.
+    /*
+      A relay still busy after its quiet retries does not blank a Folder already read: the tree keeps its files
+      (APP-9). Any other failure drops them, since a refusal can mean this person was just removed from the Folder.
+      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/someone-you-remove-loses-access-at-once.md
+    */
     setFolders(
-      (now) => now?.map((f) => (f.folder.id !== folder.id ? f : next.contents === null && f.contents ? f : next)) ?? null,
+      (now) => now?.map((f) => (f.folder.id !== folder.id ? f : busy && f.contents ? { ...f, failed: true } : next)) ?? null,
     )
   }, [])
+
+  // Whether a listing has landed: a busy relay after that keeps the tree drawn rather than saying it could not be read.
+  const listed = useRef(false)
 
   const reload = useCallback(async () => {
     // One load: the listing and every Folder's read share what they have read.
@@ -61,10 +72,12 @@ export function useWorkspace(): Workspace {
     let listing: FolderSummary[]
     try {
       listing = await readFolders(read)
-    } catch {
-      setFailed(true)
+    } catch (error) {
+      // Busy once the tree is drawn: keep it, as a Folder's re-read does (APP-9). Only a first read says it failed.
+      if (!(error instanceof RelayBusyError && listed.current)) setFailed(true)
       return
     }
+    listed.current = true
     setFailed(false)
     // Keep what was read until its new read lands, so a reload does not blank the tree.
     setFolders((before) =>
