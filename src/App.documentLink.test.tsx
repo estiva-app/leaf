@@ -5,7 +5,7 @@
  */
 import { BODY_SLOT, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult } from '@estiva-app/protocol'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** What the relay holds outside any listing (an archived page), and what reading each `naddr` on its own gives. */
@@ -114,6 +114,8 @@ describe("a document's link", () => {
     render(<App />)
     expect(await screen.findByText('Archived by QA-1.')).toBeTruthy()
     expect(window.location.pathname).toBe(`/document/plan-${D}`)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
   })
 
   it('opens nothing when two authors hold the d of a page no Folder lists', async () => {
