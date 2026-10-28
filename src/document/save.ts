@@ -41,7 +41,8 @@ export async function archivedAbove(address: string): Promise<{ noun?: string; a
   if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'folder', app: 'Peek' }
   const found = await resolveManifest(pointer, query, manifests).catch(() => null)
   const noun = found?.manifest.projections?.[String(pointer.kind)]?.noun
-  return { noun, app: pointer.kind === KIND.DOCUMENT ? undefined : found?.manifest.name }
+  // Leaf calls its own documents pages, as the LED-1 prototype's lines do.
+  return pointer.kind === KIND.DOCUMENT ? { noun: 'page' } : { noun, app: found?.manifest.name }
 }
 
 /**

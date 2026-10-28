@@ -5,7 +5,7 @@ import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, Textar
 import { copyLink } from '../document/blockLink'
 import { archiveDocument, archiveHides, countOf, deleteDocument, readDeletePlan, type DeletePlan } from '../document/fileMenu'
 import { titleOf } from '../folders/tree'
-import { documentPath, dOf, navigate, pagePath } from '../route'
+import { navigate, pagePath } from '../route'
 
 /**
  * A Leaf document's ⋯ menu, as the LED-1 prototype draws it: Copy link, Archive… or Unarchive, and Delete (LED-4).
@@ -14,7 +14,7 @@ import { documentPath, dOf, navigate, pagePath } from '../route'
  */
 export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChanged?: (folder: string) => void | Promise<void> }) {
   const { showToast } = useToast()
-  const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan } | null>(null)
+  const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan; words: string } | null>(null)
   // One read at a time: a second press while the count is read would open a second dialog over the first.
   const reading = useRef(false)
   const title = titleOf(file)
@@ -49,7 +49,9 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
       })
   }
 
-  async function remove(plan: DeletePlan): Promise<boolean> {
+  async function remove(shown: DeletePlan): Promise<boolean> {
+    // Read again on confirm: a page moved under it while the dialog was open moves up too.
+    const plan = await readDeletePlan(file).catch(() => shown)
     const result = await deleteDocument(file, plan)
     if (!result.ok) {
       refuse(result.reason)
@@ -61,7 +63,7 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
       result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the Folder’s top.`,
       result.stillListed && 'It is still listed in a Folder; reload and try again.',
     ].filter(Boolean)
-    showToast({ label: [`Deleted “${title}”.`, ...after].join(' '), type: after.length ? 'warning' : 'success' })
+    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success' })
     return true
   }
 
@@ -79,7 +81,8 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
         <MenuItem
           label="Copy link"
           onClick={() => {
-            if (file.address) void copyLink(`${window.location.origin}${documentPath(dOf(file.address), title)}`, (label) => showToast({ label }))
+            // The page's own link, as the address bar holds it (App's relink): no slug for a page with no title.
+            if (file.address) void copyLink(`${window.location.origin}${pagePath({ ...file, title: file.slots.title?.value })}`, (label) => showToast({ label }))
           }}
         />
         {archivedSelf ? (
@@ -98,7 +101,7 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
         <MenuItem
           label="Delete"
           destructive
-          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan }), 'The Folder could not be read, so nothing was deleted. Try again.')}
+          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan, words: deleteWords(file, plan) }), 'The Folder could not be read, so nothing was deleted. Try again.')}
         />
       </Menu>
       {dialog?.kind === 'archive' && (
@@ -107,7 +110,7 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
       {dialog?.kind === 'delete' && (
         <ConfirmDialog title={`Delete “${title}”?`} confirmLabel="Delete page" destructive onConfirm={() => remove(dialog.plan)} onClose={() => setDialog(null)}>
           <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
-          {deleteWords(file, dialog.plan) && <p>{deleteWords(file, dialog.plan)}</p>}
+          {dialog.words && <p>{dialog.words}</p>}
           {!file.archived && <p className="text-text-secondary">Archiving is reversible and usually what you want.</p>}
         </ConfirmDialog>
       )}
@@ -121,13 +124,15 @@ export function DocumentMenu({ file, onChanged }: { file: ForeignObject; onChang
  * Never "erased". Empty when nothing is under it.
  */
 export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeletePlan): string {
-  const { children } = plan
+  const back = !!file.archived && !file.archived.with
+  // On an archived page, only the pages archived with it come back; one archived itself moves up and stays archived.
+  const children = back ? plan.children.filter((child) => !child.archived || child.archived.with) : plan.children
   if (children.length === 0) return ''
   const place = plan.to ? titleOf(plan.to) : (plan.folderName ?? 'its Folder')
   const kinds = new Set(children.map((child) => child.kind))
   const what = kinds.size === 1 ? countOf(children[0].kind, children.length) : `${children.length} files`
   const one = children.length === 1
-  if (file.archived && !file.archived.with) return `The ${what} under it ${one ? 'comes' : 'come'} back into ${place}.`
+  if (back) return `The ${what} under it ${one ? 'comes' : 'come'} back into ${place}.`
   return `The ${what} under it ${one ? 'moves' : 'move'} up into ${place}.`
 }
 
@@ -158,7 +163,7 @@ function ArchiveDialog({ title, hides, onArchive, onClose }: { title: string; hi
           <p className="text-text-secondary">Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.</p>
         </div>
         <Field label="Resolution (optional)">
-          <Textarea value={resolution} rows={3} placeholder="What happened with this page? Shown first to anyone who opens it." onChange={(event) => setResolution(event.target.value)} />
+          <Textarea value={resolution} rows={3} placeholder="What happened with this page?" onChange={(event) => setResolution(event.target.value)} />
         </Field>
       </Form>
     </DialogShell>

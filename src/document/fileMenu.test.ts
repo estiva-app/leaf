@@ -121,6 +121,11 @@ describe('the Delete dialog’s words for the pages under it', () => {
     expect(words).not.toMatch(/erase/i)
   })
 
+  it('on a page archived itself, does not count a page under it that was archived on its own, which stays archived', () => {
+    const listing = [page('a'), page('b', 'a', { archived: { by: ME, at: 1, with: `30842:${ME}:a` } }), page('c', 'a', { archived: { by: ME, at: 1 } })]
+    expect(deleteWords({ archived: { by: ME, at: 1 } }, planDelete(listing[0], listing, 'Leaf feedback'))).toBe('The 1 page under it comes back into Leaf feedback.')
+  })
+
   it('says nothing about pages when none is under it', () => {
     const listing = [page('a')]
     expect(deleteWords(listing[0], planDelete(listing[0], listing, 'Leaf feedback'))).toBe('')

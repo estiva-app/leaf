@@ -188,12 +188,12 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     await locked()
   })
 
-  it('a page under an archived page: names the document, with no app to go to', async () => {
+  it('a page under an archived page: calls it the page, with no app to go to', async () => {
     const { buildManifest } = await import('../manifest')
     manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
     render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Unarchive the document to edit.')).toBeTruthy()
-    expect(screen.getByText('Unarchive the document to comment.')).toBeTruthy()
+    expect(await screen.findByText('Unarchive the page to edit.')).toBeTruthy()
+    expect(screen.getByText('Unarchive the page to comment.')).toBeTruthy()
     expect(screen.queryByText(/in Peek/)).toBeNull()
     await locked()
   })
@@ -414,5 +414,35 @@ describe('the comments column hides and comes back (LED-3)', () => {
     page()
     expect(await screen.findByRole('button', { name: 'Hide comments' })).toBeTruthy()
     await waitFor(() => expect(shownComments()).toBe(true))
+  })
+})
+
+describe('Delete from a page’s ⋯ menu (LED-4)', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  async function confirmDelete() {
+    window.history.replaceState(null, '', '/document/friday-notes-page-1')
+    render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByText('It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete page' }))
+  }
+
+  it('sends the kind:5 naming the page, then opens Home and says it was deleted', async () => {
+    await confirmDelete()
+    expect(await screen.findByText('Deleted “Friday notes”')).toBeTruthy()
+    expect(published[0].kind).toBe(5)
+    expect(published[0].tags).toContainEqual(['a', ADDRESS])
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('a refused delete stays on the page, with the dialog open and the refusal said, and writes nothing more', async () => {
+    answers = [{ ok: false, reason: 'blocked' }]
+    await confirmDelete()
+    expect((await screen.findAllByText('Nothing was deleted. Try again.')).length).toBeGreaterThan(0)
+    expect(published.map((e) => e.kind)).toEqual([5])
+    expect(screen.getByRole('button', { name: 'Delete page' })).toBeTruthy()
+    expect(window.location.pathname).toBe('/document/friday-notes-page-1')
   })
 })
