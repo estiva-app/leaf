@@ -297,6 +297,18 @@ describe('a picture in the text', () => {
     expect(attachments(onCommit.mock.calls[0][0].content)).toMatchObject([{ attrs: { x: SHOT.x, url: SHOT.url } }])
   })
 
+  it('offers Upload once a page opened read only is unlocked while open (an unarchive arriving live)', async () => {
+    const upload = vi.fn(async () => SHOT)
+    const at = (readOnly: boolean) => <LiveDocument value="mine" format="marker" changedBy={KATERINA} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} upload={upload} readOnly={readOnly} />
+    const view = render(at(true))
+    await ready()
+    view.rerender(at(false))
+    const box = await ready()
+    await waitFor(() => expect(box.editor.isEditable).toBe(true))
+    await pickThroughSlash(box, new File(['png'], 'shot.png', { type: 'image/png' }))
+    expect(upload).toHaveBeenCalledTimes(1)
+  })
+
   it('a refused upload says why under the page and adds nothing', async () => {
     const upload = vi.fn(async () => {
       throw new Error('big.png: Too large')
