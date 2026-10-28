@@ -12,13 +12,17 @@ const published: UnsignedEvent[] = []
 let answers: PublishResult[] = []
 let viewer = ME
 /* The Folder states naming the document, and who signed each Folder's channel record. */
-let states: { d: string; pubkey: string }[] = []
+/* A state that `lists` addresses is answered only to a read asking for one of them by `#a`, as the relay does. */
+let states: { d: string; pubkey: string; lists?: string[] }[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => viewer,
-  query: async (filters: { kinds?: number[]; '#d'?: string[] }[]) => {
+  query: async (filters: { kinds?: number[]; '#d'?: string[]; '#a'?: string[] }[]) => {
     const [filter] = filters
-    if (filter.kinds?.[0] === 30890) return states.map(({ d, pubkey }) => ({ kind: 30890, pubkey, tags: [['d', d]], content: '', created_at: 1, id: d, sig: '' }))
+    if (filter.kinds?.[0] === 30890)
+      return states
+        .filter(({ lists }) => !lists || lists.some((a) => filter['#a']?.includes(a)))
+        .map(({ d, pubkey, lists }) => ({ kind: 30890, pubkey, tags: [['d', d], ...(lists ?? []).map((a) => ['a', a])], content: '', created_at: 1, id: d, sig: '' }))
     if (filter.kinds?.[0] === 39000) return (filter['#d'] ?? []).map((d) => ({ kind: 39000, pubkey: RELAY, tags: [['d', d]], content: '', created_at: 1, id: `c-${d}`, sig: '' }))
     return []
   },
@@ -28,7 +32,7 @@ vi.mock('../relay/bridge', () => ({
   },
 }))
 
-const { archiveDocument, deleteDocument, moveDocument, moveFoldersFor, moveSourcesOf, moveTargetsIn, planDelete } = await import('./fileMenu')
+const { archiveDocument, deleteDocument, moveDocument, moveFoldersFor, moveSourcesOf, moveTargetsIn, planDelete, readMovePlace } = await import('./fileMenu')
 const { deleteWords } = await import('../pages/DocumentMenu')
 
 const page = (d: string, parent?: string, more: Partial<ForeignObject> = {}): ForeignObject =>
@@ -199,6 +203,12 @@ describe('moving a Leaf page', () => {
     expect(published).toHaveLength(1)
   })
 
+  it('says why when the add is refused with a reason, such as a sign-in that ended', async () => {
+    answers = [{ ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' } as PublishResult]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' })
+  })
+
   it('names the Folder that still lists it when its remove is refused, and still gives it its new place', async () => {
     answers = [{ ok: true } as PublishResult, { ok: false, message: 'blocked' } as PublishResult]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
@@ -239,12 +249,23 @@ describe('where Move may put a page', () => {
       folderOf('f-private', 'Board', { private: true }),
       folderOf('f-stateless', 'Chat', { hasState: false }),
     ]
-    expect(moveFoldersFor(page('a'), FOLDER, folders).map((f) => f.name)).toEqual(['QA', 'Steer'])
+    expect(moveFoldersFor(page('a'), folders[0], folders).map((f) => f.name)).toEqual(['QA', 'Steer'])
+  })
+
+  it('offers only the Folder it is in when that Folder has no state, since the planner refuses every move out of it', () => {
+    const folders = [folderOf(FOLDER, 'QA', { hasState: false }), folderOf(OTHER_FOLDER, 'Steer')]
+    expect(moveFoldersFor(page('a'), folders[0], folders).map((f) => f.name)).toEqual(['QA'])
   })
 
   it('takes where it is from the Folder states that list it, not from the Folder it was filed in', () => {
     const folders = [folderOf(FOLDER, 'QA'), folderOf(OTHER_FOLDER, 'Steer')]
     expect(moveSourcesOf(page('a'), [OTHER_FOLDER], folders).map((f) => [f.id, f.name])).toEqual([[OTHER_FOLDER, 'Steer']])
     expect(moveSourcesOf(page('a'), [], folders).map((f) => f.id)).toEqual([FOLDER])
+  })
+
+  it('opens on the Folder whose state lists it, asked for by the page’s address, after a move left its `h` behind', async () => {
+    states = [{ d: OTHER_FOLDER, pubkey: RELAY, lists: [`30842:${ME}:a`] }]
+    const place = await readMovePlace(page('a'), [folderOf(FOLDER, 'QA'), folderOf(OTHER_FOLDER, 'Steer')])
+    expect(place.from.map((f) => f.name)).toEqual(['Steer'])
   })
 })

@@ -6,6 +6,7 @@ import {
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
   KIND_FOLDER_STATE,
+  listedBeneath,
   nestingOf,
   planMoveFromFolders,
   resolveFolderContents,
@@ -215,30 +216,37 @@ export function moveSourcesOf(file: Pick<ForeignObject, 'address' | 'folder'>, l
   })
 }
 
-/** What Move opens on: where the document is, and the files of the Folder it is in, live ones only, as the tree draws them. */
+/**
+ * What Move opens on: where the document is, the files of the Folder it is in, live ones only, as the tree draws
+ * them, and what moves with it, archived pages included, as the move sends them.
+ */
 export interface MovePlace {
   from: MoveFolder[]
   files: ForeignObject[]
+  beneath: ForeignObject[]
 }
 
 /** Read where a document is now, from the relay's Folder states naming it, and that Folder's files. Throws when unread. */
-export async function readMovePlace(file: Pick<ForeignObject, 'address' | 'folder'>, folders: readonly FolderSummary[]): Promise<MovePlace> {
+export async function readMovePlace(file: Pick<ForeignObject, 'address' | 'folder' | 'ref'>, folders: readonly FolderSummary[]): Promise<MovePlace> {
   const states = file.address ? await relayStates({ kinds: [KIND_FOLDER_STATE], '#a': [file.address], limit: 500 }) : []
   const from = moveSourcesOf(file, states.map(dOf).filter((id): id is string => !!id), folders)
   if (from.length === 0) throw new Error('The Folder it is in is not one this page can see.')
-  const contents = await resolveFolderContents(from[0].id, query, people.viaRelay(query), manifests)
-  return { from, files: contents.files }
+  const all = await readMoveListing(from[0].id)
+  const beneath = listedBeneath(all, all.find((one) => one.ref === file.ref) ?? (file as ForeignObject))
+  return { from, files: all.filter((one) => !one.archived), beneath }
 }
 
 /**
  * The Folders Move offers: the one it is in, for a new place inside it, and every other the planner would take —
  * one with state, and a private one only when it is the document's own `h` (record: moving a file never changes who
- * can read it). Only moves that can succeed are offered; one the relay still refuses says why in the dialog.
+ * can read it). Out of a Folder with no state it can go nowhere else, so only that one is offered. Only moves that
+ * can succeed are offered; one the relay still refuses says why in the dialog.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/moving-a-file-never-changes-who-can-read-it.md
  */
-export function moveFoldersFor(file: Pick<ForeignObject, 'folder'>, from: string | undefined, folders: readonly FolderSummary[]): MoveFolder[] {
-  return folders.filter((folder) => folder.id === from || (folder.hasState && (!folder.private || folder.id === file.folder))).map(moveFolderOf)
+export function moveFoldersFor(file: Pick<ForeignObject, 'folder'>, from: Pick<MoveFolder, 'id' | 'hasState'> | undefined, folders: readonly FolderSummary[]): MoveFolder[] {
+  const stuck = !!from && !from.hasState
+  return folders.filter((folder) => folder.id === from?.id || (!stuck && folder.hasState && (!folder.private || folder.id === file.folder))).map(moveFolderOf)
 }
 
 /** One place in a Folder a document may be put under: `address` empty for the Folder's top. */
@@ -312,7 +320,8 @@ export async function moveDocument(
       const added = await publish(plan.add)
       if (!added.ok) {
         console.warn('[relay] move refused', added)
-        return { ok: false, reason: 'Nothing was moved. Try again.' }
+        // Estiva ID's and the relay's own words, as Peek says them: a lapsed sign-in is not something to retry.
+        return { ok: false, reason: added.reason ?? 'Nothing was moved. Try again.' }
       }
       moved = true
     }
@@ -337,10 +346,11 @@ export async function moveDocument(
     pubkey,
     createdAtMs: Date.now(),
   })
+  if (typeof built === 'string') console.warn('[leaf] move under not built', built)
   const placed = typeof built === 'string' ? null : await publish(built as UnsignedEvent)
   if (placed?.ok) return { ok: true, stillIn }
   if (placed) console.warn('[relay] move under refused', placed)
-  return moved ? { ok: true, stillIn, unplaced: 'the relay refused its new place' } : { ok: false, reason: 'Nothing was moved. Try again.' }
+  return moved ? { ok: true, stillIn, unplaced: 'it is not in its new place yet' } : { ok: false, reason: placed?.reason ?? 'Nothing was moved. Try again.' }
 }
 
 /** The planner's refusals in Peek's words (`moveFileAsViewer`). */

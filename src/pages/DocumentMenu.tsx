@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { listedBeneath, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { IconDots } from '@tabler/icons-react'
 import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
@@ -100,12 +100,11 @@ export function DocumentMenu({
   function openMove() {
     read(
       readMovePlace(file, folders),
-      ({ from, files }) => {
-        const beneath = listedBeneath(files, files.find((one) => one.ref === file.ref) ?? file)
+      ({ from, files, beneath }) => {
         setDialog({
           kind: 'move',
           from,
-          folders: moveFoldersFor(file, from[0].id, folders),
+          folders: moveFoldersFor(file, from[0], folders),
           targets: moveTargetsIn(files, file, { sameFolder: true }),
           under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
         })
