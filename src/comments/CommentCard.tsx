@@ -1,4 +1,4 @@
-import { CardUnder, LinkRow } from '@estiva-app/ui'
+import { AttachedCard, LinkRow } from '@estiva-app/ui'
 import { useCardLinkState } from '../document/linked'
 
 /**
@@ -13,7 +13,7 @@ export function CommentCard({ uri, compact = false, opensAt, onRemove }: { uri: 
   const link = useCardLinkState(uri, opensAt)
   return (
     <div data-card={compact ? 'compact' : 'detailed'} data-card-value={uri.replace(/^nostr:/i, '')}>
-      {compact ? <LinkRow link={link} /> : <CardUnder link={link} onRemove={onRemove} revealOnHover={!!onRemove} />}
+      {compact ? <LinkRow link={link} /> : <AttachedCard link={link} onRemove={onRemove} />}
     </div>
   )
 }

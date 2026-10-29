@@ -287,10 +287,9 @@ function DocumentView({
             {/* The page's heading, as Katerina's prototype draws it, and its summary 4px under it (the short-summary story's LeafFilePage). */}
             <div className="flex flex-col gap-1">
               <h1 className="text-h1 text-text-primary">
-                {/* In place, as Ship's title (ui InlineText, ship#306), at Leaf's own heading size; Enter goes on into the summary. */}
+                {/* In place, as Ship's title (ui InlineText, ship#306), at a document's heading size (ui 0.91.0's variant="heading"); Enter goes on into the summary. */}
                 <InlineText
-                  variant="title"
-                  className="text-h1"
+                  variant="heading"
                   value={title}
                   placeholder="Untitled"
                   label="Title"

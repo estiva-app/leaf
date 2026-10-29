@@ -71,7 +71,8 @@ describe('a Ship project shown as its card in a Leaf page', () => {
 describe('a Ship project linked in a Leaf page', () => {
   it('alone on its line is its row: key, title, and how far along', () => {
     render(<Link place="row" />)
-    expect(screen.getByText('WBD')).toBeTruthy()
+    // The key under the title, with what it is (ui 0.91.0).
+    expect(screen.getByText('WBD · Project')).toBeTruthy()
     expect(screen.getByText('Widgets 2: build 2')).toBeTruthy()
     // Two of its three issues are Done, Ship's green.
     expect(screen.getByText('2/3')).toBeTruthy()
