@@ -3,6 +3,7 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, t
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import { publish, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
+import { documentPath } from '../route'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
 export const CHANGE = 1851
@@ -27,11 +28,15 @@ export function readDocuments(naddrs: readonly string[]): Promise<Record<string,
  * The closest archived file above an archived file, for the lines that name it (PEEKM-8): what its app calls it —
  * "project", "document", from its manifest's projection — and where it is unarchived: a Folder in Peek, Leaf's own
  * pages here (no app named, LED-4), anything else in its own app. Read through the tab's manifest cache,
- * which the file's own read has already filled. Either is absent when nobody declares it.
+ * which the file's own read has already filled. And where the notice's Open opens it (a3257366): a Leaf page at its
+ * own path here, anything else at the address its own app gives it, where it can be unarchived (Miky, 2026-10-29) —
+ * https only, since that comes from a manifest anyone may publish — and its title, which the notice names it by, as
+ * Ship's card does (Miky, 2026-10-29); both read only when `opens` asks for them, since they cost the file's own read.
+ * Each is absent when nobody declares it.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
-export async function archivedAbove(address: string): Promise<{ noun?: string; app?: string }> {
+export async function archivedAbove(address: string, opens = false): Promise<{ noun?: string; app?: string; href?: string; title?: string }> {
   let pointer
   try {
     pointer = addressToPointer(address)
@@ -39,10 +44,14 @@ export async function archivedAbove(address: string): Promise<{ noun?: string; a
     return {}
   }
   if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'folder', app: 'Peek' }
-  const found = await resolveManifest(pointer, query, manifests).catch(() => null)
+  const read = () => (opens ? resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null) : null)
+  const titled = (file: ForeignObject | null) => file?.slots.title?.value?.trim() || undefined
+  // Leaf calls its own documents pages, as the LED-1 prototype's lines do, and opens them here.
+  if (pointer.kind === KIND.DOCUMENT) return { noun: 'page', href: documentPath(pointer.identifier), title: titled(await read()) }
+  const [found, file] = await Promise.all([resolveManifest(pointer, query, manifests).catch(() => null), read()])
   const noun = found?.manifest.projections?.[String(pointer.kind)]?.noun
-  // Leaf calls its own documents pages, as the LED-1 prototype's lines do.
-  return pointer.kind === KIND.DOCUMENT ? { noun: 'page' } : { noun, app: found?.manifest.name }
+  const href = file?.openUrl && /^https:\/\//i.test(file.openUrl) ? file.openUrl : undefined
+  return { noun, app: found?.manifest.name, href, title: titled(file) }
 }
 
 /**
