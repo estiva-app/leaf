@@ -200,6 +200,9 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     await waitFor(() => expect(published).toHaveLength(1))
     expect(published[0].kind).toBe(1851)
     expect(tag(published[0], 'a')).toBe(ADDRESS)
+    // An unarchive: the `archived` field emptied, not set.
+    expect(tag(published[0], 'field')).toBe('archived')
+    expect(tag(published[0], 'value')).toBe('')
   })
 
   it('a page under an archived page: the notice names the page, and Open page opens it in Leaf', async () => {
@@ -210,6 +213,8 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(screen.getByText('Unarchive the page to comment.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
     await locked()
+    const from = window.location.pathname
+    onTestFinished(() => window.history.replaceState(null, '', from))
     fireEvent.click(screen.getByRole('button', { name: 'Open page' }))
     expect(window.location.pathname).toBe('/document/parent-page')
   })
@@ -225,7 +230,7 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     render(<ToastProvider><FilePage file={archived(doc(), project.address)} loading={false} /></ToastProvider>)
     expect(await screen.findByText(/^Archived with its project by /)).toBeTruthy()
     fireEvent.click(await screen.findByRole('button', { name: 'Open project' }))
-    expect(opened).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/ship\.estiva\.app\//), '_self')
+    expect(opened).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/ship\.estiva\.app\//), '_blank', 'noopener')
   })
 
   it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive or Move', async () => {

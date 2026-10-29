@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { IconArchive } from '@tabler/icons-react'
 import { Button, Card } from '@estiva-app/ui'
 import type { Archive } from '@estiva-app/interop'
@@ -17,14 +18,23 @@ export interface ArchivedNoticeProps {
   by: string
   /** "page", "project" — what `archive.with` is, for "Archived with its project". */
   withWhat?: string
-  /** Restore it. Absent when it is archived with a file above it, or cannot be restored here. */
-  onUnarchive?: () => void
+  /** Restore it; the button waits for it. Absent when it is archived with a file above it, or cannot be restored here. */
+  onUnarchive?: () => void | Promise<unknown>
   /** Open the file it is archived with: a Leaf page here, anything else in its own app. Absent while that is read. */
   onOpenParent?: () => void
 }
 
 export function ArchivedNotice({ archive, by, withWhat, onUnarchive, onOpenParent }: ArchivedNoticeProps) {
-  const when = new Date(archive.at * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const [unarchiving, setUnarchiving] = useState(false)
+  const at = new Date(archive.at * 1000)
+  // As Peek's card says it: "Today", "Yesterday", else "Tue, Oct 28", with the year when it is not this one.
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000)
+  const when =
+    days === 0
+      ? 'Today'
+      : days === 1
+        ? 'Yesterday'
+        : at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(at.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) })
   const line = archive.with ? `Archived with its ${withWhat ?? 'parent'} by ${by} · ${when}` : `Archived by ${by} · ${when}`
   return (
     <Card fill="inset" className="flex items-start gap-3 px-4 py-3">
@@ -40,7 +50,17 @@ export function ArchivedNotice({ archive, by, withWhat, onUnarchive, onOpenParen
             </Button>
           )
         : onUnarchive && (
-            <Button variant="outlined" size="small" className="shrink-0" onClick={onUnarchive}>
+            <Button
+              variant="outlined"
+              size="small"
+              className="shrink-0"
+              disabled={unarchiving}
+              onClick={() => {
+                // One unarchive at a time: a second press while the first is written would write it twice.
+                setUnarchiving(true)
+                void Promise.resolve(onUnarchive()).finally(() => setUnarchiving(false))
+              }}
+            >
               Unarchive
             </Button>
           )}

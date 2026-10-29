@@ -129,7 +129,7 @@ function DocumentView({
       archive={archive}
       by={(archive.by && directory[archive.by]?.displayName) || `${(archive.by ?? '').slice(0, 8)}…`}
       withWhat={above?.noun}
-      onUnarchive={archive.with ? undefined : () => void setArchived(false)}
+      onUnarchive={archive.with ? undefined : () => setArchived(false)}
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
   )
@@ -309,7 +309,9 @@ function DocumentView({
               />
             </div>
             {!own && <OwnerRow file={file} />}
-            {own ? notice : fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
+            {own && notice}
+            {/* Another app's file keeps its line; so does a page whose file above has no address to open, so the way back is still named. */}
+            {(!own || (archive?.with && !aboveHref)) && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}
@@ -361,13 +363,13 @@ function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; 
   useEffect(() => {
     if (!withAddress) return
     let live = true
-    void archivedAbove(withAddress).then((found) => {
+    void archivedAbove(withAddress, own).then((found) => {
       if (live) setAbove({ of: withAddress, ...found })
     })
     return () => {
       live = false
     }
-  }, [withAddress])
+  }, [withAddress, own])
   if (!archive) return {}
   if (!withAddress) {
     const where = own ? undefined : (file.appName ?? 'its app')
@@ -379,9 +381,11 @@ function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; 
 
 /**
  * Open the file a page is archived with (a3257366): a Leaf page here, anything else at its own app's address, where
- * it can be unarchived (Miky, 2026-10-29), in this tab as Peek's and Ship's Open project does.
+ * it can be unarchived (Miky, 2026-10-29): a Leaf page in this tab, another app in a new one.
  */
 function openAbove(href: string): void {
   if (href.startsWith('/')) navigate(href)
-  else window.open(href, '_self')
+  // Another app's address comes from a manifest any member may publish until WOR-2: a new tab, as Open in does, so
+  // a planted one never takes this signed-in tab.
+  else window.open(href, '_blank', 'noopener')
 }

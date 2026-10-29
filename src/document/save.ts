@@ -30,11 +30,12 @@ export function readDocuments(naddrs: readonly string[]): Promise<Record<string,
  * pages here (no app named, LED-4), anything else in its own app. Read through the tab's manifest cache,
  * which the file's own read has already filled. And where the notice's Open opens it (a3257366): a Leaf page at its
  * own path here, anything else at the address its own app gives it, where it can be unarchived (Miky, 2026-10-29) —
- * https only, since that comes from a manifest anyone may publish. Each is absent when nobody declares it.
+ * https only, since that comes from a manifest anyone may publish; read only when `opens` asks for it, since it costs
+ * the file's own read. Each is absent when nobody declares it.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
-export async function archivedAbove(address: string): Promise<{ noun?: string; app?: string; href?: string }> {
+export async function archivedAbove(address: string, opens = false): Promise<{ noun?: string; app?: string; href?: string }> {
   let pointer
   try {
     pointer = addressToPointer(address)
@@ -46,7 +47,7 @@ export async function archivedAbove(address: string): Promise<{ noun?: string; a
   if (pointer.kind === KIND.DOCUMENT) return { noun: 'page', href: documentPath(pointer.identifier) }
   const [found, file] = await Promise.all([
     resolveManifest(pointer, query, manifests).catch(() => null),
-    resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null),
+    opens ? resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null) : null,
   ])
   const noun = found?.manifest.projections?.[String(pointer.kind)]?.noun
   const href = file?.openUrl && /^https:\/\//i.test(file.openUrl) ? file.openUrl : undefined
