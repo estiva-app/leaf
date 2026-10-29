@@ -15,6 +15,8 @@ let changes: SignedEvent[] = []
 let manifests: SignedEvent[] = []
 /* The Folder states (kind 30890) and their Folders (kind 39000) the relay holds, answered by kind. */
 let folderEvents: SignedEvent[] = []
+/* Ship projects' roots (kind 30850) the relay holds, answered by kind. */
+let projects: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
@@ -25,6 +27,8 @@ vi.mock('../relay/bridge', () => ({
       ? new Promise<never>(() => {})
       : filters[0]?.kinds?.[0] === 30890 || filters[0]?.kinds?.[0] === 39000
       ? folderEvents.filter((e) => e.kind === filters[0].kinds![0])
+      : filters[0]?.kinds?.[0] === 30850
+      ? projects
       : filters[0]?.kinds?.[0] === 31990
       ? manifests.filter((m) => m.tags.some((t) => t[0] === 'k' && filters[0]['#k']?.includes(t[1])))
       : filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`)
@@ -95,6 +99,7 @@ afterEach(() => {
   answers = []
   changes = []
   manifests = []
+  projects = []
 })
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
@@ -185,22 +190,42 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
   }
 
-  it('a Leaf page archived itself: unarchived here, said over its text and in the comment box’s place, never "in Peek"', async () => {
+  it('a Leaf page archived itself: Peek’s and Ship’s notice, whose Unarchive writes the unarchive; the comment box keeps its line', async () => {
     render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Archived. Unarchive it to edit.')).toBeTruthy()
+    expect(await screen.findByText(/^Archived by .* · /)).toBeTruthy()
     expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
     expect(screen.queryByText(/in Peek/)).toBeNull()
     await locked()
+    fireEvent.click(screen.getByRole('button', { name: 'Unarchive' }))
+    await waitFor(() => expect(published).toHaveLength(1))
+    expect(published[0].kind).toBe(1851)
+    expect(tag(published[0], 'a')).toBe(ADDRESS)
   })
 
-  it('a page under an archived page: calls it the page, with no app to go to', async () => {
+  it('a page under an archived page: the notice names the page, and Open page opens it in Leaf', async () => {
     const { buildManifest } = await import('../manifest')
     manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
     render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Unarchive the page to edit.')).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its page by /)).toBeTruthy()
     expect(screen.getByText('Unarchive the page to comment.')).toBeTruthy()
-    expect(screen.queryByText(/in Peek/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
     await locked()
+    fireEvent.click(screen.getByRole('button', { name: 'Open page' }))
+    expect(window.location.pathname).toBe('/document/parent-page')
+  })
+
+  it('a page under an archived Ship project: Open project opens the project in Estiva Ship, where it is unarchived', async () => {
+    const shipManifest = (await import('./fixtures/ship-manifest.json')).default
+    const handler = ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr']
+    manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851'], handler], content: JSON.stringify(shipManifest) })]
+    const project = shipProject()
+    projects = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    onTestFinished(() => opened.mockRestore())
+    render(<ToastProvider><FilePage file={archived(doc(), project.address)} loading={false} /></ToastProvider>)
+    expect(await screen.findByText(/^Archived with its project by /)).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Open project' }))
+    expect(opened).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/ship\.estiva\.app\//), '_self')
   })
 
   it('the ⋯ menu of a page archived itself offers Unarchive and Delete, not Archive or Move', async () => {

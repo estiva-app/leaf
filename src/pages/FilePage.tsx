@@ -20,7 +20,9 @@ import { OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
 import { useFold, useNarrow } from '../frame/folds'
-import { DocumentMenu } from './DocumentMenu'
+import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
+import { ArchivedNotice } from './ArchivedNotice'
+import { navigate } from '../route'
 import { Members } from './Members'
 import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
 import { useDirectory } from '../comments/people'
@@ -116,7 +118,21 @@ function DocumentView({
   // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
   // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), from the ⋯ menu (LED-4).
   const locked = isArchived(file)
-  const { field: fieldLine, comment: commentLine } = useArchivedLines(file, own)
+  const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
+  const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
+  // A Leaf page shows Peek's and Ship's notice in the line's place (a3257366); another app's file keeps the line,
+  // which names the app it is unarchived in.
+  const archive = own ? file.archived : undefined
+  const aboveHref = above?.href
+  const notice = archive && (!archive.with || above) && (
+    <ArchivedNotice
+      archive={archive}
+      by={(archive.by && directory[archive.by]?.displayName) || `${(archive.by ?? '').slice(0, 8)}…`}
+      withWhat={above?.noun}
+      onUnarchive={archive.with ? undefined : () => void setArchived(false)}
+      onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
+    />
+  )
   const title = titleOf(file)
   const body = file.slots[BODY_SLOT]
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
@@ -293,7 +309,7 @@ function DocumentView({
               />
             </div>
             {!own && <OwnerRow file={file} />}
-            {fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
+            {own ? notice : fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}
@@ -338,10 +354,10 @@ function DocumentView({
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
-function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; comment?: string } {
+function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; comment?: string; above?: { noun?: string; href?: string } } {
   const archive = file.archived
   const withAddress = archive?.with
-  const [above, setAbove] = useState<{ of: string; noun?: string; app?: string } | null>(null)
+  const [above, setAbove] = useState<{ of: string; noun?: string; app?: string; href?: string } | null>(null)
   useEffect(() => {
     if (!withAddress) return
     let live = true
@@ -358,5 +374,14 @@ function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; 
     return { field: archivedLine(archive, undefined, { in: where, to: 'edit' }), comment: archivedLine(archive) }
   }
   if (above?.of !== withAddress) return {}
-  return { field: archivedLine(archive, above.noun, { in: above.app, to: 'edit' }), comment: archivedLine(archive, above.noun) }
+  return { field: archivedLine(archive, above.noun, { in: above.app, to: 'edit' }), comment: archivedLine(archive, above.noun), above }
+}
+
+/**
+ * Open the file a page is archived with (a3257366): a Leaf page here, anything else at its own app's address, where
+ * it can be unarchived (Miky, 2026-10-29), in this tab as Peek's and Ship's Open project does.
+ */
+function openAbove(href: string): void {
+  if (href.startsWith('/')) navigate(href)
+  else window.open(href, '_self')
 }

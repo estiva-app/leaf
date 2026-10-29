@@ -22,6 +22,35 @@ import { readFolder } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
 import { MoveDialog } from './MoveDialog'
 
+/** The Folder that lists a page, by the sidebar's read, else its `h`. */
+export function listedInOf(file: ForeignObject, folders: readonly FolderSummary[] | undefined): string | undefined {
+  return (folders ?? []).find((folder) => folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))?.id ?? file.folder
+}
+
+/**
+ * Archive or unarchive a Leaf page, said in a toast, and its Folder read again: the ⋯ menu's and the archived
+ * notice's Unarchive (a3257366) do the same thing. False when the relay refused it.
+ */
+export function useSetArchived(file: ForeignObject, listedIn: string | undefined, onChanged?: (folder: string) => void | Promise<void>) {
+  const { showToast } = useToast()
+  const title = titleOf(file)
+  return async function setArchived(archived: boolean, resolution?: string): Promise<boolean> {
+    const result = await archiveDocument(file, archived, resolution)
+    if (!result.ok) {
+      showToast({ label: result.reason, type: 'error' })
+      return false
+    }
+    if (listedIn) void onChanged?.(listedIn)
+    // Undo, then Peek's Archive view or its link, bring it back (Miky, LED-4 kickoff).
+    showToast(
+      archived
+        ? { label: `Archived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchived(false) }
+        : { label: `Unarchived “${title}”`, type: 'success' },
+    )
+    return true
+  }
+}
+
 // The Folders it may go to are drawn from the current `folders`, so a Move opened before the sidebar read them fills in.
 type Moving = { kind: 'move'; from: MoveFolder[]; targets: MoveTarget[]; under: string }
 
@@ -52,26 +81,11 @@ export function DocumentMenu({
   const refuse = (label: string) => showToast({ label, type: 'error' })
   // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
   const [movedTo, setMovedTo] = useState<string>()
-  const listedIn = movedTo ?? folders.find((folder) => folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))?.id ?? file.folder
+  const listedIn = movedTo ?? listedInOf(file, folders)
   const changed = () => {
     if (listedIn) void onChanged?.(listedIn)
   }
-
-  async function setArchived(archived: boolean, resolution?: string): Promise<boolean> {
-    const result = await archiveDocument(file, archived, resolution)
-    if (!result.ok) {
-      refuse(result.reason)
-      return false
-    }
-    changed()
-    // Undo, then Peek's Archive view or its link, bring it back (Miky, LED-4 kickoff).
-    showToast(
-      archived
-        ? { label: `Archived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchived(false) }
-        : { label: `Unarchived “${title}”`, type: 'success' },
-    )
-    return true
-  }
+  const setArchived = useSetArchived(file, listedIn, onChanged)
 
   function read<T>(what: Promise<T>, open: (found: T) => void, failed: string) {
     if (reading.current) return
