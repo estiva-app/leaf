@@ -790,7 +790,7 @@ describe('editing and deleting your own comment (COMM-5)', () => {
         relay.events = [...relay.events, { ...e, id: '9'.repeat(64), sig: '' } as SignedEvent]
         return { ok: true }
       })
-      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove card' })))
+      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove' })))
       await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
       const e = publish.mock.calls[0][0]
       expect([e.kind, e.content, e.pubkey]).toEqual([40003, `See\n${CARD}`, ME])
@@ -804,7 +804,7 @@ describe('editing and deleting your own comment (COMM-5)', () => {
       const reworded: SignedEvent = { id: '5'.repeat(64), pubkey: ME, created_at: own.created_at + 60, kind: 40003, tags: [['h', FOLDER], ['e', own.id]], content: `Reworded\n${CARD}`, sig: '' }
       await open([own, reworded])
       await waitFor(() => expect(cardOf(own.id)?.textContent).toContain('Card under'))
-      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove card' })))
+      act(() => void fireEvent.click(within(cardOf(own.id)!).getByRole('button', { name: 'Remove' })))
       await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
       expect(publish.mock.calls[0][0].content).toBe(`Reworded\n${CARD}`)
     })
@@ -833,7 +833,7 @@ describe('editing and deleting your own comment (COMM-5)', () => {
       const theirs = comment([['embed', CARD_ADDRESS, 'detailed']], `See\n${CARD}`)
       await open([theirs])
       await waitFor(() => expect(cardOf(theirs.id)?.textContent).toContain('Card under'))
-      expect(within(cardOf(theirs.id)!).queryByRole('button', { name: 'Remove card' })).toBeNull()
+      expect(within(cardOf(theirs.id)!).queryByRole('button', { name: 'Remove' })).toBeNull()
     })
 
     it('draws no card under a comment whose author took it off in Peek or Ship, and the file’s line draws again', async () => {
@@ -1174,7 +1174,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await open(EVENTS)
     write(BOX, `see ${ISSUE_URL} `)
     await waitFor(() => expect(under()).not.toBeNull())
-    act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove card' })))
+    act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove' })))
     expect(under()).toBeNull()
     const e = await sent()
     expect(named(e.tags, 'embed')).toEqual([])
@@ -1348,7 +1348,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       const own = { ...comment([], 'Too long?'), pubkey: ME }
       await editSaying(own, `see ${ISSUE_URL} `)
       await waitFor(() => expect(under()).not.toBeNull())
-      act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove card' })))
+      act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove' })))
       const e = await saved()
       expect(named(e.tags, 'embed')).toEqual([])
       expect(named(e.tags, 'a')).toEqual([['a', ISSUE]])
@@ -1401,7 +1401,7 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     act(() => void fireEvent.click(line(theirs.id)!.closest<HTMLElement>('[data-thread-id]')!))
     act(() => void fireEvent.click(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!))
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
-    for (const name of ['Resolve', 'Reopen', 'Add a reaction', 'Remove card']) expect(screen.queryByRole('button', { name })).toBeNull()
+    for (const name of ['Resolve', 'Reopen', 'Add a reaction', 'Remove']) expect(screen.queryByRole('button', { name })).toBeNull()
     // A comment's own ⋯ (Edit, Delete); the page's ⋯ in the header is the page's (LED-4).
     for (const thread of document.querySelectorAll<HTMLElement>('[data-thread-id]')) expect(within(thread).queryByRole('button', { name: 'More' })).toBeNull()
     const pill = await screen.findByRole('button', { name: 'Makes sense, 1' })
