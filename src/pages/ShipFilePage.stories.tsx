@@ -45,7 +45,7 @@ function SharedTextView({ file, value, changedBy = null, onCommit = async () => 
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             <div className="flex flex-col gap-1">
               <h1 className="text-h1 text-text-primary">
-                <InlineText variant="title" className="text-h1" value={titleOf(file)} placeholder="Untitled" label="Title" readOnly={locked} onCommit={async () => true} />
+                <InlineText variant="heading" value={titleOf(file)} placeholder="Untitled" label="Title" readOnly={locked} onCommit={async () => true} />
               </h1>
               <PageSummary value={file.slots.subtitle?.value ?? ''} readOnly={locked} onCommit={async () => true} />
             </div>
