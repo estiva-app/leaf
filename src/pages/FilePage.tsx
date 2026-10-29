@@ -129,6 +129,7 @@ function DocumentView({
       archive={archive}
       by={(archive.by && directory[archive.by]?.displayName) || `${(archive.by ?? '').slice(0, 8)}…`}
       withWhat={above?.noun}
+      withTitle={above?.title}
       onUnarchive={archive.with ? undefined : () => setArchived(false)}
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
@@ -356,10 +357,10 @@ function DocumentView({
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
-function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; comment?: string; above?: { noun?: string; href?: string } } {
+function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; comment?: string; above?: { noun?: string; href?: string; title?: string } } {
   const archive = file.archived
   const withAddress = archive?.with
-  const [above, setAbove] = useState<{ of: string; noun?: string; app?: string; href?: string } | null>(null)
+  const [above, setAbove] = useState<{ of: string; noun?: string; app?: string; href?: string; title?: string } | null>(null)
   useEffect(() => {
     if (!withAddress) return
     let live = true

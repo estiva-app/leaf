@@ -15,8 +15,8 @@ let changes: SignedEvent[] = []
 let manifests: SignedEvent[] = []
 /* The Folder states (kind 30890) and their Folders (kind 39000) the relay holds, answered by kind. */
 let folderEvents: SignedEvent[] = []
-/* Ship projects' roots (kind 30850) the relay holds, answered by kind. */
-let projects: SignedEvent[] = []
+/* The roots of Ship projects (kind 30850) and of Leaf pages (kind 30842) the relay holds, answered by kind. */
+let roots: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
@@ -27,8 +27,8 @@ vi.mock('../relay/bridge', () => ({
       ? new Promise<never>(() => {})
       : filters[0]?.kinds?.[0] === 30890 || filters[0]?.kinds?.[0] === 39000
       ? folderEvents.filter((e) => e.kind === filters[0].kinds![0])
-      : filters[0]?.kinds?.[0] === 30850
-      ? projects
+      : filters[0]?.kinds?.[0] === 30850 || (filters[0]?.kinds?.[0] === 30842 && !filters[0]['#a'])
+      ? roots.filter((e) => e.kind === filters[0].kinds![0])
       : filters[0]?.kinds?.[0] === 31990
       ? manifests.filter((m) => m.tags.some((t) => t[0] === 'k' && filters[0]['#k']?.includes(t[1])))
       : filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`)
@@ -99,7 +99,7 @@ afterEach(() => {
   answers = []
   changes = []
   manifests = []
-  projects = []
+  roots = []
 })
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
@@ -205,11 +205,12 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(tag(published[0], 'value')).toBe('')
   })
 
-  it('a page under an archived page: the notice names the page, and Open page opens it in Leaf', async () => {
+  it('a page under an archived page: the notice names the page by its title, and Open page opens it in Leaf', async () => {
     const { buildManifest } = await import('../manifest')
     manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
+    roots = [{ kind: 30842, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'parent-page'], ['title', 'Launch plan'], ['h', FOLDER]], content: '', id: 'd'.repeat(64), sig: '' } as SignedEvent]
     render(<ToastProvider><FilePage file={archived(doc(), `30842:${ME}:parent-page`)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived with its page by /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its page “Launch plan” by /)).toBeTruthy()
     expect(screen.getByText('Unarchive the page to comment.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
     await locked()
@@ -224,11 +225,11 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     const handler = ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr']
     manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851'], handler], content: JSON.stringify(shipManifest) })]
     const project = shipProject()
-    projects = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
+    roots = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
     const opened = vi.spyOn(window, 'open').mockReturnValue(null)
     onTestFinished(() => opened.mockRestore())
     render(<ToastProvider><FilePage file={archived(doc(), project.address)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived with its project by /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by /)).toBeTruthy()
     fireEvent.click(await screen.findByRole('button', { name: 'Open project' }))
     expect(opened).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/ship\.estiva\.app\//), '_blank', 'noopener')
   })

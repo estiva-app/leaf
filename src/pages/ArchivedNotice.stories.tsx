@@ -45,7 +45,7 @@ export const NoResolution: Story = { args: { archive: { by: 'x', at } } }
 
 /** Archived with the page above it: Open page opens that page in Leaf, whose ⋯ menu has Unarchive. */
 export const WithItsPage: Story = {
-  args: { archive: { by: 'x', at, with: PAGE }, withWhat: 'page', onOpenParent: noop, onUnarchive: undefined },
+  args: { archive: { by: 'x', at, with: PAGE }, withWhat: 'page', withTitle: 'Launch plan', onOpenParent: noop, onUnarchive: undefined },
 }
 
 /** Archived with its Ship project: Open project opens the project in Estiva Ship, where it can be unarchived. */
@@ -53,6 +53,7 @@ export const WithItsProject: Story = {
   args: {
     archive: { by: 'x', at, with: PROJECT, resolution: 'Shipped; the rest moved to the next project.' },
     withWhat: 'project',
+    withTitle: 'Leaf works for everyday documents',
     onOpenParent: noop,
     onUnarchive: undefined,
   },
