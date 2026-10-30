@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
+import { addrToNaddr } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { mocked } from 'storybook/test'
 import { query, viewerPubkey } from '../relay/bridge'
@@ -81,6 +82,54 @@ const withStatus = {
 export const CardWhileEditing: Story = {
   args: { uri: 'nostr:status', place: 'card', editing: true },
   decorators: [(Story) => <ReferencesProvider value={{ 'nostr:status': withStatus }}>{Story()}</ReferencesProvider>],
+  beforeEach: () => {
+    mocked(viewerPubkey).mockReturnValue(LEAD)
+    mocked(query).mockResolvedValue([])
+  },
+}
+
+const GONE = `30851:${LEAD}:0d1e7e3d-5c2b-4a9e-8f10-2b3c4d5e6f70`
+const GONE_URI = `nostr:${addrToNaddr(GONE)}`
+
+/**
+ * An issue its author deleted, alone on its line: its read comes back empty, and a trusted deletion names it, so the
+ * row says "Issue deleted" (SPEC §13.6.1), not "not available", with no way out.
+ */
+export const Deleted: Story = {
+  args: { uri: GONE_URI, place: 'row' },
+  beforeEach: () => {
+    // The relay holds nothing at the address, and the author's own `kind:5` naming it.
+    mocked(query).mockImplementation(async (filters) =>
+      filters.some((filter) => Array.isArray(filter.kinds) && filter.kinds.includes(5))
+        ? [{ id: '5'.repeat(64), pubkey: LEAD, created_at: 1_760_000_500, kind: 5, tags: [['a', GONE], ['k', '30851']], content: '', sig: '' }]
+        : [],
+    )
+  },
+}
+
+/** A link written as an app URL whose file cannot be read: it stays the URL as written (SPEC §13.1), never "not available". */
+export const WrittenUrlNotRead: Story = {
+  args: { uri: 'nostr:unread', href: 'https://ship.estiva.app/issue/plan-the-launch-0d1e7e3d-5c2b-4a9e-8f10-2b3c4d5e6f70', place: 'row' },
+  decorators: [(Story) => <ReferencesProvider value={{ 'nostr:unread': null }}>{Story()}</ReferencesProvider>],
+}
+
+const unassigned = {
+  ...project,
+  kind: 30851,
+  noun: 'issue',
+  address: `30851:${LEAD}:i`,
+  slots: { title: { value: 'Draft the onboarding checklist' }, status: { value: 'Todo', colour: 'neutral', field: 'status' } },
+  meta: [{ label: 'Assignee', field: 'assignee', value: '', isPubkey: true }],
+  actions: [
+    { id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo' }, { value: 'done', label: 'Done' }] },
+    { id: 'assign', label: 'Assignee', control: 'pubkey', field: 'assignee', current: '' },
+  ],
+} as unknown as ForeignObject
+
+/** An issue nobody is assigned to, as its card: its owner picker says "Unassigned" with the person silhouette, never a letter. */
+export const UnassignedCard: Story = {
+  args: { uri: 'nostr:unassigned', place: 'card' },
+  decorators: [(Story) => <ReferencesProvider value={{ 'nostr:unassigned': unassigned }}>{Story()}</ReferencesProvider>],
   beforeEach: () => {
     mocked(viewerPubkey).mockReturnValue(LEAD)
     mocked(query).mockResolvedValue([])

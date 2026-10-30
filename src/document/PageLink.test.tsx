@@ -157,3 +157,18 @@ describe('where a Ship project written as a URL in a Leaf page opens (WBM-11)', 
     }
   })
 })
+
+describe('a link written as a URL whose file cannot be read (widget review, item 58)', () => {
+  it('stays the URL as written, a plain link, not "not available" (SPEC §13.1)', () => {
+    const written = 'https://ship.estiva.app/project/widgets-2'
+    render(
+      <ToastProvider>
+        <ReferencesProvider value={{ [PROJECT_URI]: null }}>
+          <PageLink uri={PROJECT_URI} href={written} place="row" />
+        </ReferencesProvider>
+      </ToastProvider>,
+    )
+    expect(screen.getByRole('link', { name: written }).getAttribute('href')).toBe(written)
+    expect(screen.queryByText(/not available/)).toBeNull()
+  })
+})

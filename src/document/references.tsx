@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useReducer } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { createPeopleCache, resolveForeignObjects, type ForeignObject } from '@estiva-app/interop'
+import { readAbsence, referenceToPointer } from '@estiva-app/protocol'
 import { query } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
-import { unavailableLinks } from './unavailableLinks'
+import { unavailableLinks } from './linkMemory'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
 export type Resolved = Record<string, ForeignObject | null | undefined>
@@ -23,10 +24,53 @@ const listeners = new Set<() => void>()
 
 /** What a read answered, kept for the tab and noted for the next open: nothing, or a file this reader cannot read, is not available. */
 function answered(uris: readonly string[], found: Record<string, ForeignObject | null | undefined>): void {
+  const empty: string[] = []
   for (const uri of uris) {
     known[uri] = found[uri] ?? null
     failing.delete(uri)
-    unavailableLinks.note(uri, !!found[uri] && !found[uri]!.unreachable)
+    const readable = !!found[uri] && !found[uri]!.unreachable
+    unavailableLinks.note(uri, readable)
+    if (readable) deleted.delete(uri)
+    else empty.push(uri)
+  }
+  askWhetherDeleted(empty)
+}
+
+/** References a trusted deletion names: "Issue deleted", not "Issue not available" (SPEC §13.6.1, deleted is not not-permitted). */
+const deleted = new Set<string>()
+
+/** Whether a trusted deletion names what `uri` names, as asked once its read came back empty. */
+export function isDeleted(uri: string): boolean {
+  return deleted.has(uri)
+}
+
+/** The address an `naddr` reference names, or nothing: no deletion names anything else by its address. */
+function addressOfReference(uri: string): string | undefined {
+  if (!/^nostr:naddr1/i.test(uri)) return undefined
+  try {
+    const { kind, pubkey, identifier } = referenceToPointer(uri)
+    return `${kind}:${pubkey}:${identifier}`
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Ask, for each reference whose read came back empty, whether a trusted deletion names it (protocol's `readAbsence`,
+ * the read Peek and Ship make). A failed ask leaves it as it was: neither answer is known.
+ */
+function askWhetherDeleted(uris: readonly string[]): void {
+  for (const uri of uris) {
+    const address = addressOfReference(uri)
+    if (!address) continue
+    void readAbsence(address, query)
+      .then((absence) => {
+        if ((absence === 'deleted') === deleted.has(uri)) return
+        if (absence === 'deleted') deleted.add(uri)
+        else deleted.delete(uri)
+        for (const listener of listeners) listener()
+      })
+      .catch(() => {})
   }
 }
 

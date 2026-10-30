@@ -56,11 +56,14 @@ export const OfAShipIssue: Story = { args: { pointer: pointerOf(ISSUE, SHORT), r
 /** While it is read: the card's placeholder, its kind known from the address. */
 export const Loading: Story = { args: { read: { state: 'loading' } } }
 
-/** Deleted, or not this reader's to see, which read the same: no title, no words. */
+/** Not this reader's to see: no title, no words. */
 export const NotAvailable: Story = { args: { read: { state: 'unavailable' } } }
 
-/** Its block deleted from the page: the page's title, and says so. */
+/** Its page deleted, as a trusted deletion naming it says (SPEC §13.6.1): "A part of this document deleted", no way out. */
+export const Deleted: Story = { args: { read: { state: 'deleted' } } }
+
+/** Its block deleted from the page, which is still there: "This part was deleted", in the kit's words. */
 export const BlockDeleted: Story = { args: { read: { state: 'detached', object: page } } }
 
-/** The page is not written in blocks, so no block can be found: the page's title, and says so. */
+/** The page is not written in blocks, so no block can be found: "This part can't be shown", linking to the whole page. */
 export const CannotBeShown: Story = { args: { read: { state: 'unaddressable', object: page } } }

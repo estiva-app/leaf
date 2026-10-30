@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, useContext } from 'react'
 import { InlineChip, LinkCard, LinkChip, LinkRow } from '@estiva-app/ui'
 import type { ReferenceViewProps } from '@estiva-app/ui/editor'
 import { decodeNpub } from '@estiva-app/protocol'
@@ -57,26 +57,10 @@ function PageRow({ uri, href, editing }: Required<Pick<ReferenceViewProps, 'edit
  * pickers kept while the caret is in the text too (Katerina, 30 Oct; record
  * a-card-changes-what-a-files-app-shares says words while the text is edited,
  * and she decided against it). Words only where the reader cannot act
- * (`CardActsProvider`): an archived page, a signed-out reader.
+ * (`CardActsProvider`): an archived page, a signed-out reader. A press on a
+ * picker stays the picker's, not the text's: the kit's reference node keeps it.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
 function PageCard({ uri, href }: Pick<ReferenceViewProps, 'uri' | 'href'>) {
-  const card = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    const element = card.current
-    if (!element) return
-    // ProseMirror sees a press before React does and takes the caret into the text, which closed the picker before it
-    // opened. It leaves alone a press whose default is prevented. The kit's BlockNodes takes this over for every app
-    // (widget review, item 10): remove it once Leaf is on that release.
-    const keep = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest('button, [role="combobox"]')) event.preventDefault()
-    }
-    element.addEventListener('mousedown', keep)
-    return () => element.removeEventListener('mousedown', keep)
-  }, [])
-  return (
-    <span ref={card} className="contents">
-      <LinkCard link={useCardLinkState(uri, href)} />
-    </span>
-  )
+  return <LinkCard link={useCardLinkState(uri, href)} />
 }

@@ -144,3 +144,20 @@ describe('[ on a Leaf page', () => {
     expect(saved).not.toContain('[quok')
   })
 })
+
+describe('`[` in a comment box (widget review, item 19)', () => {
+  const COMMENT = { id: 'c'.repeat(64), by: 'b'.repeat(64), at: 1_760_000_000, body: 'See https://ship.estiva.app/issue/draft-the-onboarding-checklist-1 before Friday' }
+  const nameOf = () => 'QA-1'
+
+  it('lists Files first, then Messages, in every app’s order', async () => {
+    const { commentReferenceSections } = await import('./referencePicker')
+    expect(commentReferenceSections({ here: [COMMENT], rest: [] }, '', nameOf).map((section) => section.label)).toEqual(['Files', 'Messages'])
+  })
+
+  it('finds a comment by its own words, never by the raw text of a link in it', async () => {
+    const { commentReferenceSections } = await import('./referencePicker')
+    const messages = (typed: string) => commentReferenceSections({ here: [COMMENT], rest: [] }, typed, nameOf).find((s) => s.label === 'Messages')!.items
+    expect(messages('Friday')).toHaveLength(1)
+    expect(messages('onboarding')).toHaveLength(0)
+  })
+})

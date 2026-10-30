@@ -1,14 +1,16 @@
-import { createContext, useContext, useState } from 'react'
-import { KIND, referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { openingWords } from '@estiva-app/conversation'
+import { KIND, referenceToPointer } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { linkStateFrom, thingKindOf, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
+import { linkStateFrom, loadingShapeOf, thingKindOf, useToast, type LinkState, type LinkedFromOptions, type LinkedKind, type LoadingShape } from '@estiva-app/ui'
 import { links } from '../comments/links'
-import { useDirectory } from '../comments/people'
+import { knownName, useDirectory } from '../comments/people'
 import { viewerPubkey } from '../relay/bridge'
 import { COMMENTS_HASH, pagePath } from '../route'
 import { useCardConversation } from './cardConversation'
-import { rereadReference, useFile } from './references'
+import { isDeleted, rereadReference, useFile } from './references'
 import { saveCardChoice } from './save'
+import { cardShapes } from './linkMemory'
 import { sharesText } from './writable'
 
 /*
@@ -65,7 +67,10 @@ function openerOf(object: { openUrl?: string }, written?: string): string {
 
 /**
  * Where a reference's read stands, for the kit: `undefined` is still read,
- * `null` an answer of nothing. `written` is the URL the text wrote for it.
+ * `null` an answer of nothing. `written` is the URL the text wrote for it:
+ * one that cannot be read stays that URL (SPEC §13.1), so "not available" and
+ * "deleted" are only for a `nostr:` reference. A file a trusted deletion names
+ * says it was deleted (SPEC §13.6.1), not that it is not available.
  */
 export function linkStateOf(
   uri: string,
@@ -73,9 +78,12 @@ export function linkStateOf(
   written?: string,
   more: Pick<LinkedFromOptions, 'onAct' | 'conversation' | 'directory'> = {},
 ): LinkState {
-  return linkStateFrom(object, unreadOf(uri), {
+  const gone = (object === null || !!object?.unreachable) && isDeleted(uri)
+  const url = written && /^https?:\/\//i.test(written) ? written : undefined
+  return linkStateFrom(gone ? null : object, { ...unreadOf(uri), ...(gone ? { deleted: true } : {}), ...(url ? { url } : {}) }, {
     hrefOf: (file, top) => openerOf(file, top ? written : undefined),
-    previewText: (body) => stripInlineFormatting(body).trim(),
+    // A message's words as every app previews them: an app link reads as what it names, a `nostr:` one by its type word.
+    previewText: (body, people) => openingWords(body, (pubkey) => people?.[pubkey]?.displayName ?? knownName(pubkey), { resolveLink: links.known }),
     ...more,
   })
 }
@@ -150,16 +158,25 @@ export function useFileChoices(
  * A link's state with what a card adds: its comment count, and its status and
  * owner pickers ({@link useFileChoices}), the file read again after each
  * change. A field its own app shares may be changed from its card in any app
- * (Miky, 21 Oct).
+ * (Miky, 21 Oct). While it is read, its placeholder takes the shape the card
+ * last drew at on this device (`cardShapes`), so nothing around it moves.
  */
 export function useCardLinkState(uri: string, written?: string): LinkState {
   const read = useFile(uri)
   const { object, onAct } = useFileChoices(read, () => rereadReference(uri))
   const conversation = useConversation(read, written)
   const directory = useDirectory()
-  return linkStateOf(uri, object, written, {
+  const state = linkStateOf(uri, object, written, {
     ...(onAct ? { onAct } : {}),
     directory,
     ...(conversation ? { conversation } : {}),
   })
+  // Noted once it draws, by its shape's words, so a redraw of the same card writes nothing.
+  const drawn = state.state === 'ready' ? JSON.stringify(loadingShapeOf(state.linked)) : undefined
+  useEffect(() => {
+    if (drawn) cardShapes.note(uri, JSON.parse(drawn) as LoadingShape)
+  }, [uri, drawn])
+  if (state.state !== 'loading') return state
+  const shape = cardShapes.of(uri, state.kind)
+  return shape ? { ...state, shape } : state
 }

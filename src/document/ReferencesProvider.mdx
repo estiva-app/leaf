@@ -39,4 +39,6 @@ const references = useReferences(page.flatMap((c) => findNostrUris(c.body)))
   it is not available, never a placeholder for good, and is read again every
   30 s until a read answers. A link this device last found not available says
   so from the first paint while it is read again (`unavailableLinks`, the kit's
-  memory); a read that only failed is not remembered.
+  memory); a read that only failed is not remembered. A read that comes back
+  empty asks whether a trusted deletion names the file (protocol's
+  `readAbsence`), so its link can say it was deleted.

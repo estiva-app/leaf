@@ -10,8 +10,8 @@ One block of another page or issue, live under a comment or under the box
 block as it is now.
 
 **Seen in**: *Comments/PartView*: **Of A Document**, **Long**, **Of A Ship
-Issue**, **Loading**, **Not Available**, **Block Deleted**, **Cannot Be
-Shown**; under a sent comment and under the comment box.
+Issue**, **Loading**, **Not Available**, **Deleted**, **Block Deleted**,
+**Cannot Be Shown**; under a sent comment and under the comment box.
 
 ## When
 
@@ -34,7 +34,11 @@ import { PartView } from './PartView'
 
 ## What it owns
 
-- Reading the part, again every 30 s while the tab is visible.
+- Reading the part, again every 30 s while the tab is visible. A read that
+  comes back empty asks whether a trusted deletion names the file (protocol's
+  `readAbsence`): "deleted" then, else "not available" (SPEC §13.6.1).
+- Which of the SPEC's five states it is in, drawn by the kit's **PartCard**
+  states in their words; one that cannot be shown links to the whole file.
 - Where it opens, at the block: a Leaf document here, in this tab ("Open");
   another app's file in that app, in a new tab ("Open in Ship"), at the block
   when the app declares a link to one.

@@ -1253,6 +1253,43 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
   })
 
+  /** A `kind:5` its author signed, naming `address`: a trusted deletion (SPEC §13.6.1). */
+  const deletion = (address: string): SignedEvent => ({
+    id: `${address.split(':')[2].replace(/-/g, '').padEnd(62, '0').slice(0, 62)}55`,
+    pubkey: address.split(':')[1],
+    created_at: 1_760_000_500,
+    kind: 5,
+    tags: [['a', address], ['k', address.split(':')[0]]],
+    content: '',
+    sig: '',
+  })
+
+  it('a sent comment’s card for a file its author deleted says the issue was deleted, not that it is not available (widget review, item 56)', async () => {
+    const D = '88888888-8888-4888-8888-888888888888'
+    const GONE = `30851:${SHIP}:${D}`
+    await open([...EVENTS, deletion(GONE), comment([['embed', GONE, 'detailed']], `See\n${uriOf(GONE)}`)])
+    await waitFor(() => expect(document.querySelector('[data-comment-id] [data-card="detailed"]')?.textContent).toContain('Issue deleted'))
+  })
+
+  it('a sent comment’s part of a page its author deleted says that part’s page was deleted (widget review, items 56 and 57)', async () => {
+    const D = '99999999-9999-4999-8999-999999999999'
+    const GONE = `30842:${AUTHOR}:${D}`
+    await open([...EVENTS, deletion(GONE), comment([['part', GONE, 'b1b1b1b1b1b1']], `see ${uriOf(GONE)} here`)])
+    await waitFor(() => expect(document.querySelector('[data-part="deleted"]')?.textContent).toBe('A part of this document deleted'))
+  })
+
+  it('a quote of a comment reads an app link in it as what it names, never the raw URL (widget review, item 20)', async () => {
+    const first = comment([], `Same as ${ISSUE_URL} then`)
+    const second = comment([['q', first.id]], `See\nnostr:${encodeNevent({ id: first.id, relays: [] })}`)
+    await open([...EVENTS, first, second])
+    const row = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>(`[data-comment-id="${second.id}"] [data-comment-row="${first.id}"]`)
+      expect(found?.textContent).toContain('Same as Issue then')
+      return found!
+    })
+    expect(row.textContent).not.toContain('https://')
+  })
+
   it('a sent comment’s part of another page is labelled a document, and its title and Open take you to that page at the block, in Leaf', async () => {
     await open([...EVENTS, comment([['part', TWO_ADDRESS, TWO_BLOCK]], `see ${PART_URL}`)])
     const part = await waitFor(() => {
