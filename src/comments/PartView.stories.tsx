@@ -9,8 +9,8 @@ import { PartFrame } from './PartView'
 */
 
 const AUTHOR = 'a'.repeat(64)
-const PAGE = `30842:${AUTHOR}:launch-plan`
-const ISSUE = `30851:${'b'.repeat(64)}:ltx-3`
+const PAGE = `30842:${AUTHOR}:5a1e0c2b-9a41-4c0e-8d7f-3b2a1c0d9e8f`
+const ISSUE = `30851:${'b'.repeat(64)}:7c3d9e10-2f4b-4a6c-9b8d-1e0f2a3b4c5d`
 
 const page = { ref: 'r', kind: 30842, eventId: 'e', widget: 'card', address: PAGE, slots: { title: { value: 'Launch plan' } }, meta: [], actions: [], viaRecommendation: false } as unknown as ForeignObject
 const issue = {
@@ -23,19 +23,22 @@ const issue = {
 } as unknown as ForeignObject
 
 const blockOf = (text: string) => descriptionTextToBlockDocument(text).content[0]
+const pointerOf = (address: string, block: { id?: string }) => ({ address, block: block.id ?? '' })
 const SHORT = blockOf('We ship on Friday, after the last review with Miky.')
 const LONG = blockOf(
   'We ship on Friday, after the last review with Miky. Before that, every app takes the new kit, the comments column ' +
     'opens on the right in each of them, and the cards keep their pickers while the text is written. The release notes say ' +
     'what moved and why, one line each, and the screenshots stay out of the repository. Katerina looks at each screen in ' +
     'Storybook first, then in the app, and says what still reads wrong; what she finds goes in before the release, not after. ' +
-    'Anything left over becomes its own issue, with the screen it belongs to named in its title.',
+    'Anything left over becomes its own issue, with the screen it belongs to named in its title. On the day itself, the ' +
+    'apps go out one at a time, Peek first, then Ship, then Leaf, each read back on its own host before the next one goes, ' +
+    'and a link to every story that changed is posted under the release, so anyone can look before they ask.',
 )
 
 const meta = {
   title: 'Comments/PartView',
   component: PartFrame,
-  args: { pointer: { address: PAGE, block: 'b1' }, read: { state: 'loading' } },
+  args: { pointer: pointerOf(PAGE, SHORT), read: { state: 'loading' } },
 } satisfies Meta<typeof PartFrame>
 
 export default meta
@@ -45,10 +48,10 @@ type Story = StoryObj<typeof meta>
 export const OfADocument: Story = { args: { read: { state: 'resolved', block: SHORT, object: page } } }
 
 /** A long block: cut behind Show more, Open level with it. */
-export const Long: Story = { args: { read: { state: 'resolved', block: LONG, object: page } } }
+export const Long: Story = { args: { pointer: pointerOf(PAGE, LONG), read: { state: 'resolved', block: LONG, object: page } } }
 
 /** A block of a Ship issue: Open in Ship, in a new tab, at the block when Ship declares a link to one. */
-export const OfAShipIssue: Story = { args: { pointer: { address: ISSUE, block: 'b1' }, read: { state: 'resolved', block: SHORT, object: issue } } }
+export const OfAShipIssue: Story = { args: { pointer: pointerOf(ISSUE, SHORT), read: { state: 'resolved', block: SHORT, object: issue } } }
 
 /** While it is read: the card's placeholder, its kind known from the address. */
 export const Loading: Story = { args: { read: { state: 'loading' } } }
