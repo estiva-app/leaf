@@ -74,7 +74,11 @@ beforeAll(() => {
   }
 })
 
-beforeEach(() => window.history.replaceState(null, '', `/document/week-of-2-november-${WEEK_D}`))
+beforeEach(() => {
+  window.history.replaceState(null, '', `/document/week-of-2-november-${WEEK_D}`)
+  // What this browser kept open: each test starts as a first visit.
+  window.localStorage.removeItem('leaf.tree.open')
+})
 afterEach(cleanup)
 
 const sidebar = () => screen.getByRole('navigation')
@@ -117,5 +121,25 @@ describe('The sidebar shows where the open page lives (LFB-9)', () => {
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(await screen.findByText('This week.')).toBeTruthy()
     expect(await within(sidebar()).findByRole('button', { name: 'Hide what is under Plan' })).toBeTruthy()
+  })
+})
+
+describe('The sidebar is kept on this browser (Katerina, 30 October)', () => {
+  const hq = () => within(sidebar()).getByRole('button', { name: 'Estiva HQ' })
+
+  it('a Folder opened by hand is open again in a new tab, and one closed by hand stays closed there', async () => {
+    const first = render(<App />)
+    await waitFor(() => expect(rowOf('Week of 2 November').getAttribute('aria-current')).toBe('page'))
+    await userEvent.click(hq())
+    await userEvent.click(folderGroup())
+    expect(hq().getAttribute('aria-expanded')).toBe('true')
+    expect(folderGroup().getAttribute('aria-expanded')).toBe('false')
+    first.unmount()
+
+    // A new tab, on Home: nothing in it asks for a Folder to open.
+    window.history.replaceState(null, '', '/')
+    render(<App />)
+    await waitFor(() => expect(hq().getAttribute('aria-expanded')).toBe('true'))
+    expect(folderGroup().getAttribute('aria-expanded')).toBe('false')
   })
 })
