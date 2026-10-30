@@ -17,9 +17,10 @@ import {
   openingWords,
   REACTION_EMOJI,
   REACTION_HORIZON,
+  withoutCard,
   type DraftStore,
 } from '@estiva-app/conversation'
-import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Imeta } from '@estiva-app/protocol'
+import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
 import {
   AddReactionButton,
   Card,
@@ -187,24 +188,36 @@ const LINK_CONTEXT = { resolveLink: links.known, blockOf: links.knownBlock }
 const linksOfBox = (body: JSONContent, here: string | undefined, previous?: readonly string[]) => boxReadOf(body as EditorDocument, { ...LINK_CONTEXT, here, previous })
 
 /**
+ * The card an edit opens with: the comment's own, while its text still names
+ * that file, since a sent card draws only then. A card taken off before is
+ * `none`, so an edit never shows it again (Katerina, 30 Oct).
+ */
+const keptCardOf = (carried: readonly Embed[] | undefined, read: { values: readonly string[] }): string | undefined =>
+  carried?.find((card) => card.layout === 'detailed' && read.values.some((value) => value.toLowerCase() === card.value.toLowerCase()))?.value
+
+/**
  * What shows under the box while a comment is written or edited (COMM-8): the
  * one file it names, as the card it will be sent with, and the live part of
  * each block link — read as Peek reads its box (`boxReadOf`), from what each
  * app link names as answered so far. Each read asks about the links not
- * answered yet; an answer coming back reads again. An edit's (`previous`, what
- * the comment named before) shows a card only for a file it names first, and
- * the box shows no part under an edit, which carries none.
+ * answered yet; an answer coming back reads again. An edit's shows the card
+ * the comment has now (`carried`), with its ✕, so it can be seen and taken off
+ * there (Katerina, 30 Oct); with none, a card only for a file the edit names
+ * first (`previous`, what the comment named before). The box shows no part
+ * under an edit, which carries none.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
  */
-function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUnder {
+function boxUnder(here: string | undefined, previous?: readonly string[], carried?: readonly Embed[]): BoxUnder {
   return {
     read: (body) => {
       const read = linksOfBox(body, here, previous)
       void links.ask(read.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
-      const uri = read.card ? referenceOfValue(read.card) : undefined
+      const card = keptCardOf(carried, read) ?? read.card
+      const uri = card ? referenceOfValue(card) : undefined
       return {
-        card: read.card && uri ? { value: read.card, view: <CommentCard uri={uri} /> } : undefined,
+        // The card alone: the box draws it in its one AttachedCard, with the ✕.
+        card: card && uri ? { value: card, view: <CommentCard uri={uri} bare /> } : undefined,
         parts: read.parts.map((part) => ({ key: `${part.address}#${part.block}`, view: <PartView pointer={part} /> })),
         names: [...read.values, ...read.parts.map((part) => part.address)],
       }
@@ -260,9 +273,11 @@ function Box({
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
   const here = useContext(PageHere)
-  // What the comment named before the edit, so only a file the edit names first gets a card, as in Peek's edit box.
+  // What the comment named before the edit, so only a file the edit names first gets a card, as in Peek's edit box; and
+  // the cards it had then, so the one it shows is under the edit box too.
   const [previous] = useState(() => (editing ? namedBefore(editing.comment.body, LINK_CONTEXT) : undefined))
-  const under = useMemo(() => boxUnder(here, previous), [here, previous])
+  const [carried] = useState(() => editing?.comment.cards)
+  const under = useMemo(() => boxUnder(here, previous, carried), [here, previous, carried])
   const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
     const attached = filesOf(files)
     if (editing) {
@@ -270,9 +285,14 @@ function Box({
       const before = editing.comment.files
       if (!composerText(body as EditorDocument).text && attached.length === 0) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
       const same = attached.length === before.length && attached.every((file, i) => file.x === before[i].x)
-      // A file the edit names first adds its card to the set the comment has, unless ✕ took it off under the box.
+      // The card it had stays unless ✕ took it off under the box; with none, a file the edit names first adds its card, unless ✕ took that off.
       const read = linksOfBox(body, here, previous)
-      const cards = embedsToEdit(read, new Set(read.card && read.card !== shown.card ? [read.card] : []), editing.comment.cards)
+      const kept = keptCardOf(carried, read)
+      const cards = kept
+        ? shown.card === kept
+          ? undefined
+          : withoutCard(editing.comment.cards, kept)
+        : embedsToEdit(read, new Set(read.card && read.card !== shown.card ? [read.card] : []), editing.comment.cards)
       const result = await onSend({ ...composerText(body as EditorDocument), ...(same ? {} : { files: attached }), ...(cards ? { cards } : {}) })
       return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
     }

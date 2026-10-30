@@ -1389,6 +1389,36 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       expect(named(e.tags, 'embed')).toEqual([])
       expect(named(e.tags, 'a')).toEqual([['a', ISSUE]])
     })
+
+    it('shows the card the comment already has under the edit box, with its ✕, and a save that keeps it leaves its cards as they are', async () => {
+      const own = { ...comment([['embed', ISSUE, 'detailed']], `see ${ISSUE_URL}`), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} again `)
+      await waitFor(() => expect(under()?.textContent).toContain('Fix it'))
+      expect(within(under()!).getByRole('button', { name: 'Remove' })).toBeTruthy()
+      const e = await saved()
+      expect(e.content).toBe(`see ${ISSUE_URL} again`)
+      expect(named(e.tags, 'embed')).toEqual([])
+    })
+
+    it('✕ on the card the comment has, under the edit box, saves the comment with that card taken off', async () => {
+      const own = { ...comment([['embed', ISSUE, 'detailed']], `see ${ISSUE_URL}`), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} again `)
+      await waitFor(() => expect(under()?.textContent).toContain('Fix it'))
+      act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove' })))
+      expect(under()).toBeNull()
+      const e = await saved()
+      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'none']])
+    })
+
+    it('never shows again a card taken off before: the edit box has none, and the save leaves it off', async () => {
+      const own = { ...comment([['embed', ISSUE, 'none']], `see ${ISSUE_URL}`), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} again `)
+      await waitFor(() => expect(asked(ISSUE_D)).toBe(true))
+      await act(async () => {})
+      expect(under()).toBeNull()
+      const e = await saved()
+      expect(named(e.tags, 'embed')).toEqual([])
+    })
   })
 
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {
