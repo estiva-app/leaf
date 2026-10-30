@@ -14,6 +14,15 @@ export interface NewDocumentUnder {
   listedIn: string
 }
 
+/** The page a held New document was open under, if its fields are all there: held text is read back from storage. */
+export function heldUnder(key: string): NewDocumentUnder | undefined {
+  const under: unknown = heldFields<{ under: unknown }>(key)?.under
+  if (!under || typeof under !== 'object') return undefined
+  const fields = under as Record<keyof NewDocumentUnder, unknown>
+  const named = (['address', 'ref', 'folder', 'title', 'listedIn'] as const).every((k) => typeof fields[k] === 'string' && fields[k] !== '')
+  return named ? (under as NewDocumentUnder) : undefined
+}
+
 /**
  * New document: a title, an optional summary and the Folder it goes in, as Peek's New topic asks.
  * Only Folders that take a new document are offered (`takesNewDocuments`).
@@ -47,6 +56,8 @@ export function NewDocumentDialog({
   const [summary, setSummary] = useState(held?.summary ?? '')
   const long = summaryLength(summary) > SUMMARY_LIMIT
   const [folder, setFolder] = useState(() => {
+    // Under a page, the Folder listing it and no other: anywhere else the new page would not draw beneath it.
+    if (under) return under.listedIn
     const first = held?.folder ?? defaultFolder
     return first && folders.some((f) => f.id === first) ? first : (folders[0]?.id ?? '')
   })

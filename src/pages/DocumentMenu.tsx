@@ -164,8 +164,9 @@ export function DocumentMenu({
         {heading && <MenuItem label={heading} disabled />}
         {heading && <MenuSeparator />}
         {/* As Peek's "New topic inside" (Miky, LFB-8 kickoff): not on an archived page, which takes nothing new, and only
-            where the Folder listing it takes a document, so the new page draws beneath it there. */}
-        {onNewInside && !file.archived && listedIn && folders.some((f) => f.id === listedIn && takesNewDocuments(f)) && (
+            where the Folder listing it takes a document, so the new page draws beneath it there. A page with no address
+            or Folder of its own has nothing to name it by. */}
+        {onNewInside && !file.archived && file.address && file.folder && listedIn && folders.some((f) => f.id === listedIn && takesNewDocuments(f)) && (
           <MenuItem label="New document inside" onClick={() => onNewInside(listedIn)} />
         )}
         {/* Not on a page archived by itself; one archived with a page above it may move out of it (SPEC §6.5). */}

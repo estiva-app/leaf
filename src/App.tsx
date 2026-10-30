@@ -14,9 +14,9 @@ import {
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
-import { heldFields, useReopenHeld } from './auth/heldTyping'
+import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
-import { NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
+import { heldUnder, NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
 import { naddrOf } from './fileAddress'
 import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
@@ -140,7 +140,7 @@ function Frame() {
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
   // Under the page it was opened under, when it was, as the dialog held it.
-  useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(heldFields<{ under: NewDocumentUnder }>(NEW_DOCUMENT_HOLD)?.under ?? true))
+  useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(heldUnder(NEW_DOCUMENT_HOLD) ?? true))
   /*
     Once the Folders are read: the linked one, if a document can go in it here. A read that failed refuses
     nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
