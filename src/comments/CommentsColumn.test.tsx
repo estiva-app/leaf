@@ -414,6 +414,23 @@ describe('the comments column', () => {
       expect(row.textContent).toContain('The export drops the tables.')
       expect(row.closest('p')).toBeNull()
     })
+
+    it('draws another of this page’s comments as the kit’s message row and chip: its author by name, its words, and a link to this page’s comments', async () => {
+      const first = comment([], 'The export drops the tables.')
+      const reference = `nostr:${encodeNevent({ id: first.id, relays: [] })}`
+      const alone = comment([['q', first.id]], `Same as\n${reference}`)
+      const inSentence = comment([['q', first.id]], `Same as ${reference} again`)
+      await open([profile(AUTHOR, 'QA-1'), first, alone, inSentence])
+      const row = await waitFor(() => {
+        const found = document.querySelector<HTMLElement>(`[data-comment-id="${alone.id}"] [data-comment-row="${first.id}"]`)
+        expect(found && within(found).queryByText('QA-1')).toBeTruthy()
+        return found!
+      })
+      expect(within(row).getByText('The export drops the tables.')).toBeTruthy()
+      expect(within(row).getByText('QA-1').closest('a')?.getAttribute('href')).toMatch(/^\/document\/.+#comments$/)
+      const chip = await waitFor(() => within(document.querySelector<HTMLElement>(`[data-comment-id="${inSentence.id}"]`)!).getByText('QA-1: The export drops the tables.'))
+      expect(chip.closest('a')?.getAttribute('href')).toMatch(/^\/document\/.+#comments$/)
+    })
   })
 })
 

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { Extension } from '@tiptap/core'
 import type { Editor, JSONContent } from '@tiptap/react'
-import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconMessage, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
+import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
 import {
   boxReadOf,
   composerDocument,
@@ -20,7 +20,7 @@ import {
   withoutCard,
   type DraftStore,
 } from '@estiva-app/conversation'
-import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
+import { contentFormatOf, decodeNevent, decodeNpub, encodeNaddr, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
 import {
   AddReactionButton,
   Card,
@@ -31,6 +31,8 @@ import {
   FieldLine,
   IconButton,
   InlineChip,
+  LinkChip,
+  LinkRow,
   Menu,
   MenuItem,
   MenuPanel,
@@ -41,6 +43,7 @@ import {
   SkeletonList,
   WithTooltip,
   useToast,
+  type LinkState,
 } from '@estiva-app/ui'
 import {
   CommentBox,
@@ -72,6 +75,7 @@ import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
 import { deleteComment, editComment, removeCard, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
+import { COMMENTS_HASH, pagePath } from '../route'
 import { uploadFile } from '../relay/blobs'
 import { CommentFiles } from './CommentFiles'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
@@ -554,8 +558,9 @@ function CommentLine({
     const readable = new Set(readableKey.split('\n'))
     return placeComment(blocks, comment.event, { here, resolveLink, readable: (reference) => readable.has(reference), cards: comment.cards })
   }, [blocks, comment, here, resolveLink, readableKey])
-  const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} opensAt={opensAt} />
-  const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference, line.url)} />
+  const messageOf = (quoted: CommentItem) => messageLinkOf(quoted, named, pictures, now, here)
+  const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} messageOf={messageOf} opensAt={opensAt} />
+  const row = (line: RowLine) => <BodyRow line={line} page={page} messageOf={messageOf} fallback={reference(line.reference, line.url)} />
   return (
     <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
@@ -632,12 +637,37 @@ function CommentLine({
 }
 
 /**
+ * One of this page's comments as the kit draws a message (widget review, item
+ * 53): its author's face and name, its opening words, and when. A comment has
+ * no address of its own in Leaf, so it opens the page it is on with its
+ * comments shown (`here`, `COMMENTS_HASH`).
+ */
+function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string | undefined, pictures: Record<string, string>, now: number, here: string | undefined): LinkState {
+  const name = nameOf(quoted.by) ?? 'Someone'
+  const picture = pictures[quoted.by]
+  const [kind, pubkey, ...d] = (here ?? '').split(':')
+  const page = here ? `${pagePath({ kind: Number(kind), address: here, naddr: encodeNaddr({ kind: Number(kind), pubkey, identifier: d.join(':'), relays: [] }) })}${COMMENTS_HASH}` : ''
+  return {
+    state: 'ready',
+    linked: {
+      id: quoted.id,
+      kind: 'message',
+      title: name,
+      href: page,
+      author: { name, ...(picture ? { picture } : {}) },
+      body: openingWords(quoted.body, nameOf),
+      updated: whenOf(quoted.at * 1000, now),
+    },
+  }
+}
+
+/**
  * A comment's line that is only a link to a file or a message, as its row
  * (SPEC §13.2): a file as the page's compact card, one of this page's comments
- * as its author and opening words. Anything else keeps the chip it would draw
- * in a sentence, rather than a row with nothing in it.
+ * as the kit's message row. Anything else keeps the chip it would draw in a
+ * sentence, rather than a row with nothing in it.
  */
-function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; fallback: ReactNode }) {
+function BodyRow({ line, page, messageOf, fallback }: { line: RowLine; page: readonly CommentItem[]; messageOf: (quoted: CommentItem) => LinkState; fallback: ReactNode }) {
   if (line.unreadable) return fallback
   if (/^nostr:naddr1/i.test(line.reference)) {
     return (
@@ -650,21 +680,34 @@ function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pub
   const quoted = id ? page.find((c) => c.id === id) : undefined
   if (!quoted) return fallback
   return (
-    <Card className="flex items-center gap-2 px-3 py-2" data-comment-row={quoted.id}>
-      <IconMessage size={16} stroke={1.5} />
-      <span className="truncate text-body-2 text-text-secondary">{`${nameOf(quoted.by) ?? 'Someone'}: ${openingWords(quoted.body, nameOf)}`}</span>
-    </Card>
+    <div data-comment-row={quoted.id}>
+      <LinkRow link={messageOf(quoted)} />
+    </div>
   )
 }
 
 /**
  * What a comment's `nostr:` reference draws as, as Peek and Ship draw it: a
  * person as `@Name` (urgent when the comment's `urgent` tags name them, SPEC
- * §13.1), one of this page's comments as its author and opening words, and a
- * file as the page's own chip. Anything else, or anyone without a name, is its
+ * §13.1), one of this page's comments as the kit's message chip, and a file as
+ * the page's own chip. Anything else, or anyone without a name, is its
  * address, quiet.
  */
-function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; urgent: readonly string[]; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; opensAt?: string }) {
+function BodyReference({
+  uri,
+  urgent,
+  nameOf,
+  page,
+  messageOf,
+  opensAt,
+}: {
+  uri: string
+  urgent: readonly string[]
+  nameOf: (pubkey: string) => string | undefined
+  page: readonly CommentItem[]
+  messageOf: (quoted: CommentItem) => LinkState
+  opensAt?: string
+}) {
   if (/^nostr:npub1/i.test(uri)) {
     const pubkey = pubkeyOf(uri)
     const name = pubkey ? nameOf(pubkey) : undefined
@@ -678,16 +721,7 @@ function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; ur
   } else if (/^nostr:nevent1/i.test(uri)) {
     const id = eventIdOf(uri)
     const quoted = id ? page.find((c) => c.id === id) : undefined
-    if (quoted) {
-      const words = `${nameOf(quoted.by) ?? 'Someone'}: ${openingWords(quoted.body, nameOf)}`
-      return (
-        <WithTooltip inline label={words}>
-          <InlineChip tone="neutral" icon={<IconMessage size={14} stroke={1.5} />} className="max-w-full">
-            <span className="truncate">{words}</span>
-          </InlineChip>
-        </WithTooltip>
-      )
-    }
+    if (quoted) return <LinkChip link={messageOf(quoted)} />
   } else {
     return <PageLink uri={uri} href={opensAt} />
   }
