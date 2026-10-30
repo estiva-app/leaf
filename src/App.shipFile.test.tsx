@@ -54,7 +54,7 @@ describe("a Ship issue's address in Leaf", () => {
     window.history.replaceState(null, '', `/f/${ISSUE_NADDR}`)
     render(<App />)
     expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Open in Ship' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Open in Ship' })).toBeTruthy()
     expect(screen.queryByText('This could not be found, or you cannot read it.')).toBeNull()
   })
 

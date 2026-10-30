@@ -99,7 +99,7 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     window.history.replaceState(null, '', `/issue/${D}`)
     render(<App />)
     expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Open in Ship' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Open in Ship' })).toBeTruthy()
     await waitFor(() => expect(window.location.pathname).toBe(`/issue/${slug}-${D}`))
   })
 

@@ -111,12 +111,15 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     return box
   }
 
-  it("opens as a page: its text in Leaf's editor, under Ship's row with Open in Ship", async () => {
+  it("opens as a page: its text in Leaf's editor, its key above the title, Open in Ship a link to a new tab", async () => {
     render(<ToastProvider><FilePage file={shipIssue()} loading={false} /></ToastProvider>)
     const box = await documentBox()
     expect(box.editor.isEditable).toBe(true)
     expect(box.textContent).toContain('What changes')
-    expect(screen.getByRole('button', { name: 'Open in Ship' })).toBeTruthy()
+    expect(screen.getByText('LTX-3')).toBeTruthy()
+    const open = screen.getByRole('link', { name: 'Open in Ship' })
+    expect(open.getAttribute('href')).toBe('https://ship.estiva.app/')
+    expect(open.getAttribute('target')).toBe('_blank')
     expect(screen.queryByText(/Archived/)).toBeNull()
   })
 
@@ -126,8 +129,7 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     const people = Object.fromEntries(Object.entries(issue.people ?? {}).map(([pk, p]) => [pk, { ...p, picture: PICTURE }]))
     render(<ToastProvider><FilePage file={{ ...issue, people }} loading={false} /></ToastProvider>)
     await documentBox()
-    const row = screen.getByRole('button', { name: 'Open in Ship' }).parentElement!
-    expect([...row.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toContain(PICTURE)
+    expect([...document.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toContain(PICTURE)
   })
 
   it('saves its text when you leave it: one block-document change on `description`, at the issue, in its own Folder', async () => {
