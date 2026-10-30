@@ -94,6 +94,24 @@ export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion
   })
 }
 
+/**
+ * What to open so a file's row shows (LFB-9): its Folder, then every row above it, outermost first — the
+ * pages it is nested under, as {@link groupsOf} nests them, or the file whose app listed it, and that one's.
+ */
+export function placeOf(folder: WorkspaceFolder, file: ForeignObject, children: Workspace['children']): { folder: string; above: ForeignObject[] } {
+  const readable = folder.contents?.files.filter(isListed) ?? []
+  const nesting = nestingOf(readable)
+  const listed = readable.find((f) => f.ref === file.ref)
+  const holder = listed
+    ? undefined
+    : readable.find((f) => {
+        const read = children[f.ref]
+        return Array.isArray(read) && read.some((c) => c.ref === file.ref)
+      })
+  const above = listed ? nesting.ancestorsOf(listed) : holder ? [...nesting.ancestorsOf(holder), holder] : []
+  return { folder: folder.folder.id, above }
+}
+
 /** Find a file anywhere in the workspace by its key: in a Folder's listing, or among the rows read under one. */
 export function findFile(
   folders: WorkspaceFolder[] | null,

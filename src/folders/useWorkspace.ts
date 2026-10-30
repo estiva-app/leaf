@@ -1,6 +1,7 @@
 import type { FolderContents, FolderSummary, ForeignObject, QueryFn } from '@estiva-app/interop'
 import { RelayBusyError } from '@estiva-app/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isDocument } from './tree'
 import { loadQuery, readChildren, readFolder, readFolders } from './workspace'
 
 /** One Folder in the tree: its contents once read, or why they could not be. */
@@ -28,6 +29,8 @@ export interface Workspace {
   setOpen(file: ForeignObject, open: boolean): void
   /** Open or close a Folder's group, by its id — in the same set as the rows. */
   setFolderOpen(id: string, open: boolean): void
+  /** Open a Folder and these rows in it, closing none: where an opened file sits (LFB-9). */
+  reveal(folder: string, above: readonly ForeignObject[]): void
 }
 
 /**
@@ -135,5 +138,15 @@ export function useWorkspace(): Workspace {
     })
   }, [])
 
-  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen }
+  const reveal = useCallback(
+    (folder: string, above: readonly ForeignObject[]) => {
+      // A row whose app lists its own children (a project) reads them as it opens, or it would wait on them forever.
+      for (const file of above) if (file.listsChildren && !isDocument(file)) setOpen(file, true)
+      const ids = [folder, ...above.map((f) => f.ref)]
+      setOpened((now) => (ids.every((id) => now.has(id)) ? now : new Set([...now, ...ids])))
+    },
+    [setOpen],
+  )
+
+  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen, reveal }
 }
