@@ -34,3 +34,15 @@ export const TwoChips: Story = {
     ),
   },
 }
+
+/** A link whose read answered nothing, or kept failing after its retries: it says it is not available, never a placeholder for good. */
+export const NotAvailable: Story = {
+  args: {
+    value: { 'nostr:gone': null },
+    children: (
+      <p className="text-body-2 text-text-secondary">
+        See <PageLink uri="nostr:gone" />
+      </p>
+    ),
+  },
+}

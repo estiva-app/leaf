@@ -1,5 +1,6 @@
 import { createEstivaId, type Renewal, type ShellReason, type StoredToken } from '@estiva-app/identity'
 import { ID_CONFIG } from '../config'
+import { unavailableLinks } from '../document/unavailableLinks'
 import { forgetHeldTyping, holdTyping, holdTypingFor } from './heldTyping'
 
 /**
@@ -157,11 +158,13 @@ export async function beginSignIn(options: { silent?: boolean } = {}): Promise<v
 }
 
 /**
- * Leave for Estiva ID to end the session there; nothing held from an ending stays on the device. The comment box's
+ * Leave for Estiva ID to end the session there; nothing held from an ending stays on the device, nor the links this
+ * reader found not available. The comment box's
  * drafts still do, until the next stage, "Sign-out means out".
  */
 export function beginSignOut(): void {
   forgetHeldTyping()
+  unavailableLinks.clear()
   // Before the token goes, so the other tabs read its removal as a sign-out and hold nothing.
   try {
     localStorage.setItem(SIGNED_OUT_KEY, String(Date.now()))

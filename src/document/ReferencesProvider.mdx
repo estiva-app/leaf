@@ -9,7 +9,7 @@ Hands the files a set of references names, read once per tab, to every
 **PageLink** and **CommentCard** inside it, including chips in an editor's node
 views, which React's props do not reach.
 
-**Seen in**: around a page's text, and around the comments column.
+**Seen in**: *Document/ReferencesProvider*: **Two Chips**, **Not Available**; around a page's text, and around the comments column.
 
 ## When
 
@@ -34,5 +34,9 @@ const references = useReferences(page.flatMap((c) => findNostrUris(c.body)))
 
 ## What it owns
 
-- Nothing but the hand-over: **useReferences** does the reading, once per tab,
-  and keeps a dropped read from turning into "cannot be read".
+- Nothing but the hand-over: **useReferences** does the reading, once per tab.
+  A dropped read is tried again after 5, 10 and 20 s; after that the link says
+  it is not available, never a placeholder for good, and is read again every
+  30 s until a read answers. A link this device last found not available says
+  so from the first paint while it is read again (`unavailableLinks`, the kit's
+  memory); a read that only failed is not remembered.

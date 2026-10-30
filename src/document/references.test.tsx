@@ -98,3 +98,75 @@ function Card({ uri }: { uri: string }) {
     </ToastProvider>
   )
 }
+
+/**
+ * A new page load: the tab's reads and the device's memory read afresh, as a reload reads them. The relay's answers
+ * and the device's storage carry over, as they do across a reload.
+ */
+async function freshTab() {
+  vi.resetModules()
+  const references = await import('./references')
+  const { PageLink: Link } = await import('./PageLink')
+  return function FreshRow({ uri }: { uri: string }) {
+    return (
+      <references.ReferencesProvider value={references.useReferences([uri])}>
+        <Link uri={uri} place="row" />
+      </references.ReferencesProvider>
+    )
+  }
+}
+
+const dropped = () => Promise.reject(new Error('socket closed'))
+const hangs = () => new Promise<Record<string, unknown>>(() => {})
+
+describe('a link whose reads keep failing (widget review, item 41)', () => {
+  it('says it is not available after its last retry, never a placeholder for good, and draws its file once a quiet read answers', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const FreshRow = await freshTab()
+    const uri = 'nostr:naddr1keepsfailing'
+    // The first read and its three retries, after 5, 10 and 20 seconds.
+    reads.answers.push(dropped, dropped, dropped, dropped, async () => ({ [uri]: issue('Back again') }))
+    render(<FreshRow uri={uri} />)
+    await act(async () => {})
+    for (const wait of [5000, 10_000, 20_000]) await act(async () => void (await vi.advanceTimersByTimeAsync(wait)))
+    expect(screen.getByText(/not available/)).toBeTruthy()
+    await act(async () => void (await vi.advanceTimersByTimeAsync(30_000)))
+    expect(screen.getByText('Fix the login')).toBeTruthy()
+    expect(reads.answers).toHaveLength(0)
+  })
+})
+
+describe('a link this device found not available (widget review, item 42)', () => {
+  afterEach(() => window.localStorage.clear())
+
+  it('says so from the first paint on the next open, while it is read again, instead of a placeholder that shrinks', async () => {
+    const uri = 'nostr:naddr1gonelasttime'
+    reads.answers.push(async () => ({}))
+    const Before = await freshTab()
+    render(<Before uri={uri} />)
+    expect(await screen.findByText(/not available/)).toBeTruthy()
+    cleanup()
+    reads.answers.push(hangs)
+    const After = await freshTab()
+    render(<After uri={uri} />)
+    expect(screen.getByText(/not available/)).toBeTruthy()
+  })
+
+  it('is not remembered for reads that only failed: the next open waits for its read', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const uri = 'nostr:naddr1droppedlasttime'
+    reads.answers.push(dropped, dropped, dropped, dropped)
+    const Before = await freshTab()
+    render(<Before uri={uri} />)
+    await act(async () => {})
+    for (const wait of [5000, 10_000, 20_000]) await act(async () => void (await vi.advanceTimersByTimeAsync(wait)))
+    expect(screen.getByText(/not available/)).toBeTruthy()
+    cleanup()
+    reads.answers.length = 0
+    reads.answers.push(hangs)
+    const After = await freshTab()
+    render(<After uri={uri} />)
+    await act(async () => {})
+    expect(screen.queryByText(/not available/)).toBeNull()
+  })
+})
