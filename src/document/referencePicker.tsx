@@ -17,9 +17,10 @@ import { useEffect } from 'react'
 import { FILE_TIER, KIND_COMMENT, MESSAGE_TIER, messageReference, openingWords, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
 import { fileCandidates, searchFileReferences, type ForeignObject } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
-import { KindIcon, thingKindOf } from '@estiva-app/ui'
+import { LinkedIcon } from '@estiva-app/ui'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
 import { projections as manifests } from '../relay/manifests'
+import { linkedKindOf } from './linked'
 import { query } from '../relay/bridge'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
@@ -65,8 +66,8 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
     uri: candidate.uri,
     description: candidate.caption || undefined,
     summary: candidate.summary,
-    // What it is, as the tree's rows and the chips say it.
-    icon: <KindIcon kind={thingKindOf(candidate.kind)} tone="secondary" />,
+    // What it is, as the chips say it: a document is a page of text, not a generic file.
+    icon: <LinkedIcon kind={linkedKindOf(candidate.kind)} tone="secondary" />,
   }
 }
 

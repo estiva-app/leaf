@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeAll, onTestFinished } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
@@ -1234,6 +1234,42 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(2))
     const text = (c: Element) => c.textContent ?? ''
     await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
+  })
+
+  it('a sent comment’s part of another page is labelled a document, and its title and Open take you to that page at the block, in Leaf', async () => {
+    await open([...EVENTS, comment([['part', TWO_ADDRESS, TWO_BLOCK]], `see ${PART_URL}`)])
+    const part = await waitFor(() => {
+      const drawn = document.querySelector<HTMLElement>('[data-part="resolved"]')
+      expect(drawn).not.toBeNull()
+      return drawn!
+    })
+    expect(within(part).getByText('A part of this document')).toBeTruthy()
+    const atBlock = new URL(PART_URL)
+    const was = `${window.location.pathname}${window.location.hash}`
+    onTestFinished(() => window.history.replaceState(null, '', was))
+    expect(within(part).getByRole('link', { name: 'Two' }).getAttribute('href')).toBe(`${atBlock.pathname}${atBlock.hash}`)
+    act(() => void fireEvent.click(within(part).getByRole('button', { name: 'Open' })))
+    expect(`${window.location.pathname}${window.location.hash}`).toBe(`${atBlock.pathname}${atBlock.hash}`)
+  })
+
+  it('a sent comment’s part of a Ship issue opens the issue in Ship at the block, in a new tab: Open in Ship', async () => {
+    const D = '77777777-7777-4777-8777-777777777777'
+    const PART_ISSUE = `30851:${SHIP}:${D}`
+    const text = descriptionTextToBlockDocument('# Fix it too\n\nThe issue’s block.')
+    const block = blockIds(text)[1]
+    files.known[uriOf(PART_ISSUE)] = { ...object(PART_ISSUE, 'Fix it too', text), appName: 'Ship', openUrl: `https://ship.example/o/${uriOf(PART_ISSUE).slice('nostr:'.length)}` }
+    const atBlock = `https://ship.example/issue/fix-it-too-${D}#block-${block}`
+    await open([...EVENTS, file(30851, SHIP, D), comment([['part', PART_ISSUE, block]], `see ${atBlock}`)])
+    const part = await waitFor(() => {
+      const drawn = document.querySelector<HTMLElement>('[data-part="resolved"]')
+      expect(drawn).not.toBeNull()
+      return drawn!
+    })
+    await waitFor(() => expect(within(part).getByRole('link', { name: 'Fix it too' }).getAttribute('href')).toBe(atBlock))
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    onTestFinished(() => opened.mockRestore())
+    act(() => void fireEvent.click(within(part).getByRole('button', { name: 'Open in Ship' })))
+    expect(opened).toHaveBeenCalledWith(atBlock, '_blank', 'noopener,noreferrer')
   })
 
   it('a sent comment’s card for an issue’s path on Leaf’s host opens Leaf at that address, not where the issue opens (LTX-6)', async () => {

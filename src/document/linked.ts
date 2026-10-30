@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import { KIND, referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { linkStateFrom, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
+import { linkStateFrom, thingKindOf, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
 import { links } from '../comments/links'
 import { useDirectory } from '../comments/people'
 import { viewerPubkey } from '../relay/bridge'
@@ -36,6 +36,15 @@ function kindOfUri(uri: string): number | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * What an event kind draws as: a document is a page of text, with its own icon and the word "Document", never the
+ * generic file another app's would get.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-is-its-own-type-of-file.md
+ */
+export function linkedKindOf(kind: number | undefined): LinkedKind {
+  return (kind !== undefined && KIND_WORDS[kind]?.kind) || thingKindOf(kind)
 }
 
 /** What a reference names, by its icon and its word, before anything has been read. */
