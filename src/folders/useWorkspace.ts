@@ -4,6 +4,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { isDocument } from './tree'
 import { loadQuery, readChildren, readFolder, readFolders } from './workspace'
 
+/**
+ * Where this browser keeps which Folders and rows are open, so a reload or a new tab — every card in another app opens
+ * one — draws the tree as the person left it (Katerina, 30 October). The open file's own place still opens on top.
+ */
+const OPENED_KEY = 'leaf.tree.open'
+
+function keptOpen(): string[] {
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(OPENED_KEY) ?? '[]')
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 /** One Folder in the tree: its contents once read, or why they could not be. */
 export interface WorkspaceFolder {
   folder: FolderSummary
@@ -23,14 +38,12 @@ export interface Workspace {
   reloadFolder(id: string): Promise<void>
   /** What each opened file lists under it, by its `ref`: absent until opened, `null` while read. */
   children: Record<string, ForeignObject[] | null | 'failed'>
-  /** The rows open in the tree, by `ref`. Leaf owns them, so opening one is always when its rows are read. */
+  /** The rows open in the tree, by `ref`, and the Folders, by id: kept on this browser. Leaf owns them, so opening one is always when its rows are read. */
   opened: ReadonlySet<string>
   /** Open or close `file`'s row; opening reads what it lists under it, once. */
   setOpen(file: ForeignObject, open: boolean): void
   /** Open or close a Folder's group, by its id — in the same set as the rows. */
   setFolderOpen(id: string, open: boolean): void
-  /** Open a Folder and these rows in it, closing none: where an opened file sits (LFB-9). */
-  reveal(folder: string, above: readonly ForeignObject[]): void
 }
 
 /**
@@ -105,7 +118,14 @@ export function useWorkspace(): Workspace {
   }, [reload])
 
   const [children, setChildren] = useState<Workspace['children']>({})
-  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set())
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set(keptOpen()))
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(OPENED_KEY, JSON.stringify([...opened]))
+    } catch {
+      // Storage refused (private mode, full): the tree is kept for this visit only.
+    }
+  }, [opened])
   // What has been asked for, so opening a row twice reads it once. A failed read may be asked again.
   const asked = useRef(new Set<string>())
   const setOpen = useCallback((file: ForeignObject, open: boolean) => {
@@ -128,6 +148,13 @@ export function useWorkspace(): Workspace {
     )
   }, [])
 
+  // A row kept open that lists its own children — a Ship project — reads them once it is listed, as opening it does.
+  useEffect(() => {
+    for (const folder of folders ?? [])
+      for (const file of folder.contents?.files ?? [])
+        if (file.listsChildren && !isDocument(file) && opened.has(file.ref) && !asked.current.has(file.ref)) setOpen(file, true)
+  }, [folders, opened, setOpen])
+
   const setFolderOpen = useCallback((id: string, open: boolean) => {
     setOpened((now) => {
       if (now.has(id) === open) return now
@@ -138,15 +165,5 @@ export function useWorkspace(): Workspace {
     })
   }, [])
 
-  const reveal = useCallback(
-    (folder: string, above: readonly ForeignObject[]) => {
-      // A row whose app lists its own children (a project) reads them as it opens, or it would wait on them forever.
-      for (const file of above) if (file.listsChildren && !isDocument(file)) setOpen(file, true)
-      const ids = [folder, ...above.map((f) => f.ref)]
-      setOpened((now) => (ids.every((id) => now.has(id)) ? now : new Set([...now, ...ids])))
-    },
-    [setOpen],
-  )
-
-  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen, reveal }
+  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen }
 }

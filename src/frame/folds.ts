@@ -4,7 +4,7 @@
  * (Katerina, 28 Oct), whatever was kept.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { COMMENTS_HASH, useHash } from '../route'
+import { COMMENTS_HASH, routeOf, useHash } from '../route'
 
 export type Fold = 'sidebar' | 'comments'
 
@@ -46,13 +46,37 @@ function kept(): Partial<Record<Fold, boolean>> {
 }
 
 /**
+ * A file opened from a link — another app's card, a link in a message — shows where it lives, so a folded sidebar
+ * unfolds for it, as its button would, and stays unfolded (Katerina, 30 Oct; until then folded stayed folded across
+ * documents, Miky, 28 Oct). Not on a reload, which keeps the sidebar as the person left it, nor on Home.
+ */
+function arrivedAtAFile(): boolean {
+  if (routeOf(window.location.pathname).page === 'home') return false
+  const [entry] = (typeof performance.getEntriesByType === 'function' ? performance.getEntriesByType('navigation') : []) as PerformanceNavigationTiming[]
+  return entry?.type !== 'reload'
+}
+
+function keep(fold: Fold, folded: boolean) {
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify({ ...kept(), [fold]: folded }))
+  } catch {
+    // Storage refused (private mode, full): it folds for this visit only.
+  }
+}
+
+/**
  * Open or folded, and the setter that remembers it. Arriving at a file's comments (`#comments`, where its comment
  * count opens) shows the comments column for this visit, folded or not: the count opens the conversation.
  */
 export function useFold(fold: Fold): [boolean, (open: boolean) => void] {
   const asked = useHash() === COMMENTS_HASH && fold === 'comments'
   const [open, setOpen] = useState(() => {
-    if (!now.has(fold)) now.set(fold, !narrow() && !kept()[fold])
+    if (!now.has(fold)) {
+      // A narrow window still opens folded: there is no room for the sidebar beside the page.
+      const unfold = fold === 'sidebar' && !narrow() && !!kept().sidebar && arrivedAtAFile()
+      if (unfold) keep('sidebar', false)
+      now.set(fold, !narrow() && !kept()[fold])
+    }
     if (asked) now.set(fold, true)
     return now.get(fold) as boolean
   })
@@ -69,11 +93,7 @@ export function useFold(fold: Fold): [boolean, (open: boolean) => void] {
     (next: boolean) => {
       setOpen(next)
       now.set(fold, next)
-      try {
-        window.localStorage.setItem(KEY, JSON.stringify({ ...kept(), [fold]: !next }))
-      } catch {
-        // Storage refused (private mode, full): it folds for this visit only.
-      }
+      keep(fold, !next)
     },
     [fold],
   )
