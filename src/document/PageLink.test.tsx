@@ -104,7 +104,7 @@ describe('a Ship project linked in a Leaf page', () => {
 })
 
 describe('the comment count on a row (Katerina, 30 Oct)', () => {
-  const countLink = async () => (await screen.findByText('comments — open the conversation')).closest('a')?.getAttribute('href')
+  const countLink = async () => (await screen.findByRole('link', { name: /comments — open the conversation/ })).getAttribute('href')
 
   it('a Leaf document’s row counts its comments, and the count opens its page with the comments shown', async () => {
     const page = file({
