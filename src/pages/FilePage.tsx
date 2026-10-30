@@ -42,6 +42,7 @@ export function FilePage({
   loading,
   folders,
   onChanged,
+  onNewInside,
 }: {
   file: ForeignObject | null
   loading: boolean
@@ -49,6 +50,8 @@ export function FilePage({
   folders?: readonly FolderSummary[]
   /** A page was archived, unarchived or deleted from its menu: read its Folder again. */
   onChanged?: (folder: string) => void | Promise<void>
+  /** Its menu's "New document inside": a new page under this one, listed in `listedIn` (LFB-8). */
+  onNewInside?: (page: ForeignObject, listedIn: string) => void
 }) {
   // Above the document, so it holds from one document to the next (LED-3).
   const [commentsOpen, setCommentsOpen] = useFold('comments')
@@ -73,7 +76,7 @@ export function FilePage({
       />
     )
   }
-  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} folders={folders} onChanged={onChanged} />
+  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} folders={folders} onChanged={onChanged} onNewInside={onNewInside} />
 }
 
 /** Now, in ms, moved on each minute: what "Edited 2 minutes ago" counts from. */
@@ -100,11 +103,13 @@ function DocumentView({
   comments,
   folders,
   onChanged,
+  onNewInside,
 }: {
   opened: ForeignObject
   comments: CommentsFold
   folders?: readonly FolderSummary[]
   onChanged?: (folder: string) => void | Promise<void>
+  onNewInside?: (page: ForeignObject, listedIn: string) => void
 }) {
   const { file, changedBy } = useLiveDocument(opened)
   const { showToast } = useToast()
@@ -270,7 +275,15 @@ function DocumentView({
         >
           {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
         </ToolbarButton>
-        {own && <DocumentMenu file={file} folders={folders} onChanged={onChanged} heading={editedInMenu ? edited : undefined} />}
+        {own && (
+          <DocumentMenu
+            file={file}
+            folders={folders}
+            onChanged={onChanged}
+            onNewInside={onNewInside && ((listedIn) => onNewInside(file, listedIn))}
+            heading={editedInMenu ? edited : undefined}
+          />
+        )}
       </Toolbar>
     </>
   )

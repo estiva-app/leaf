@@ -39,6 +39,17 @@ describe('New document', () => {
     expect(published).toHaveLength(2)
   })
 
+  it("made under a page listed in another Folder: its root names the page and takes the page's own h; the add goes where the page is listed (LFB-8)", async () => {
+    const OWN = '22222222-2222-4222-8222-222222222222'
+    const PAGE = `30842:${'a'.repeat(64)}:launch-plan`
+    expect((await createDocument({ folder: FOLDER, title: 'Risks', parent: { address: PAGE, folder: OWN } })).ok).toBe(true)
+    const [doc, add] = published
+    expect(doc.kind).toBe(30842)
+    expect(tag(doc, 'h')).toBe(OWN)
+    expect(tag(doc, 'a')).toBe(PAGE)
+    expect([add.kind, tag(add, 'h'), tag(add, 'op'), tag(add, 'a')]).toEqual([1852, FOLDER, 'add', `30842:${'a'.repeat(64)}:${tag(doc, 'd')}`])
+  })
+
   it("seeds the page's summary as its root's last tag, on one line (SPEC §6.12)", async () => {
     await createDocument({ folder: FOLDER, title: 'Friday notes', summary: '  What we decided\non Friday.  ' })
     const [doc] = published

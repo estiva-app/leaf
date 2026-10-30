@@ -6,8 +6,8 @@ const TOP = '__top__'
 
 /**
  * Move a Leaf page: the Folder first, then what it goes under there — Peek's Move dialog (FOL-45), as the LED-1
- * prototype draws it in Leaf. It opens on "Pick a folder", and Move waits for both picks: a preselected destination is
- * a move nobody chose. The Folder it is in is listed too, for a new place inside it; another Folder's targets are read
+ * prototype draws it in Leaf. It opens on the Folder it is in, as Peek's does, and Move waits for a place to be picked:
+ * a preselected destination is a move nobody chose. Its own Folder is listed for a new place inside it; another Folder's targets are read
  * when it is picked. Only real moves are listed: never the page, what is under it, or where it already is.
  */
 export function MoveDialog({
@@ -35,7 +35,7 @@ export function MoveDialog({
   onMove: (folder: MoveFolder, parent: MoveTarget) => Promise<boolean>
   onClose: () => void
 }) {
-  const [folder, setFolder] = useState('')
+  const [pickedFolder, setFolder] = useState('')
   const [read, setRead] = useState<Record<string, MoveTarget[] | 'reading' | 'failed'>>(() => ({ [from]: initialTargets }))
   const [picked, setPicked] = useState<string | undefined>()
   const [moving, setMoving] = useState(false)
@@ -61,6 +61,9 @@ export function MoveDialog({
     readTargets(id)
   }
 
+  // Until another is picked, the Folder it is in, so "Put it under" shows at once, as in Peek (Miky, LFB-7 kickoff);
+  // derived rather than set at open, so Folders read after it opened (LED-8) still land on it. Move waits for a place.
+  const folder = pickedFolder || (folders?.some((candidate) => candidate.id === from) ? from : '')
   const chosen = folders?.find((candidate) => candidate.id === folder)
   const folderName = chosen?.name ?? 'this folder'
   const status = folder ? read[folder] : undefined

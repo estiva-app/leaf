@@ -80,12 +80,27 @@ export type NewDocument =
  *
  * The document goes first, so a refused `add` leaves one that exists and is
  * reachable by its address rather than a listing that points at nothing.
+ *
+ * Made under another file (`parent`, LFB-8), its root's `a` names that file and its `h` is that file's own
+ * Folder, so the file's readers are its readers, whichever Folder lists it; the `add` still goes in `folder`,
+ * where the file is listed, so it draws beneath it there.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  */
-export async function createDocument(args: { folder: string; title: string; summary?: string }): Promise<NewDocument> {
+export async function createDocument(args: {
+  folder: string
+  title: string
+  summary?: string
+  parent?: { address: string; folder: string }
+}): Promise<NewDocument> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, made: false, reason: 'Sign in to make a document.' }
   const fileId = crypto.randomUUID()
-  const root = buildDocument(pubkey, Date.now(), { fileId, title: args.title, channelUuid: args.folder })
+  const root = buildDocument(pubkey, Date.now(), {
+    fileId,
+    title: args.title,
+    channelUuid: args.parent?.folder ?? args.folder,
+    ...(args.parent ? { parent: args.parent.address } : {}),
+  })
   // The summary seeds the page's `summary` field: last, as the reference writers put it, and only when there is one (SPEC §6.12).
   const summary = summaryText(args.summary ?? '')
   if (summary) root.tags.push(['summary', summary])

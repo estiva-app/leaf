@@ -44,6 +44,8 @@ const { FilePage } = await import('./FilePage')
 const { shipIssue, shipProject } = await import('./fixtures/shipFiles')
 const ADDRESS = `30842:${ME}:page-1`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
+const archived = (file: ForeignObject, withAddress?: string): ForeignObject => ({ ...file, archived: { by: ME, at: 1_760_000_000, ...(withAddress ? { with: withAddress } : {}) } })
+const manifestEvent = (event: UnsignedEvent): SignedEvent => ({ ...event, id: event.pubkey.slice(0, 63) + '1', sig: '' }) as SignedEvent
 
 function doc(summary?: string): ForeignObject {
   return {
@@ -178,9 +180,6 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
 })
 
 describe('an archived file is read-only, its comments included (PEEKM-8)', () => {
-  const archived = (file: ForeignObject, withAddress?: string): ForeignObject => ({ ...file, archived: { by: ME, at: 1_760_000_000, ...(withAddress ? { with: withAddress } : {}) } })
-  const manifestEvent = (event: UnsignedEvent): SignedEvent => ({ ...event, id: event.pubkey.slice(0, 63) + '1', sig: '' }) as SignedEvent
-
   async function locked() {
     for (const name of ['Title', 'Summary', 'Document']) {
       const box = (await screen.findByRole('textbox', { name })) as EditorBox
@@ -485,6 +484,36 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
   })
 })
 
+describe('New document inside, from a page’s ⋯ menu (LFB-8)', () => {
+  const STEER = '11111111-1111-4111-8111-111111111111'
+  // Stored in QA, listed in Steer: as after a move.
+  const listedInSteer = (hasState = true) =>
+    [
+      { id: FOLDER, name: 'QA', hasState, addresses: [] },
+      { id: STEER, name: 'Steer', hasState, addresses: [ADDRESS] },
+    ] as unknown as FolderSummary[]
+
+  it('opens New document under the page, in the Folder that lists it rather than the one it is stored in', async () => {
+    const onNewInside = vi.fn()
+    render(<ToastProvider><FilePage file={doc()} loading={false} folders={listedInSteer()} onNewInside={onNewInside} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'New document inside' }))
+    expect(onNewInside).toHaveBeenCalledWith(expect.objectContaining({ address: ADDRESS, folder: FOLDER }), STEER)
+  })
+
+  it('is not offered on an archived page, nor when no Folder that takes a document lists it', async () => {
+    const { unmount } = render(<ToastProvider><FilePage file={archived(doc())} loading={false} folders={listedInSteer()} onNewInside={vi.fn()} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'New document inside' })).toBeNull()
+    unmount()
+    render(<ToastProvider><FilePage file={doc()} loading={false} folders={listedInSteer(false)} onNewInside={vi.fn()} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'New document inside' })).toBeNull()
+  })
+})
+
 describe('Move from a page’s ⋯ menu (LED-5)', () => {
   const STEER = '11111111-1111-4111-8111-111111111111'
   const folders = [
@@ -517,6 +546,33 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
       [1852, FOLDER, 'remove'],
     ])
     expect(reread).toEqual([STEER, FOLDER])
+  })
+
+  it('opens on the Folder it is in with "Put it under" shown, waits for a place, and puts it under a page there (LFB-7)', async () => {
+    const PLANS = `30842:${ME}:page-2`
+    folderEvents = [
+      { kind: 30890, pubkey: ME, tags: [['d', FOLDER], ['a', ADDRESS], ['a', PLANS]] },
+      { kind: 39000, pubkey: ME, tags: [['d', FOLDER]] },
+    ] as unknown as SignedEvent[]
+    // Leaf's manifest, so the tree draws a page there as a place to put it under.
+    const { buildManifest } = await import('../manifest')
+    manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
+    roots = [{ kind: 30842, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'page-2'], ['title', 'Plans'], ['h', FOLDER]], content: '', id: 'd'.repeat(64), sig: '' } as SignedEvent]
+    onTestFinished(() => void (folderEvents = []))
+    render(
+      <ToastProvider>
+        <FilePage file={doc()} loading={false} folders={folders} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    expect((await screen.findByRole('combobox', { name: 'Folder' })).textContent).toContain('QA')
+    expect(screen.getByRole('combobox', { name: 'Put it under' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Move' }) as HTMLButtonElement).disabled).toBe(true)
+    await pick('Put it under', 'Plans')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect(await screen.findByText('Moved to Plans')).toBeTruthy()
+    expect(published.map((e) => [e.kind, tag(e, 'field'), tag(e, 'value')]).filter(([kind]) => kind === 1851)).toEqual([[1851, 'parent', PLANS]])
   })
 
   it('opened before the sidebar has read the Folders, the Folder list fills in once they are read (LED-8)', async () => {
