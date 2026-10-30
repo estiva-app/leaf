@@ -18,7 +18,7 @@ import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { heldUnder, NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
 import { naddrOf } from './fileAddress'
-import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
+import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument, placeOf, titleOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
@@ -50,6 +50,19 @@ export function App() {
 
 /** Where New document holds its fields through a passkey trip (AUT-5). */
 const NEW_DOCUMENT_HOLD = 'new-document'
+
+/** Scroll the sidebar, and nothing else, to the current row when it is out of sight: never the page or a closed drawer. */
+function scrollToCurrent() {
+  const row = document.querySelector<HTMLElement>('[data-nav-group] [aria-current=page]')
+  let box = row?.parentElement
+  while (box && !(/(auto|scroll)/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight)) box = box.parentElement
+  if (!row || !box || box === document.documentElement || box === document.body) return
+  const at = row.getBoundingClientRect()
+  const view = box.getBoundingClientRect()
+  if (at.height === 0) return
+  if (at.top < view.top) box.scrollTop -= view.top - at.top
+  else if (at.bottom > view.bottom) box.scrollTop += at.bottom - view.bottom
+}
 
 /** The frame: the package's AppShell in its inset manner, the Folders tree in the sidebar, and the page open. */
 function Frame() {
@@ -115,6 +128,23 @@ function Frame() {
         : route.page === 'path' && named.address
           ? findFileAt(folders, children, named.address)
           : null
+  /*
+    The open file's place in the tree: its Folder and every row above it open, each time another file opens, so the
+    sidebar shows where it lives (LFB-9). Only opened, never closed, and once per file: a row the person closes after
+    stays closed until a different file opens.
+  */
+  const openKey = open ? fileKey(open.file) : undefined
+  const place = open ? placeOf(open.folder, open.file, children).join(' ') : ''
+  const revealed = useRef<string | undefined>(undefined)
+  const { reveal } = workspace
+  useEffect(() => {
+    if (openKey === revealed.current) return
+    revealed.current = openKey
+    if (!openKey) return
+    reveal(place.split(' '))
+    // Once the rows above have slid open (150 ms), the sidebar scrolls to the row if it is out of sight.
+    setTimeout(scrollToCurrent, 200)
+  }, [openKey, place, reveal])
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   // The file opened by its address, read on its own while the tree is still read and until the tree lists it (APP-3):

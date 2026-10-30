@@ -28,6 +28,8 @@ export interface Workspace {
   setOpen(file: ForeignObject, open: boolean): void
   /** Open or close a Folder's group, by its id — in the same set as the rows. */
   setFolderOpen(id: string, open: boolean): void
+  /** Open each of these Folders and rows, closing none: where an opened file sits (LFB-9). They are read already. */
+  reveal(ids: readonly string[]): void
 }
 
 /**
@@ -135,5 +137,9 @@ export function useWorkspace(): Workspace {
     })
   }, [])
 
-  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen }
+  const reveal = useCallback((ids: readonly string[]) => {
+    setOpened((now) => (ids.every((id) => now.has(id)) ? now : new Set([...now, ...ids])))
+  }, [])
+
+  return { folders, failed, reload, reloadFolder, children, opened, setOpen, setFolderOpen, reveal }
 }

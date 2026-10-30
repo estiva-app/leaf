@@ -1,7 +1,7 @@
 import type { ForeignObject } from '@estiva-app/interop'
 import { describe, expect, it } from 'vitest'
 import { shipIssue, shipProject } from '../pages/fixtures/shipFiles'
-import { findDocument, findFile, groupsOf, typeOf, type Expansion } from './tree'
+import { findDocument, findFile, groupsOf, placeOf, typeOf, type Expansion } from './tree'
 import type { WorkspaceFolder } from './useWorkspace'
 
 const A = 'a'.repeat(64)
@@ -109,5 +109,16 @@ describe('the Folders tree', () => {
     expect(open.open).toBe(true)
     expect(open.children?.map((n) => n.href)).toEqual([`/f/${issue.naddr}`])
     expect(findFile([folder([project])], read.children, issue.naddr!)?.file.ref).toBe(issue.ref)
+  })
+
+  it("opens to an issue read under its project, and to a page two pages down, Folder first (LFB-9)", () => {
+    const project = shipProject()
+    const issue = shipIssue()
+    expect(placeOf(folder([project]), issue, { [project.ref]: [issue] })).toEqual(['f1', project.ref])
+    const top = file({ ref: 'p', address: `30842:${A}:p` })
+    const mid = file({ ref: 'm', address: `30842:${A}:m`, parentRef: `30842:${A}:p` })
+    const low = file({ ref: 'l', address: `30842:${A}:l`, parentRef: `30842:${A}:m` })
+    expect(placeOf(folder([low, mid, top]), low, {})).toEqual(['f1', 'p', 'm'])
+    expect(placeOf(folder([top]), top, {})).toEqual(['f1'])
   })
 })
