@@ -16,9 +16,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
 import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
-import { NewDocumentDialog } from './folders/NewDocumentDialog'
+import { heldUnder, NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
 import { naddrOf } from './fileAddress'
-import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument } from './folders/tree'
+import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
@@ -60,7 +60,9 @@ function Frame() {
   const workspace = useWorkspace()
   const recent = useRecent(workspace.folders, route.page === 'home')
   const { showToast } = useToast()
-  const [making, setMaking] = useState(false)
+  // New document open: `true` from the sidebar or Home; a page's "New document inside", under it (LFB-8).
+  const [making, setMaking] = useState<boolean | NewDocumentUnder>(false)
+  const inside = typeof making === 'object' ? making : undefined
   const [sidebarOpen, setSidebarOpen] = useFold('sidebar')
   const [unlisted, setUnlisted] = useState<Unlisted | null>(null)
   /*
@@ -137,7 +139,8 @@ function Frame() {
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
-  useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(true))
+  // Under the page it was opened under, when it was, as the dialog held it.
+  useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(heldUnder(NEW_DOCUMENT_HOLD) ?? true))
   /*
     Once the Folders are read: the linked one, if a document can go in it here. A read that failed refuses
     nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
@@ -166,7 +169,7 @@ function Frame() {
   async function make(title: string, folder: string, summary: string): Promise<boolean> {
     // Made from a link: the document's page takes the link's place, so Back does not offer New document again.
     const go = handoff ? replace : navigate
-    const result = await createDocument({ folder, title, summary })
+    const result = await createDocument({ folder, title, summary, parent: inside && { address: inside.address, folder: inside.folder } })
     if (!result.ok && !result.made) {
       showToast({ label: result.reason, type: 'error' })
       return false
@@ -181,6 +184,8 @@ function Frame() {
     // and open its group, so the new row is there to see.
     await workspace.reloadFolder(folder)
     setFolderOpen(folder, true)
+    // Made under a page: that page's row opens on it too.
+    if (inside) setFolderOpen(inside.ref, true)
     go(documentPath(dOf(result.address), title))
     return true
   }
@@ -211,7 +216,15 @@ function Frame() {
         action={{ label: 'Try again', onClick: () => void relist(unlisted) }}
       />
     ) : (
-      <FilePage file={open?.file ?? byAddress.file} loading={reading || named.loading || byAddress.loading} folders={workspace.folders || workspace.failed ? summaries : undefined} onChanged={workspace.reloadFolder} />
+      <FilePage
+        file={open?.file ?? byAddress.file}
+        loading={reading || named.loading || byAddress.loading}
+        folders={workspace.folders || workspace.failed ? summaries : undefined}
+        onChanged={workspace.reloadFolder}
+        onNewInside={(page, listedIn) =>
+          page.address && page.folder && setMaking({ address: page.address, ref: page.ref, folder: page.folder, title: titleOf(page), listedIn })
+        }
+      />
     )
 
   return (
@@ -240,7 +253,14 @@ function Frame() {
         {main}
       </AppShell>
       {(making || handoffFolder) && (
-        <NewDocumentDialog folders={takers} defaultFolder={handoffFolder?.id ?? open?.folder.folder.id} onCreate={make} onClose={closeNew} holdKey={NEW_DOCUMENT_HOLD} />
+        <NewDocumentDialog
+          folders={takers}
+          defaultFolder={inside?.listedIn ?? handoffFolder?.id ?? open?.folder.folder.id}
+          under={inside}
+          onCreate={make}
+          onClose={closeNew}
+          holdKey={NEW_DOCUMENT_HOLD}
+        />
       )}
     </AppProvider>
   )
