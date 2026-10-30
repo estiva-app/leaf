@@ -4,6 +4,7 @@
  * (Katerina, 28 Oct), whatever was kept.
  */
 import { useCallback, useEffect, useState } from 'react'
+import { COMMENTS_HASH, useHash } from '../route'
 
 export type Fold = 'sidebar' | 'comments'
 
@@ -44,12 +45,26 @@ function kept(): Partial<Record<Fold, boolean>> {
   }
 }
 
-/** Open or folded, and the setter that remembers it. */
+/**
+ * Open or folded, and the setter that remembers it. Arriving at a file's comments (`#comments`, where its comment
+ * count opens) shows the comments column for this visit, folded or not: the count opens the conversation.
+ */
 export function useFold(fold: Fold): [boolean, (open: boolean) => void] {
+  const asked = useHash() === COMMENTS_HASH && fold === 'comments'
   const [open, setOpen] = useState(() => {
     if (!now.has(fold)) now.set(fold, !narrow() && !kept()[fold])
+    if (asked) now.set(fold, true)
     return now.get(fold) as boolean
   })
+  // Each arrival once, during render as React asks: a column folded after arriving stays folded.
+  const [arrived, setArrived] = useState(asked)
+  if (arrived !== asked) {
+    setArrived(asked)
+    if (asked && !open) {
+      now.set(fold, true)
+      setOpen(true)
+    }
+  }
   const change = useCallback(
     (next: boolean) => {
       setOpen(next)

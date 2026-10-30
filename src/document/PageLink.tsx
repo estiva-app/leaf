@@ -3,7 +3,7 @@ import { InlineChip, LinkCard, LinkChip, LinkRow } from '@estiva-app/ui'
 import type { ReferenceViewProps } from '@estiva-app/ui/editor'
 import { decodeNpub } from '@estiva-app/protocol'
 import { knownName } from '../comments/people'
-import { linkStateOf, useCardLinkState } from './linked'
+import { linkStateOf, useCardLinkState, useRowLinkState } from './linked'
 import { useFile } from './references'
 
 const Names = createContext<(pubkey: string) => string | undefined>(knownName)
@@ -37,10 +37,19 @@ export function PageLink({ uri, href, place = 'chip', editing = false }: Referen
 
 /** A file's link, read once for the tab and shared with every other link to it. */
 function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProps, 'place' | 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
-  const link = linkStateOf(uri, useFile(uri), href)
   if (place === 'card') return <PageCard uri={uri} href={href} />
-  if (place === 'row') return <LinkRow link={link} preview={!editing} />
-  return <LinkChip link={link} preview={!editing} />
+  if (place === 'row') return <PageRow uri={uri} href={href} editing={editing} />
+  return <PageChip uri={uri} href={href} editing={editing} />
+}
+
+/** A link in a sentence: the kit's chip. */
+function PageChip({ uri, href, editing }: Required<Pick<ReferenceViewProps, 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
+  return <LinkChip link={linkStateOf(uri, useFile(uri), href)} preview={!editing} />
+}
+
+/** A link alone on its line: the kit's row, with the file's comment count, which opens its conversation. */
+function PageRow({ uri, href, editing }: Required<Pick<ReferenceViewProps, 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
+  return <LinkRow link={useRowLinkState(uri, href)} preview={!editing} />
 }
 
 /**

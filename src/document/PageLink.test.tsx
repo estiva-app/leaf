@@ -103,6 +103,27 @@ describe('a Ship project linked in a Leaf page', () => {
   })
 })
 
+describe('the comment count on a row (Katerina, 30 Oct)', () => {
+  const countLink = async () => (await screen.findByText('comments — open the conversation')).closest('a')?.getAttribute('href')
+
+  it('a Leaf document’s row counts its comments, and the count opens its page with the comments shown', async () => {
+    const page = file({
+      kind: 30842,
+      address: `30842:${LEAD}:plan-1`,
+      noun: 'document',
+      openUrl: 'https://leaf.estiva.app/document/friday-plan-plan-1',
+      slots: { title: { value: 'Friday plan' } } as ForeignObject['slots'],
+    })
+    render(<Link uri="nostr:naddr1page" place="row" read={page} />)
+    expect(await countLink()).toBe('/document/friday-plan-plan-1#comments')
+  })
+
+  it('a file Leaf does not open as a page has its count open it in its own app, as its title does', async () => {
+    render(<Link place="row" />)
+    expect(await countLink()).toBe(project.openUrl)
+  })
+})
+
 describe('where a Ship project written as a URL in a Leaf page opens (WBM-11)', () => {
   // The project's own app opens it at `project.openUrl`, on ship.estiva.app; this page is on leaf.estiva.app.
   const opens = (written: string) => {

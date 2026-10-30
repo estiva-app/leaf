@@ -1,13 +1,15 @@
 import { createContext, useContext, useState } from 'react'
-import { referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
+import { KIND, referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { linkStateFrom, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
 import { links } from '../comments/links'
 import { useDirectory } from '../comments/people'
 import { viewerPubkey } from '../relay/bridge'
+import { COMMENTS_HASH, pagePath } from '../route'
 import { useCardConversation } from './cardConversation'
 import { rereadReference, useFile } from './references'
 import { saveCardChoice } from './save'
+import { sharesText } from './writable'
 
 /*
   What a link in a page or a comment stands for, as the kit's chip, row and
@@ -69,6 +71,33 @@ export function linkStateOf(
   })
 }
 
+/**
+ * Where a file's comment count opens: its conversation. Leaf shows a file's
+ * comments beside its page, so a file Leaf opens as a page (its own
+ * documents, a file whose app shares its text) opens there with them shown
+ * (`COMMENTS_HASH`). Any other file opens in its own app, as its title does:
+ * Ship's count does the same for a file it does not own.
+ */
+function conversationOf(file: ForeignObject, opens: string): string {
+  if (!file.address || !sharesText(file) || (file.kind !== KIND.DOCUMENT && !file.naddr)) return opens
+  const title = file.slots.title?.isPubkey ? undefined : file.slots.title?.value
+  return `${pagePath({ kind: file.kind, address: file.address, naddr: file.naddr, title })}${COMMENTS_HASH}`
+}
+
+/** A read file's comment count and where it opens, once counted (5ebf2756); nothing for a file with nowhere to open. */
+function useConversation(read: ForeignObject | null | undefined, written?: string): LinkedFromOptions['conversation'] {
+  const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
+  const opens = read ? openerOf(read, written) : ''
+  return read && count !== undefined && opens ? { count, href: conversationOf(read, opens) } : undefined
+}
+
+/** A link alone on its line, with its comment count, as a card has (Katerina, 30 Oct: the count on rows too). */
+export function useRowLinkState(uri: string, written?: string): LinkState {
+  const read = useFile(uri)
+  const conversation = useConversation(read, written)
+  return linkStateOf(uri, read, written, conversation ? { conversation } : {})
+}
+
 const Acts = createContext(true)
 
 /**
@@ -117,12 +146,11 @@ export function useFileChoices(
 export function useCardLinkState(uri: string, written?: string): LinkState {
   const read = useFile(uri)
   const { object, onAct } = useFileChoices(read, () => rereadReference(uri))
-  const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
+  const conversation = useConversation(read, written)
   const directory = useDirectory()
-  const href = object ? openerOf(object, written) : ''
   return linkStateOf(uri, object, written, {
     ...(onAct ? { onAct } : {}),
     directory,
-    ...(count !== undefined && href ? { conversation: { count, href } } : {}),
+    ...(conversation ? { conversation } : {}),
   })
 }

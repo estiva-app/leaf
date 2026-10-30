@@ -134,3 +134,14 @@ function subscribe(listener: () => void): () => void {
 export function usePathname(): string {
   return useSyncExternalStore(subscribe, () => window.location.pathname)
 }
+
+/**
+ * A file's page with its comments column shown: where a file's comment count opens, since Leaf shows a file's
+ * conversation beside its page (widget review, item 25).
+ */
+export const COMMENTS_HASH = '#comments'
+
+/** The current fragment, kept current through {@link navigate} and Back/Forward. */
+export function useHash(): string {
+  return useSyncExternalStore(subscribe, () => window.location.hash)
+}
