@@ -134,17 +134,17 @@ function Frame() {
     stays closed until a different file opens.
   */
   const openKey = open ? fileKey(open.file) : undefined
-  const place = open ? placeOf(open.folder, open.file, children).join(' ') : ''
   const revealed = useRef<string | undefined>(undefined)
   const { reveal } = workspace
   useEffect(() => {
     if (openKey === revealed.current) return
     revealed.current = openKey
-    if (!openKey) return
-    reveal(place.split(' '))
+    if (!open) return
+    const place = placeOf(open.folder, open.file, children)
+    reveal(place.folder, place.above)
     // Once the rows above have slid open (150 ms), the sidebar scrolls to the row if it is out of sight.
     setTimeout(scrollToCurrent, 200)
-  }, [openKey, place, reveal])
+  }, [openKey, open, children, reveal])
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   // The file opened by its address, read on its own while the tree is still read and until the tree lists it (APP-3):

@@ -114,11 +114,12 @@ describe('the Folders tree', () => {
   it("opens to an issue read under its project, and to a page two pages down, Folder first (LFB-9)", () => {
     const project = shipProject()
     const issue = shipIssue()
-    expect(placeOf(folder([project]), issue, { [project.ref]: [issue] })).toEqual(['f1', project.ref])
+    const refs = (place: ReturnType<typeof placeOf>) => [place.folder, ...place.above.map((f) => f.ref)]
+    expect(refs(placeOf(folder([project]), issue, { [project.ref]: [issue] }))).toEqual(['f1', project.ref])
     const top = file({ ref: 'p', address: `30842:${A}:p` })
     const mid = file({ ref: 'm', address: `30842:${A}:m`, parentRef: `30842:${A}:p` })
     const low = file({ ref: 'l', address: `30842:${A}:l`, parentRef: `30842:${A}:m` })
-    expect(placeOf(folder([low, mid, top]), low, {})).toEqual(['f1', 'p', 'm'])
-    expect(placeOf(folder([top]), top, {})).toEqual(['f1'])
+    expect(refs(placeOf(folder([low, mid, top]), low, {}))).toEqual(['f1', 'p', 'm'])
+    expect(refs(placeOf(folder([top]), top, {}))).toEqual(['f1'])
   })
 })

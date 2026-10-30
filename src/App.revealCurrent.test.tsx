@@ -7,6 +7,7 @@ import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishRes
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { shipProject } from './pages/fixtures/shipFiles'
 
 const ME = 'a'.repeat(64)
 
@@ -20,6 +21,7 @@ const QA = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
 const HQ = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b'
 const PLAN_D = 'a1b2c3d4-0000-4000-8000-00000000000a'
 const WEEK_D = 'a1b2c3d4-0000-4000-8000-00000000000b'
+const BRIEF_D = 'a1b2c3d4-0000-4000-8000-00000000000c'
 const page = (d: string, title: string, text: string, parentRef?: string) =>
   ({
     ref: `naddr1${d}`,
@@ -37,9 +39,12 @@ const page = (d: string, title: string, text: string, parentRef?: string) =>
   }) as unknown as ForeignObject
 const plan = page(PLAN_D, 'Plan', 'The plan.')
 const week = page(WEEK_D, 'Week of 2 November', 'This week.', plan.address)
+// A page moved under a Ship project (LED-5): the project's row lists its own issues, read as it opens.
+const project = shipProject()
+const brief = page(BRIEF_D, 'Brief', 'The brief.', project.address)
 const folders: FolderSummary[] = [
   { id: HQ, name: 'Estiva HQ', hasState: true, addresses: [] },
-  { id: QA, name: 'QA', hasState: true, addresses: [plan.address!, week.address!] },
+  { id: QA, name: 'QA', hasState: true, addresses: [plan.address!, week.address!, project.address!, brief.address!] },
 ] as FolderSummary[]
 
 vi.mock('./folders/workspace', async () => {
@@ -47,7 +52,12 @@ vi.mock('./folders/workspace', async () => {
   return {
     ...actual,
     readFolders: async () => folders,
-    readFolder: async (id: string): Promise<FolderContents> => ({ ...folders.find((f) => f.id === id)!, files: id === QA ? [plan, week] : [], source: 'state' }),
+    readFolder: async (id: string): Promise<FolderContents> => ({
+      ...folders.find((f) => f.id === id)!,
+      files: id === QA ? [plan, week, project, brief] : [],
+      source: 'state',
+    }),
+    readChildren: async () => [],
   }
 })
 
@@ -80,6 +90,14 @@ describe('The sidebar shows where the open page lives (LFB-9)', () => {
     expect(within(sidebar()).getByRole('button', { name: 'Hide what is under Plan' }).getAttribute('aria-expanded')).toBe('true')
     // The Folder holding nothing open stays as it was.
     expect(within(sidebar()).getByRole('button', { name: 'Estiva HQ' }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens a Ship project above the page and reads its issues, so the page shows under it, not a loading row', async () => {
+    window.history.replaceState(null, '', `/document/brief-${BRIEF_D}`)
+    render(<App />)
+    expect(await screen.findByText('The brief.')).toBeTruthy()
+    await waitFor(() => expect(rowOf('Brief').getAttribute('aria-current')).toBe('page'))
+    expect(within(sidebar()).getByRole('button', { name: /^Hide what is under Leaf edits/ }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('leaves a row the person closed closed, and opens it again when another page opens under it', async () => {
