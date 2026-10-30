@@ -61,6 +61,7 @@ import {
 import { profileOf } from '../document/save'
 import { commentReferenceSections, subscribeReferences, type ReferableComment } from '../document/referencePicker'
 import { ReferencesProvider, useReferences } from '../document/references'
+import { CardActsProvider } from '../document/linked'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
 import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
@@ -1034,77 +1035,80 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   return (
     <PageHere.Provider value={doc.address}>
       <ReferencesProvider value={references}>
-        <Panel
-          title={
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-body-2-strong text-text-primary">Comments</p>
-              {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
-            </div>
-          }
-          bodyRef={setColumnBody}
-          bodyClassName="flex flex-col gap-3 p-3"
-          footer={
-            <div className="flex flex-col gap-2 p-3">
-              {draft && closed === undefined && (
-                <div className="flex items-center gap-2">
-                  <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
-                    <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
-                  </WithTooltip>
-                  <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
-                    <IconX size={16} stroke={1.5} />
-                  </IconButton>
-                </div>
-              )}
-              {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
-              <Box
-                key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
-                placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
-                draftKey={draftKeys.object(address ?? '')}
-                scope={pageScope}
-                people={people}
-                onSend={send}
-                // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
-                onSent={() => onDraft(null)}
-                autoFocus={!!draft && closed === undefined}
-                closed={closed}
-              />
-            </div>
-          }
-        >
-          {threads === null ? (
-            failed ? (
-              <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+        {/* An archived file's comments only show: their cards' status and owner too (PEEKM-8). */}
+        <CardActsProvider value={closed === undefined}>
+          <Panel
+            title={
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-body-2-strong text-text-primary">Comments</p>
+                {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
+              </div>
+            }
+            bodyRef={setColumnBody}
+            bodyClassName="flex flex-col gap-3 p-3"
+            footer={
+              <div className="flex flex-col gap-2 p-3">
+                {draft && closed === undefined && (
+                  <div className="flex items-center gap-2">
+                    <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
+                      <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
+                    </WithTooltip>
+                    <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
+                      <IconX size={16} stroke={1.5} />
+                    </IconButton>
+                  </div>
+                )}
+                {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
+                <Box
+                  key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
+                  placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
+                  draftKey={draftKeys.object(address ?? '')}
+                  scope={pageScope}
+                  people={people}
+                  onSend={send}
+                  // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
+                  onSent={() => onDraft(null)}
+                  autoFocus={!!draft && closed === undefined}
+                  closed={closed}
+                />
+              </div>
+            }
+          >
+            {threads === null ? (
+              failed ? (
+                <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+              ) : (
+                <SkeletonList rows={2} />
+              )
+            ) : all.length === 0 ? (
+              <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
             ) : (
-              <SkeletonList rows={2} />
-            )
-          ) : all.length === 0 ? (
-            <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
-          ) : (
-            <>
-              {open.map(card)}
-              {apart.map(card)}
-              {deleted.length > 0 && (
-                <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                  {deleted.map(card)}
-                </CollapsibleSection>
-              )}
-              {resolved.length > 0 && (
-                <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                  {resolved.map(card)}
-                </CollapsibleSection>
-              )}
-              {(reactionsOmitted > 0 || reactionsCut) && (
-                // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
-                <p className="shrink-0 text-caption text-text-muted">
-                  {reactionsOmitted > 0 &&
-                    `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
-                  {reactionsOmitted > 0 && reactionsCut && ' '}
-                  {reactionsCut && 'Some reactions may be missing.'}
-                </p>
-              )}
-            </>
-          )}
-        </Panel>
+              <>
+                {open.map(card)}
+                {apart.map(card)}
+                {deleted.length > 0 && (
+                  <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                    {deleted.map(card)}
+                  </CollapsibleSection>
+                )}
+                {resolved.length > 0 && (
+                  <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                    {resolved.map(card)}
+                  </CollapsibleSection>
+                )}
+                {(reactionsOmitted > 0 || reactionsCut) && (
+                  // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
+                  <p className="shrink-0 text-caption text-text-muted">
+                    {reactionsOmitted > 0 &&
+                      `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
+                    {reactionsOmitted > 0 && reactionsCut && ' '}
+                    {reactionsCut && 'Some reactions may be missing.'}
+                  </p>
+                )}
+              </>
+            )}
+          </Panel>
+        </CardActsProvider>
       </ReferencesProvider>
     </PageHere.Provider>
   )

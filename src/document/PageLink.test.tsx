@@ -4,7 +4,8 @@ import { ToastProvider } from '@estiva-app/ui'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []) }))
+// Signed in: a card offers its pickers only to someone who can change it.
+vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), viewerPubkey: () => 'c4'.repeat(32) }))
 
 import { PageLink } from './PageLink'
 import { ReferencesProvider } from './references'
@@ -62,9 +63,9 @@ describe('a Ship project shown as its card in a Leaf page', () => {
     expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull()
   })
 
-  it('shows its status as words while the page’s text is being edited', () => {
+  it('keeps its Status picker while the page’s text is being edited (Katerina, 30 Oct)', () => {
     render(<Link place="card" read={withStatus} />)
-    expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull()
   })
 })
 

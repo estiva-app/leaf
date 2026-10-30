@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { Editor } from '@tiptap/react'
 import type { FileText } from '@estiva-app/conversation'
 
-vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: () => null, relaySigner: () => null }))
+// Signed in, unless a test says not: a card offers its pickers only to someone who can change it.
+const signedIn = vi.hoisted(() => vi.fn((): string | null => 'c4'.repeat(32)))
+vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish: vi.fn(), viewerPubkey: signedIn, relaySigner: () => null }))
 // What the page's links read: nothing, unless a test hands one its file.
 const references = vi.hoisted(() => vi.fn((): Record<string, unknown> => ({})))
 vi.mock('./references', async (actual) => ({ ...(await actual<typeof import('./references')>()), useEditorReferences: references }))
@@ -21,7 +23,10 @@ beforeAll(() => {
     proto.getBoundingClientRect = empty
   }
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  signedIn.mockReturnValue('c4'.repeat(32))
+})
 
 type EditorBox = HTMLElement & { editor: Editor }
 const page = () => screen.getByRole('textbox', { name: 'Document' }) as EditorBox
@@ -214,9 +219,9 @@ describe('a project shown as its card in the page', () => {
     comments: [],
     viaRecommendation: false,
   }
-  it('has its Status picker while its writer is not in the text, and words while they are', async () => {
+  /** The page as saved with the link alone on its line, shown as its card. */
+  async function savedWithCard(): Promise<string> {
     references.mockReturnValue({ [URI]: PROJECT })
-    // The page as saved with the link alone on its line, shown as its card.
     const { onCommit } = mount()
     const first = await ready()
     enter(first)
@@ -225,22 +230,41 @@ describe('a project shown as its card in the page', () => {
     await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1))
     const [{ content: value }] = onCommit.mock.calls[0]
     cleanup()
-    render(
-      <ToastProvider>
-        <LiveDocument value={value} format="blocks" changedBy={KATERINA} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} />
-      </ToastProvider>,
-    )
+    return value
+  }
+  const opened = (value: string, readOnly = false) => (
+    <ToastProvider>
+      <LiveDocument value={value} format="blocks" changedBy={KATERINA} onCommit={vi.fn(async () => true)} onLeftUnsaved={vi.fn()} readOnly={readOnly} />
+    </ToastProvider>
+  )
+
+  it('keeps its Status picker while its writer is in the text, as well as out of it (Katerina, 30 Oct)', async () => {
+    const view = render(opened(await savedWithCard()))
     const box = await ready()
-    // The writer's page is always editable: editable alone is not "being edited".
-    expect(box.editor.isEditable).toBe(true)
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull())
     // A press on the picker is the picker's: the text does not take it (ProseMirror skips a press whose default is
-    // prevented), so the caret does not come in and turn the card to words under the pointer.
+    // prevented), so the caret does not come in and close the picker before it opens.
     const status = screen.getByRole('combobox', { name: 'Status' })
     expect(fireEvent.mouseDown(status.querySelector('span') ?? status)).toBe(false)
     enter(box)
-    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull())
-    expect(screen.getByText('Planned')).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeNull()
+    view.unmount()
+  })
+
+  it('shows its status as words on a page opened read only, as an archived one is', async () => {
+    render(opened(await savedWithCard(), true))
+    await ready()
+    await waitFor(() => expect(screen.getByText('Planned')).toBeTruthy())
+    expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull()
+  })
+
+  it('shows its status as words to a reader who is not signed in', async () => {
+    const value = await savedWithCard()
+    signedIn.mockReturnValue(null)
+    render(opened(value))
+    await ready()
+    await waitFor(() => expect(screen.getByText('Planned')).toBeTruthy())
+    expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull()
   })
 })
 

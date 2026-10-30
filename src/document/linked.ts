@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { linkStateFrom, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
 import { links } from '../comments/links'
 import { useDirectory } from '../comments/people'
+import { viewerPubkey } from '../relay/bridge'
 import { useCardConversation } from './cardConversation'
 import { rereadReference, useFile } from './references'
 import { saveCardChoice } from './save'
@@ -68,32 +69,59 @@ export function linkStateOf(
   })
 }
 
+const Acts = createContext(true)
+
 /**
- * A link's state with what a card adds: its comment count, and its status and
- * owner pickers, each change written and the file read again, since the relay
- * is the authority on whether it happened. A field its own app shares may be
- * changed from its card in any app (Miky, 21 Oct). The choice shows at once
- * and is held until that read lands.
+ * Whether the reader may change a file from its card here: not on an archived
+ * page or in its closed comments, where a card's status and owner read as
+ * words (Katerina, 30 Oct). A signed-out reader never may.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-archived-file-is-read-only-in-every-app.md
  */
-export function useCardLinkState(uri: string, written?: string): LinkState {
-  const read = useFile(uri)
-  const [chosen, choose] = useState<{ actionId: string; value: string } | null>(null)
-  const object = read && chosen ? { ...read, actions: read.actions.map((one) => (one.id === chosen.actionId ? { ...one, current: chosen.value } : one)) } : read
-  const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
-  const directory = useDirectory()
+export const CardActsProvider = Acts.Provider
+
+/**
+ * A file's status and owner pickers, as its card offers them: each change
+ * written, and shown at once until the file is read again (`reread`, or a new
+ * read handed in), since the relay is the authority on whether it happened. A
+ * refused change says why. No `onAct` where the reader may not change it.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
+ */
+export function useFileChoices(
+  read: ForeignObject | null | undefined,
+  reread?: () => Promise<void>,
+): { object: ForeignObject | null | undefined; onAct?: (actionId: string, value: string) => void } {
+  const [chosen, choose] = useState<{ on: ForeignObject; actionId: string; value: string } | null>(null)
+  // Held for the read it was made on: the next read is the relay's answer.
+  const held = read && chosen?.on === read ? chosen : null
+  const object = read && held ? { ...read, actions: read.actions.map((one) => (one.id === held.actionId ? { ...one, current: held.value } : one)) } : read
+  const acts = useContext(Acts) && !!viewerPubkey()
   const { showToast } = useToast()
-  const onAct = async (actionId: string, value: string) => {
+  const act = async (actionId: string, value: string) => {
     if (!read) return
-    choose({ actionId, value })
+    choose({ on: read, actionId, value })
     const result = await saveCardChoice(read, actionId, value)
     // The picker goes back to what the relay holds, so say why rather than let it look like a slip.
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
-    await rereadReference(uri)
-    choose(null)
+    if (reread) await reread()
+    if (!result.ok || reread) choose(null)
   }
+  return { object, ...(acts ? { onAct: (actionId: string, value: string) => void act(actionId, value) } : {}) }
+}
+
+/**
+ * A link's state with what a card adds: its comment count, and its status and
+ * owner pickers ({@link useFileChoices}), the file read again after each
+ * change. A field its own app shares may be changed from its card in any app
+ * (Miky, 21 Oct).
+ */
+export function useCardLinkState(uri: string, written?: string): LinkState {
+  const read = useFile(uri)
+  const { object, onAct } = useFileChoices(read, () => rereadReference(uri))
+  const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
+  const directory = useDirectory()
   const href = object ? openerOf(object, written) : ''
   return linkStateOf(uri, object, written, {
-    onAct: (actionId, value) => void onAct(actionId, value),
+    ...(onAct ? { onAct } : {}),
     directory,
     ...(count !== undefined && href ? { conversation: { count, href } } : {}),
   })

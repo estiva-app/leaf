@@ -1410,6 +1410,21 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
+  it('draws a comment card’s status as words, not its picker, though the card’s own file is not archived', async () => {
+    const address = `30851:${QA2}:open-issue`
+    const uri = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'open-issue', relays: [] })}`
+    files.known[uri] = {
+      ...(files.known[CARD] as object),
+      address,
+      slots: { title: { value: 'An open issue' }, status: { value: 'Todo', colour: 'neutral', field: 'status' } },
+      actions: [{ id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo' }, { value: 'done', label: 'Done' }] }],
+    }
+    const own = { ...comment([['embed', address, 'detailed']], `See\n${uri}`), pubkey: ME }
+    await openArchived([own])
+    await waitFor(() => expect(line(own.id)?.querySelector('[data-card="detailed"]')?.textContent).toContain('Todo'))
+    expect(within(line(own.id)!).queryByRole('combobox', { name: 'Status' })).toBeNull()
+  })
+
   it('offers no Comment on selected words of its text', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {

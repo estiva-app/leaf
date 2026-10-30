@@ -36,3 +36,6 @@ import { PageLink } from '../document/PageLink'
 - Choosing chip, row or card from `place`, and reading the file through
   **ReferencesProvider** (`useFile`). The look is the kit's `LinkChip`,
   `LinkRow` and `LinkCard`; where a written URL may open is `linkStateOf`'s.
+- A card's status and owner pickers, kept while the caret is in the text.
+  Where the reader cannot act they read as words (`CardActsProvider`): an
+  archived page, its closed comments, a reader who is not signed in.
