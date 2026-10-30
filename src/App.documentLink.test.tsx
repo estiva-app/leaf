@@ -108,6 +108,13 @@ describe("a document's link", () => {
     expect(await screen.findByText('Written by QA-1.')).toBeTruthy()
   })
 
+  it('names the page, then Leaf, in the browser tab (SFX-2)', async () => {
+    listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
+    window.history.replaceState(null, '', `/document/plan-${D}`)
+    render(<App />)
+    await waitFor(() => expect(document.title).toBe('Plan – Leaf'))
+  })
+
   it('takes the place of an old /f/ link once the page is found, keeping the block it named', async () => {
     listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
     window.history.replaceState(null, '', '/f/naddr1mine#block-28bad0a555e9')

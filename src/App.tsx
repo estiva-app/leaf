@@ -33,6 +33,7 @@ import { viewerPubkey } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
+import { useTabTitle } from './tabTitle'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
 type Unlisted = { address: string; folder: string; folderName: string }
@@ -166,6 +167,8 @@ function Frame() {
     if (shown?.address) rememberPath(relink, shown.address)
     replace(`${relink}${window.location.hash}`)
   }, [relink, shown])
+  const onPage = open?.file ?? byAddress.file
+  useTabTitle(route.page === 'home' ? 'Home' : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
