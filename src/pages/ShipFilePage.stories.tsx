@@ -17,7 +17,7 @@ import { titleOf } from '../folders/tree'
 import { query, viewerPubkey } from '../relay/bridge'
 import { FilePage } from './FilePage'
 import { HomePage } from './HomePage'
-import { OwnerRow } from './OwnerRow'
+import { FileKey, OwnerRow, openerOf, TitleWithOpen } from './OwnerRow'
 import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, threadsOn } from './fixtures/shipFiles'
 
 /*
@@ -36,6 +36,7 @@ import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, th
 function SharedTextView({ file, value, changedBy = null, onCommit = async () => true }: { file: ForeignObject; value?: string; changedBy?: ChangedBy | null; onCommit?: (saved: { content: string }) => Promise<boolean> }) {
   const body = file.slots[BODY_SLOT]
   const locked = !!file.archived
+  const opener = openerOf(file)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [draft, setDraft] = useState<Anchor | null>(null)
   const docBody = useRef<HTMLDivElement | null>(null)
@@ -43,13 +44,16 @@ function SharedTextView({ file, value, changedBy = null, onCommit = async () => 
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={titleOf(file)} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
+        <Panel title={opener && file.appName ? <TitleWithOpen title={titleOf(file)} opener={opener} appName={file.appName} /> : titleOf(file)} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <h1 className="text-h1 text-text-primary">
-                <InlineText variant="heading" value={titleOf(file)} placeholder="Untitled" label="Title" readOnly={locked} onCommit={async () => true} />
-              </h1>
-              <PageSummary value={file.slots.subtitle?.value ?? ''} readOnly={locked} onCommit={async () => true} />
+            <div className="flex flex-col gap-2">
+              <FileKey file={file} />
+              <div className="flex flex-col gap-1">
+                <h1 className="text-h1 text-text-primary">
+                  <InlineText variant="heading" value={titleOf(file)} placeholder="Untitled" label="Title" readOnly={locked} onCommit={async () => true} />
+                </h1>
+                <PageSummary value={file.slots.subtitle?.value ?? ''} readOnly={locked} onCommit={async () => true} />
+              </div>
             </div>
             <OwnerRow file={file} />
             {locked && <FieldLine tone="helper">Archived. Unarchive it in {file.appName ?? 'its app'} to edit.</FieldLine>}
@@ -127,10 +131,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A Ship issue: Ship's row under its title (its status and assignee the pickers its card has, its key), its text in Leaf's editor, its comments beside it. */
+/** A Ship issue: its key above the title, Ship's row under it (status, then assignee, the pickers its card has), its text in Leaf's editor, its comments beside it. */
 export const Issue: Story = { args: { file: shipIssue() } }
 
-/** A Ship project: status, lead and key, in the order Ship's manifest gives them; status and lead the pickers its card has. */
+/** A Ship project: its key above the title, then status and lead, the pickers its card has; "Open" after the title in the bar. */
 export const Project: Story = { args: { file: shipProject() } }
 
 /** An issue nobody has written a description for: the text starts empty, as a new page does. */

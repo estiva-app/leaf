@@ -16,7 +16,7 @@ import { knownName } from '../comments/people'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
-import { OwnerRow, openerOf } from './OwnerRow'
+import { FileKey, OwnerRow, openerOf, TitleWithOpen } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
 import { useFold, useNarrow } from '../frame/folds'
@@ -140,6 +140,8 @@ function DocumentView({
     />
   )
   const title = titleOf(file)
+  // Another app's file: "Open" into that app, after the title in the bar.
+  const opener = own ? undefined : openerOf(file)
   const body = file.slots[BODY_SLOT]
   // The file as it was opened: a save made on the way out must not reach for state that is gone.
   const target = useRef(file)
@@ -262,7 +264,8 @@ function DocumentView({
       <div className="flex items-center gap-3 pr-2">
         {edited && !editedInMenu && (
           <WithTooltip inline label={facts.lastEdit ? exactly(facts.lastEdit.at) : edited}>
-            <span className="whitespace-nowrap text-body-2 text-text-secondary">{edited}</span>
+            {/* Quieter than the bar's title: 12px and italic, as every "time ago" line is (Katerina, 30 Oct; the kit's "Updated …"). */}
+            <span className="whitespace-nowrap text-caption italic text-text-secondary">{edited}</span>
           </WithTooltip>
         )}
         <Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />
@@ -290,15 +293,18 @@ function DocumentView({
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={title} actions={actions} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
+        <Panel title={opener && file.appName ? <TitleWithOpen title={title} opener={opener} appName={file.appName} /> : title} actions={actions} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {missing && (
               <Banner tone="info" onDismiss={dismissMissing}>
                 {missing === 'detached' ? 'That part of the page was removed.' : 'That link is to a part of the page, which is no longer written in parts.'}
               </Banner>
             )}
-            {/* The page's heading, as Katerina's prototype draws it, and its summary 4px under it (the short-summary story's LeafFilePage). */}
-            <div className="flex flex-col gap-1">
+            {/* The page's heading, as Katerina's prototype draws it, and its summary 4px under it (the short-summary story's LeafFilePage);
+                another app's file has its key 8px above the title (Katerina, 30 Oct). */}
+            <div className="flex flex-col gap-2">
+              {!own && <FileKey file={file} />}
+              <div className="flex flex-col gap-1">
               <h1 className="text-h1 text-text-primary">
                 {/* In place, as Ship's title (ui InlineText, ship#306), at a document's heading size (ui 0.91.0's variant="heading"); Enter goes on into the summary. */}
                 <InlineText
@@ -320,6 +326,7 @@ function DocumentView({
                 onEnter={toText}
                 readOnly={locked || !writes.has('summary') || (cut && wholeNow === null)}
               />
+              </div>
             </div>
             {!own && <OwnerRow file={file} />}
             {own && notice}
