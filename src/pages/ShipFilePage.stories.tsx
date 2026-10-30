@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fireEvent, mocked, userEvent, within } from 'storybook/test'
 import type { Editor } from '@tiptap/react'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
+import { archivedLine } from '@estiva-app/conversation'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { AppShell, Chip, Divider, FieldLine, KindIcon, NavItem, NavTree, Panel, Sidebar, ToastProvider, type NavTreeGroup, type NavTreeNode, type ThingKind } from '@estiva-app/ui'
 import { InlineText } from '@estiva-app/ui/editor'
@@ -29,7 +30,8 @@ import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, th
 /**
  * Another app's file opened in Leaf, as LTX proposes it: its title and summary written in place, its owner's row
  * under them, its text in Leaf's editor and its comments beside it — a page's layout (FilePage's DocumentView).
- * Archived, its title, summary and text are read-only and its comments stay open (SPEC §6.5).
+ * Archived, its title, summary and text are read-only and its comments only show, the box's place saying why (SPEC §6.5,
+ * PEEKM-8), as the page draws it.
  */
 function SharedTextView({ file, value, changedBy = null, onCommit = async () => true }: { file: ForeignObject; value?: string; changedBy?: ChangedBy | null; onCommit?: (saved: { content: string }) => Promise<boolean> }) {
   const body = file.slots[BODY_SLOT]
@@ -58,7 +60,7 @@ function SharedTextView({ file, value, changedBy = null, onCommit = async () => 
               onCommit={onCommit}
               onLeftUnsaved={() => {}}
               onEditor={setEditor}
-              onCommentOn={addressable ? setDraft : undefined}
+              onCommentOn={addressable && !locked ? setDraft : undefined}
               readOnly={locked}
             />
           </div>
@@ -66,7 +68,15 @@ function SharedTextView({ file, value, changedBy = null, onCommit = async () => 
       </div>
       <Divider orientation="vertical" />
       <div className="flex w-96 flex-none flex-col">
-        <CommentsColumn doc={{ address: file.address, folder: file.folder }} addressable={addressable} editor={editor} docBody={docBody} draft={draft} onDraft={setDraft} />
+        <CommentsColumn
+          doc={{ address: file.address, folder: file.folder }}
+          addressable={addressable}
+          editor={editor}
+          docBody={docBody}
+          draft={locked ? null : draft}
+          onDraft={setDraft}
+          closed={locked ? (archivedLine(file.archived) ?? '') : undefined}
+        />
       </div>
     </div>
   )
@@ -117,10 +127,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A Ship issue: Ship's row (status, key, assignee) under its title, its text in Leaf's editor, its comments beside it. */
+/** A Ship issue: Ship's row under its title (its status and assignee the pickers its card has, its key), its text in Leaf's editor, its comments beside it. */
 export const Issue: Story = { args: { file: shipIssue() } }
 
-/** A Ship project: status, lead and key, in the order Ship's manifest gives them. */
+/** A Ship project: status, lead and key, in the order Ship's manifest gives them; status and lead the pickers its card has. */
 export const Project: Story = { args: { file: shipProject() } }
 
 /** An issue nobody has written a description for: the text starts empty, as a new page does. */
@@ -132,7 +142,7 @@ export const Loading: Story = { args: { file: shipIssue() }, render: () => <File
 /** A file you cannot read, or that is gone: the two read alike. */
 export const NoAccess: Story = { args: { file: shipIssue() }, render: () => <FilePage file={null} loading={false} /> }
 
-/** Archived in Ship: title, summary and text read-only; the comments stay open. */
+/** Archived in Ship: title, summary and text read-only; the comments only show, with the line every app shows in the box's place. */
 export const Archived: Story = { args: { file: shipIssue({ archived: true }) } }
 
 /** A save refused when you leave the text — the relay said no, or the sign-in ended: your text stays, and the line says so. */

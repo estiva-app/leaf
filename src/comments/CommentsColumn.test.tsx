@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeAll, onTestFinished } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
@@ -413,6 +413,23 @@ describe('the comments column', () => {
       })
       expect(row.textContent).toContain('The export drops the tables.')
       expect(row.closest('p')).toBeNull()
+    })
+
+    it('draws another of this page’s comments as the kit’s message row and chip: its author by name, its words, and a link to this page’s comments', async () => {
+      const first = comment([], 'The export drops the tables.')
+      const reference = `nostr:${encodeNevent({ id: first.id, relays: [] })}`
+      const alone = comment([['q', first.id]], `Same as\n${reference}`)
+      const inSentence = comment([['q', first.id]], `Same as ${reference} again`)
+      await open([profile(AUTHOR, 'QA-1'), first, alone, inSentence])
+      const row = await waitFor(() => {
+        const found = document.querySelector<HTMLElement>(`[data-comment-id="${alone.id}"] [data-comment-row="${first.id}"]`)
+        expect(found && within(found).queryByText('QA-1')).toBeTruthy()
+        return found!
+      })
+      expect(within(row).getByText('The export drops the tables.')).toBeTruthy()
+      expect(within(row).getByText('QA-1').closest('a')?.getAttribute('href')).toMatch(/^\/document\/.+#comments$/)
+      const chip = await waitFor(() => within(document.querySelector<HTMLElement>(`[data-comment-id="${inSentence.id}"]`)!).getByText('QA-1: The export drops the tables.'))
+      expect(chip.closest('a')?.getAttribute('href')).toMatch(/^\/document\/.+#comments$/)
     })
   })
 })
@@ -1236,6 +1253,79 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
   })
 
+  /** A `kind:5` its author signed, naming `address`: a trusted deletion (SPEC §13.6.1). */
+  const deletion = (address: string): SignedEvent => ({
+    id: `${address.split(':')[2].replace(/-/g, '').padEnd(62, '0').slice(0, 62)}55`,
+    pubkey: address.split(':')[1],
+    created_at: 1_760_000_500,
+    kind: 5,
+    tags: [['a', address], ['k', address.split(':')[0]]],
+    content: '',
+    sig: '',
+  })
+
+  it('a sent comment’s card for a file its author deleted says the issue was deleted, not that it is not available (widget review, item 56)', async () => {
+    const D = '88888888-8888-4888-8888-888888888888'
+    const GONE = `30851:${SHIP}:${D}`
+    await open([...EVENTS, deletion(GONE), comment([['embed', GONE, 'detailed']], `See\n${uriOf(GONE)}`)])
+    await waitFor(() => expect(document.querySelector('[data-comment-id] [data-card="detailed"]')?.textContent).toContain('Issue deleted'))
+  })
+
+  it('a sent comment’s part of a page its author deleted says that part’s page was deleted (widget review, items 56 and 57)', async () => {
+    const D = '99999999-9999-4999-8999-999999999999'
+    const GONE = `30842:${AUTHOR}:${D}`
+    await open([...EVENTS, deletion(GONE), comment([['part', GONE, 'b1b1b1b1b1b1']], `see ${uriOf(GONE)} here`)])
+    await waitFor(() => expect(document.querySelector('[data-part="deleted"]')?.textContent).toBe('A part of this document deleted'))
+  })
+
+  it('a quote of a comment reads an app link in it as what it names, never the raw URL (widget review, item 20)', async () => {
+    const first = comment([], `Same as ${ISSUE_URL} then`)
+    const second = comment([['q', first.id]], `See\nnostr:${encodeNevent({ id: first.id, relays: [] })}`)
+    await open([...EVENTS, first, second])
+    const row = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>(`[data-comment-id="${second.id}"] [data-comment-row="${first.id}"]`)
+      expect(found?.textContent).toContain('Same as Issue then')
+      return found!
+    })
+    expect(row.textContent).not.toContain('https://')
+  })
+
+  it('a sent comment’s part of another page is labelled a document, and its title and Open take you to that page at the block, in Leaf', async () => {
+    await open([...EVENTS, comment([['part', TWO_ADDRESS, TWO_BLOCK]], `see ${PART_URL}`)])
+    const part = await waitFor(() => {
+      const drawn = document.querySelector<HTMLElement>('[data-part="resolved"]')
+      expect(drawn).not.toBeNull()
+      return drawn!
+    })
+    expect(within(part).getByText('A part of this document')).toBeTruthy()
+    const atBlock = new URL(PART_URL)
+    const was = `${window.location.pathname}${window.location.hash}`
+    onTestFinished(() => window.history.replaceState(null, '', was))
+    expect(within(part).getByRole('link', { name: 'Two' }).getAttribute('href')).toBe(`${atBlock.pathname}${atBlock.hash}`)
+    act(() => void fireEvent.click(within(part).getByRole('button', { name: 'Open' })))
+    expect(`${window.location.pathname}${window.location.hash}`).toBe(`${atBlock.pathname}${atBlock.hash}`)
+  })
+
+  it('a sent comment’s part of a Ship issue opens the issue in Ship at the block, in a new tab: Open in Ship', async () => {
+    const D = '77777777-7777-4777-8777-777777777777'
+    const PART_ISSUE = `30851:${SHIP}:${D}`
+    const text = descriptionTextToBlockDocument('# Fix it too\n\nThe issue’s block.')
+    const block = blockIds(text)[1]
+    files.known[uriOf(PART_ISSUE)] = { ...object(PART_ISSUE, 'Fix it too', text), appName: 'Ship', openUrl: `https://ship.example/o/${uriOf(PART_ISSUE).slice('nostr:'.length)}` }
+    const atBlock = `https://ship.example/issue/fix-it-too-${D}#block-${block}`
+    await open([...EVENTS, file(30851, SHIP, D), comment([['part', PART_ISSUE, block]], `see ${atBlock}`)])
+    const part = await waitFor(() => {
+      const drawn = document.querySelector<HTMLElement>('[data-part="resolved"]')
+      expect(drawn).not.toBeNull()
+      return drawn!
+    })
+    await waitFor(() => expect(within(part).getByRole('link', { name: 'Fix it too' }).getAttribute('href')).toBe(atBlock))
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    onTestFinished(() => opened.mockRestore())
+    act(() => void fireEvent.click(within(part).getByRole('button', { name: 'Open in Ship' })))
+    expect(opened).toHaveBeenCalledWith(atBlock, '_blank', 'noopener,noreferrer')
+  })
+
   it('a sent comment’s card for an issue’s path on Leaf’s host opens Leaf at that address, not where the issue opens (LTX-6)', async () => {
     const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
     const was = files.known[uriOf(ISSUE)]
@@ -1353,6 +1443,36 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       expect(named(e.tags, 'embed')).toEqual([])
       expect(named(e.tags, 'a')).toEqual([['a', ISSUE]])
     })
+
+    it('shows the card the comment already has under the edit box, with its ✕, and a save that keeps it leaves its cards as they are', async () => {
+      const own = { ...comment([['embed', ISSUE, 'detailed']], `see ${ISSUE_URL}`), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} again `)
+      await waitFor(() => expect(under()?.textContent).toContain('Fix it'))
+      expect(within(under()!).getByRole('button', { name: 'Remove' })).toBeTruthy()
+      const e = await saved()
+      expect(e.content).toBe(`see ${ISSUE_URL} again`)
+      expect(named(e.tags, 'embed')).toEqual([])
+    })
+
+    it('✕ on the card the comment has, under the edit box, saves the comment with that card taken off', async () => {
+      const own = { ...comment([['embed', ISSUE, 'detailed']], `see ${ISSUE_URL}`), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} again `)
+      await waitFor(() => expect(under()?.textContent).toContain('Fix it'))
+      act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove' })))
+      expect(under()).toBeNull()
+      const e = await saved()
+      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'none']])
+    })
+
+    it('never shows again a card taken off before: the edit box has none, and the save leaves it off', async () => {
+      const own = { ...comment([['embed', ISSUE, 'none']], `see ${ISSUE_URL}`), pubkey: ME }
+      await editSaying(own, `see ${ISSUE_URL} again `)
+      await waitFor(() => expect(asked(ISSUE_D)).toBe(true))
+      await act(async () => {})
+      expect(under()).toBeNull()
+      const e = await saved()
+      expect(named(e.tags, 'embed')).toEqual([])
+    })
   })
 
   it('draws no part of this page under a sent comment, nor a part whose link the body no longer names', async () => {
@@ -1408,6 +1528,21 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     act(() => void fireEvent.click(pill))
     await act(async () => {})
     expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('draws a comment card’s status as words, not its picker, though the card’s own file is not archived', async () => {
+    const address = `30851:${QA2}:open-issue`
+    const uri = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'open-issue', relays: [] })}`
+    files.known[uri] = {
+      ...(files.known[CARD] as object),
+      address,
+      slots: { title: { value: 'An open issue' }, status: { value: 'Todo', colour: 'neutral', field: 'status' } },
+      actions: [{ id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo' }, { value: 'done', label: 'Done' }] }],
+    }
+    const own = { ...comment([['embed', address, 'detailed']], `See\n${uri}`), pubkey: ME }
+    await openArchived([own])
+    await waitFor(() => expect(line(own.id)?.querySelector('[data-card="detailed"]')?.textContent).toContain('Todo'))
+    expect(within(line(own.id)!).queryByRole('combobox', { name: 'Status' })).toBeNull()
   })
 
   it('offers no Comment on selected words of its text', async () => {

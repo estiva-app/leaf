@@ -1,5 +1,11 @@
 import type { Preview } from '@storybook/react-vite'
+import { sb } from 'storybook/test'
 import '../src/index.css'
+
+// The modules a story hands the relay's answers through (`mocked(…)` in its `beforeEach`, Pages/Ship file in Leaf):
+// spied, so a story that hands nothing keeps the real one. Without them those stories threw before drawing.
+sb.mock(import('../src/relay/bridge.ts'), { spy: true })
+sb.mock(import('../src/comments/useThreads.ts'), { spy: true })
 
 // The app's one theme, selected the way the app selects it: on <html>.
 document.documentElement.dataset.theme = "leaf"

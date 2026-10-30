@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
-import { resolvePart, serializeBlockDocument, toRenderTree, type Block, type PartPointer } from '@estiva-app/protocol'
+import { IconExternalLink } from '@tabler/icons-react'
+import { readAbsence, resolvePart, serializeBlockDocument, toRenderTree, type Block, type PartPointer } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { PartCard, RichText, thingKindOf } from '@estiva-app/ui'
+import { Button, PartCard, RichText } from '@estiva-app/ui'
+import { blockLinkOf } from '../document/blockLink'
+import { linkedKindOf } from '../document/linked'
 import { readDocument } from '../document/save'
 import { titleOf } from '../folders/tree'
+import { useOwnerBlockLinker } from '../pages/usePathAddress'
+import { query } from '../relay/bridge'
+import { navigate } from '../route'
 import { referenceOfValue } from './commentLines'
 
 /**
@@ -12,18 +18,33 @@ import { referenceOfValue } from './commentLines'
  */
 const PART_REFRESH_MS = 30_000
 
-/** What a part draws: waiting, the block as it is now, its file without it, or nothing a reader may see. */
-type PartRead =
+/**
+ * Past this height a block is cut behind ShowMore's fade, and opens in place: Peek's and Ship's figure, about six
+ * table rows, so a short table is still drawn whole.
+ */
+const CUT_AT = 160
+
+/**
+ * What a part draws, SPEC §13.6.1's five states and loading: the block as it is now, its file without it (`detached`),
+ * a file with no blocks (`unaddressable`), a file a trusted deletion names (`deleted`), or nothing a reader may see.
+ */
+export type PartRead =
   | { state: 'loading' }
   | { state: 'resolved'; block: Block; object: ForeignObject }
   | { state: 'detached' | 'unaddressable'; object: ForeignObject }
-  | { state: 'unavailable' }
+  | { state: 'unavailable' | 'deleted' }
 
-/** Read one part once. Deleted and not this reader's to see read the same (Miky, 15 Oct): no title, no words. */
+/**
+ * Read one part once. A read that comes back empty asks whether a trusted deletion names the file (protocol's
+ * `readAbsence`): deleted says so, and anything else is not this reader's to see, with no title and no words.
+ */
 async function readPart(pointer: PartPointer): Promise<PartRead> {
   const reference = referenceOfValue(pointer.address)
   const object = reference ? await readDocument(reference.slice('nostr:'.length)) : null
-  if (!object || object.unreachable) return { state: 'unavailable' }
+  if (!object || object.unreachable) {
+    const absence = await readAbsence(pointer.address, query).catch(() => 'unreadable' as const)
+    return { state: absence === 'deleted' ? 'deleted' : 'unavailable' }
+  }
   const body = object.slots.body
   if (!body) return { state: 'unaddressable', object }
   const part = resolvePart(pointer.block, { value: body.value, format: body.format === 'blocks' ? 'blocks' : 'marker' })
@@ -69,29 +90,64 @@ function usePart(pointer: PartPointer): PartRead {
 }
 
 /**
+ * Where a part opens, at its block: a Leaf page here, in this tab; another app's file on its own app's host, in a new
+ * tab, when that app declares a link to a block (Ship's `#block-<block>`), else at the file's own address. Only an
+ * https address of another app is followed, as every other link to another app: it comes from a manifest anyone may
+ * publish.
+ */
+function usePlace(object: ForeignObject | undefined, block: string): { href: string; whole: string; here: boolean } | undefined {
+  const own = object ? blockLinkOf(object, block) : undefined
+  const away = object && !own && object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : undefined
+  const linker = useOwnerBlockLinker(away ? object! : null, away ? new URL(away).origin : undefined)
+  if (own) {
+    const url = new URL(own)
+    return { href: `${url.pathname}${url.search}${url.hash}`, whole: `${url.pathname}${url.search}`, here: true }
+  }
+  if (!away) return undefined
+  const atBlock = linker?.(block, object!.slots.title?.value)
+  return { href: atBlock && new URL(atBlock).origin === new URL(away).origin ? atBlock : away, whole: away, here: false }
+}
+
+/**
  * One block of another page or issue, live under a comment or under the box
- * while it is written (SPEC §13.6.1): the package's PartCard frame around the
- * block as it is now, as Peek draws a message's part.
+ * while it is written (SPEC §13.6.1): read here, and drawn by {@link PartFrame}.
  */
 export function PartView({ pointer }: { pointer: PartPointer }) {
-  const read = usePart(pointer)
-  const kind = thingKindOf(Number(pointer.address.split(':')[0]))
-  if (read.state === 'loading' || read.state === 'unavailable') {
+  return <PartFrame pointer={pointer} read={usePart(pointer)} />
+}
+
+/**
+ * A part from a read that has already happened: the package's PartCard frame
+ * around the block as it is now, as Peek and Ship draw a message's part — cut
+ * behind Show more when it is long, and the way to it, at the block, under it:
+ * "Open" when it stays in Leaf, "Open in <app>" when it leaves (Ship's words,
+ * Miky 2026-10-09). A document is labelled "Document", by its type. Every
+ * other state is the kit's, in the SPEC's words; one that cannot be shown
+ * opens the whole file.
+ */
+export function PartFrame({ pointer, read }: { pointer: PartPointer; read: PartRead }) {
+  const kind = linkedKindOf(Number(pointer.address.split(':')[0]))
+  const object = 'object' in read ? read.object : undefined
+  const place = usePlace(object, pointer.block)
+  if (read.state !== 'resolved') {
     return (
-      <div data-part={read.state} data-part-address={pointer.address}>
-        {read.state === 'loading' ? <PartCard state="loading" kind={kind} /> : <PartCard state="unavailable" kind={kind} noun={kind.charAt(0).toUpperCase() + kind.slice(1)} />}
+      <div data-part={read.state} data-part-address={pointer.address} data-part-block={object ? pointer.block : undefined}>
+        <PartCard state={read.state} kind={object ? linkedKindOf(object.kind) : kind} href={read.state === 'unaddressable' ? place?.whole : undefined} />
       </div>
     )
   }
-  const opener = read.object.openUrl && /^https?:\/\//i.test(read.object.openUrl) ? read.object.openUrl : undefined
+  const frame = { kind: linkedKindOf(read.object.kind), heading: titleOf(read.object), href: place?.href }
+  // A Button, not a Link, by Katerina's call (2026-10-08): the way out reads as an action, level with Show more.
+  const open = place ? (
+    <Button size="small" leadingIcon={<IconExternalLink stroke={1.5} className="size-3.5" />} onClick={() => (place.here ? navigate(place.href) : window.open(place.href, '_blank', 'noopener,noreferrer'))}>
+      {place.here ? 'Open' : `Open in ${read.object.appName ?? 'app'}`}
+    </Button>
+  ) : undefined
   return (
     <div data-part={read.state} data-part-address={pointer.address} data-part-block={pointer.block}>
-      <PartCard kind={thingKindOf(read.object.kind)} heading={titleOf(read.object)} href={opener}>
-        {read.state === 'resolved' ? (
-          <RichText blocks={toRenderTree(serializeBlockDocument({ type: 'doc', content: [read.block] }), 'blocks')} size="small" />
-        ) : (
-          <span className="text-caption italic text-text-muted">{read.state === 'detached' ? 'This part was deleted' : "This part can't be shown"}</span>
-        )}
+      {/* An attachment is never cut: its card is already the thumbnail. */}
+      <PartCard {...frame} action={open} maxHeight={read.block.type === 'attachment' ? Infinity : CUT_AT}>
+        <RichText blocks={toRenderTree(serializeBlockDocument({ type: 'doc', content: [read.block] }), 'blocks')} size="small" />
       </PartCard>
     </div>
   )

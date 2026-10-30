@@ -70,19 +70,21 @@ export function useOwnerPath(file: ForeignObject | null): string | null {
 /**
  * Leaf's link to a block of another app's file (`ownerBlockLinker`), once the
  * manifests are read; undefined until then and when its app declares none.
- * Read again only when the file is another one, not on each live save of it.
+ * `origin` puts another host in front: the file's own app's, for a part that
+ * opens there. Read again only when the file is another one, not on each live
+ * save of it.
  */
-export function useOwnerBlockLinker(file: Pick<ForeignObject, 'kind' | 'address' | 'openUrl'> | null): ReturnType<typeof ownerBlockLinker> {
+export function useOwnerBlockLinker(file: Pick<ForeignObject, 'kind' | 'address' | 'openUrl'> | null, origin?: string): ReturnType<typeof ownerBlockLinker> {
   const kind = file?.kind
   const address = file?.address
   const openUrl = file?.openUrl
-  const key = kind !== undefined && address && openUrl ? `${kind} ${address} ${openUrl}` : null
+  const key = kind !== undefined && address && openUrl ? `${kind} ${address} ${openUrl} ${origin ?? ''}` : null
   const [found, setFound] = useState<{ key: string; linker: ReturnType<typeof ownerBlockLinker> } | null>(null)
   useEffect(() => {
     if (!key) return
     let live = true
     void declaredManifests()
-      .then((manifests) => ownerBlockLinker({ kind: kind!, address, openUrl }, manifests))
+      .then((manifests) => ownerBlockLinker({ kind: kind!, address, openUrl }, manifests, origin))
       .catch(() => undefined)
       .then((linker) => {
         if (live) setFound({ key, linker })
@@ -90,6 +92,6 @@ export function useOwnerBlockLinker(file: Pick<ForeignObject, 'kind' | 'address'
     return () => {
       live = false
     }
-  }, [key, kind, address, openUrl])
+  }, [key, kind, address, openUrl, origin])
   return key && found?.key === key ? found.linker : undefined
 }

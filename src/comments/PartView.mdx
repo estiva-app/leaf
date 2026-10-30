@@ -1,0 +1,46 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './PartView.stories'
+
+<Meta of={Stories} />
+
+# PartView
+
+One block of another page or issue, live under a comment or under the box
+(SPEC §13.6.1), in the kit's **PartCard** frame: what it is part of, then the
+block as it is now.
+
+**Seen in**: *Comments/PartView*: **Of A Document**, **Long**, **Of A Ship
+Issue**, **Loading**, **Not Available**, **Deleted**, **Block Deleted**,
+**Cannot Be Shown**; under a sent comment and under the comment box.
+
+## When
+
+- A block link in a comment: the part the comment carries (`part`).
+
+## When not
+
+- A whole file named in a comment → **CommentCard**, its card.
+- A block of the page the comment is on: it draws nothing, its chip is enough.
+
+## How
+
+```tsx
+import { PartView } from './PartView'
+
+<PartView pointer={{ address, block }} />
+```
+
+`PartFrame` draws a read already made, for a story.
+
+## What it owns
+
+- Reading the part, again every 30 s while the tab is visible. A read that
+  comes back empty asks whether a trusted deletion names the file (protocol's
+  `readAbsence`): "deleted" then, else "not available" (SPEC §13.6.1).
+- Which of the SPEC's five states it is in, drawn by the kit's **PartCard**
+  states in their words; one that cannot be shown links to the whole file.
+- Where it opens, at the block: a Leaf document here, in this tab ("Open");
+  another app's file in that app, in a new tab ("Open in Ship"), at the block
+  when the app declares a link to one.
+- A long block cut behind Show more at 160px, as Peek and Ship cut theirs.
+- A document labelled "Document", by its type.

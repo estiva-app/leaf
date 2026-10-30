@@ -1,12 +1,17 @@
-import { useState } from 'react'
-import { referenceToPointer, stripInlineFormatting } from '@estiva-app/protocol'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { openingWords } from '@estiva-app/conversation'
+import { KIND, referenceToPointer } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { linkStateFrom, useToast, type LinkState, type LinkedFromOptions, type LinkedKind } from '@estiva-app/ui'
+import { linkStateFrom, loadingShapeOf, thingKindOf, useToast, type LinkState, type LinkedFromOptions, type LinkedKind, type LoadingShape } from '@estiva-app/ui'
 import { links } from '../comments/links'
-import { useDirectory } from '../comments/people'
+import { knownName, useDirectory } from '../comments/people'
+import { viewerPubkey } from '../relay/bridge'
+import { COMMENTS_HASH, pagePath } from '../route'
 import { useCardConversation } from './cardConversation'
-import { rereadReference, useFile } from './references'
+import { isDeleted, rereadReference, useFile } from './references'
 import { saveCardChoice } from './save'
+import { cardShapes } from './linkMemory'
+import { sharesText } from './writable'
 
 /*
   What a link in a page or a comment stands for, as the kit's chip, row and
@@ -35,6 +40,15 @@ function kindOfUri(uri: string): number | undefined {
   }
 }
 
+/**
+ * What an event kind draws as: a document is a page of text, with its own icon and the word "Document", never the
+ * generic file another app's would get.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-is-its-own-type-of-file.md
+ */
+export function linkedKindOf(kind: number | undefined): LinkedKind {
+  return (kind !== undefined && KIND_WORDS[kind]?.kind) || thingKindOf(kind)
+}
+
 /** What a reference names, by its icon and its word, before anything has been read. */
 function unreadOf(uri: string): { kind: LinkedKind; noun: string } {
   if (/^nostr:(?:nevent1|note1)/i.test(uri)) return { kind: 'message', noun: 'Message' }
@@ -53,7 +67,10 @@ function openerOf(object: { openUrl?: string }, written?: string): string {
 
 /**
  * Where a reference's read stands, for the kit: `undefined` is still read,
- * `null` an answer of nothing. `written` is the URL the text wrote for it.
+ * `null` an answer of nothing. `written` is the URL the text wrote for it:
+ * one that cannot be read stays that URL (SPEC §13.1), so "not available" and
+ * "deleted" are only for a `nostr:` reference. A file a trusted deletion names
+ * says it was deleted (SPEC §13.6.1), not that it is not available.
  */
 export function linkStateOf(
   uri: string,
@@ -61,40 +78,105 @@ export function linkStateOf(
   written?: string,
   more: Pick<LinkedFromOptions, 'onAct' | 'conversation' | 'directory'> = {},
 ): LinkState {
-  return linkStateFrom(object, unreadOf(uri), {
+  const gone = (object === null || !!object?.unreachable) && isDeleted(uri)
+  const url = written && /^https?:\/\//i.test(written) ? written : undefined
+  return linkStateFrom(gone ? null : object, { ...unreadOf(uri), ...(gone ? { deleted: true } : {}), ...(url ? { url } : {}) }, {
     hrefOf: (file, top) => openerOf(file, top ? written : undefined),
-    previewText: (body) => stripInlineFormatting(body).trim(),
+    // A message's words as every app previews them: an app link reads as what it names, a `nostr:` one by its type word.
+    previewText: (body, people) => openingWords(body, (pubkey) => people?.[pubkey]?.displayName ?? knownName(pubkey), { resolveLink: links.known }),
     ...more,
   })
 }
 
 /**
- * A link's state with what a card adds: its comment count, and its status and
- * owner pickers, each change written and the file read again, since the relay
- * is the authority on whether it happened. A field its own app shares may be
- * changed from its card in any app (Miky, 21 Oct). The choice shows at once
- * and is held until that read lands.
+ * Where a file's comment count opens: its conversation. Leaf shows a file's
+ * comments beside its page, so a file Leaf opens as a page (its own
+ * documents, a file whose app shares its text) opens there with them shown
+ * (`COMMENTS_HASH`). Any other file opens in its own app, as its title does:
+ * Ship's count does the same for a file it does not own.
  */
-export function useCardLinkState(uri: string, written?: string): LinkState {
-  const read = useFile(uri)
-  const [chosen, choose] = useState<{ actionId: string; value: string } | null>(null)
-  const object = read && chosen ? { ...read, actions: read.actions.map((one) => (one.id === chosen.actionId ? { ...one, current: chosen.value } : one)) } : read
+function conversationOf(file: ForeignObject, opens: string): string {
+  if (!file.address || !sharesText(file) || (file.kind !== KIND.DOCUMENT && !file.naddr)) return opens
+  const title = file.slots.title?.isPubkey ? undefined : file.slots.title?.value
+  return `${pagePath({ kind: file.kind, address: file.address, naddr: file.naddr, title })}${COMMENTS_HASH}`
+}
+
+/** A read file's comment count and where it opens, once counted (5ebf2756); nothing for a file with nowhere to open. */
+function useConversation(read: ForeignObject | null | undefined, written?: string): LinkedFromOptions['conversation'] {
   const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
-  const directory = useDirectory()
+  const opens = read ? openerOf(read, written) : ''
+  return read && count !== undefined && opens ? { count, href: conversationOf(read, opens) } : undefined
+}
+
+/** A link alone on its line, with its comment count, as a card has (Katerina, 30 Oct: the count on rows too). */
+export function useRowLinkState(uri: string, written?: string): LinkState {
+  const read = useFile(uri)
+  const conversation = useConversation(read, written)
+  return linkStateOf(uri, read, written, conversation ? { conversation } : {})
+}
+
+const Acts = createContext(true)
+
+/**
+ * Whether the reader may change a file from its card here: not on an archived
+ * page or in its closed comments, where a card's status and owner read as
+ * words (Katerina, 30 Oct). A signed-out reader never may.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-archived-file-is-read-only-in-every-app.md
+ */
+export const CardActsProvider = Acts.Provider
+
+/**
+ * A file's status and owner pickers, as its card offers them: each change
+ * written, and shown at once until the file is read again (`reread`, or a new
+ * read handed in), since the relay is the authority on whether it happened. A
+ * refused change says why. No `onAct` where the reader may not change it.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
+ */
+export function useFileChoices(
+  read: ForeignObject | null | undefined,
+  reread?: () => Promise<void>,
+): { object: ForeignObject | null | undefined; onAct?: (actionId: string, value: string) => void } {
+  const [chosen, choose] = useState<{ on: ForeignObject; actionId: string; value: string } | null>(null)
+  // Held for the read it was made on: the next read is the relay's answer.
+  const held = read && chosen?.on === read ? chosen : null
+  const object = read && held ? { ...read, actions: read.actions.map((one) => (one.id === held.actionId ? { ...one, current: held.value } : one)) } : read
+  const acts = useContext(Acts) && !!viewerPubkey()
   const { showToast } = useToast()
-  const onAct = async (actionId: string, value: string) => {
+  const act = async (actionId: string, value: string) => {
     if (!read) return
-    choose({ actionId, value })
+    choose({ on: read, actionId, value })
     const result = await saveCardChoice(read, actionId, value)
     // The picker goes back to what the relay holds, so say why rather than let it look like a slip.
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
-    await rereadReference(uri)
-    choose(null)
+    if (reread) await reread()
+    if (!result.ok || reread) choose(null)
   }
-  const href = object ? openerOf(object, written) : ''
-  return linkStateOf(uri, object, written, {
-    onAct: (actionId, value) => void onAct(actionId, value),
+  return { object, ...(acts ? { onAct: (actionId: string, value: string) => void act(actionId, value) } : {}) }
+}
+
+/**
+ * A link's state with what a card adds: its comment count, and its status and
+ * owner pickers ({@link useFileChoices}), the file read again after each
+ * change. A field its own app shares may be changed from its card in any app
+ * (Miky, 21 Oct). While it is read, its placeholder takes the shape the card
+ * last drew at on this device (`cardShapes`), so nothing around it moves.
+ */
+export function useCardLinkState(uri: string, written?: string): LinkState {
+  const read = useFile(uri)
+  const { object, onAct } = useFileChoices(read, () => rereadReference(uri))
+  const conversation = useConversation(read, written)
+  const directory = useDirectory()
+  const state = linkStateOf(uri, object, written, {
+    ...(onAct ? { onAct } : {}),
     directory,
-    ...(count !== undefined && href ? { conversation: { count, href } } : {}),
+    ...(conversation ? { conversation } : {}),
   })
+  // Noted once it draws, by its shape's words, so a redraw of the same card writes nothing.
+  const drawn = state.state === 'ready' ? JSON.stringify(loadingShapeOf(state.linked)) : undefined
+  useEffect(() => {
+    if (drawn) cardShapes.note(uri, JSON.parse(drawn) as LoadingShape)
+  }, [uri, drawn])
+  if (state.state !== 'loading') return state
+  const shape = cardShapes.of(uri, state.kind)
+  return shape ? { ...state, shape } : state
 }

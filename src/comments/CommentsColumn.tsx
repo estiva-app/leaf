@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { Extension } from '@tiptap/core'
 import type { Editor, JSONContent } from '@tiptap/react'
-import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconMessage, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
+import { IconArrowBackUp, IconCircleCheck, IconDotsVertical, IconPencil, IconTrash, IconX } from '@tabler/icons-react'
 import {
   boxReadOf,
   composerDocument,
@@ -19,7 +19,7 @@ import {
   REACTION_HORIZON,
   type DraftStore,
 } from '@estiva-app/conversation'
-import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Imeta } from '@estiva-app/protocol'
+import { contentFormatOf, decodeNevent, decodeNpub, encodeNaddr, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
 import {
   AddReactionButton,
   Card,
@@ -30,6 +30,8 @@ import {
   FieldLine,
   IconButton,
   InlineChip,
+  LinkChip,
+  LinkRow,
   Menu,
   MenuItem,
   MenuPanel,
@@ -40,6 +42,7 @@ import {
   SkeletonList,
   WithTooltip,
   useToast,
+  type LinkState,
 } from '@estiva-app/ui'
 import {
   CommentBox,
@@ -61,6 +64,7 @@ import {
 import { profileOf } from '../document/save'
 import { commentReferenceSections, subscribeReferences, type ReferableComment } from '../document/referencePicker'
 import { ReferencesProvider, useReferences } from '../document/references'
+import { CardActsProvider } from '../document/linked'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
 import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
@@ -70,6 +74,7 @@ import { PartView } from './PartView'
 import { exactly, whenOf } from '../home/recent'
 import { deleteComment, editComment, removeCard, postComment, postReply, react, setResolved, unreact, type Anchor, type Commented, type CommentItem, type Thread, type WriteResult, type Written } from './comments'
 import { viewerPubkey } from '../relay/bridge'
+import { COMMENTS_HASH, pagePath } from '../route'
 import { uploadFile } from '../relay/blobs'
 import { CommentFiles } from './CommentFiles'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
@@ -182,27 +187,34 @@ const linkChips = () => LinkChips.configure({ referenceOf: linkReferenceOf, ask:
 /** What an app link names for the box, as answered so far. */
 const LINK_CONTEXT = { resolveLink: links.known, blockOf: links.knownBlock }
 
-/** What a box's document names, read as it will be sent; `previous` makes it an edit's, where only a file named first gets a card. */
-const linksOfBox = (body: JSONContent, here: string | undefined, previous?: readonly string[]) => boxReadOf(body as EditorDocument, { ...LINK_CONTEXT, here, previous })
+/**
+ * What a box's document names, read as it will be sent, by the package's one rule. An edit's (`previous`, what the
+ * comment named before, and `folded`, its cards) shows the comment's own card while the edit still names its file, a
+ * card taken off before never again, and a card for a file the edit names first (Katerina, 30 Oct).
+ */
+const linksOfBox = (body: JSONContent, here: string | undefined, previous?: readonly string[], folded?: readonly Embed[]) =>
+  boxReadOf(body as EditorDocument, { ...LINK_CONTEXT, here, previous, folded })
 
 /**
  * What shows under the box while a comment is written or edited (COMM-8): the
  * one file it names, as the card it will be sent with, and the live part of
  * each block link — read as Peek reads its box (`boxReadOf`), from what each
  * app link names as answered so far. Each read asks about the links not
- * answered yet; an answer coming back reads again. An edit's (`previous`, what
- * the comment named before) shows a card only for a file it names first, and
- * the box shows no part under an edit, which carries none.
+ * answered yet; an answer coming back reads again. An edit's shows the card
+ * the comment has now, with its ✕, so it can be seen and taken off there
+ * (Katerina, 30 Oct); with none, a card only for a file the edit names first
+ * ({@link linksOfBox}). The box shows no part under an edit, which carries none.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md
  */
-function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUnder {
+function boxUnder(here: string | undefined, previous?: readonly string[], folded?: readonly Embed[]): BoxUnder {
   return {
     read: (body) => {
-      const read = linksOfBox(body, here, previous)
+      const read = linksOfBox(body, here, previous, folded)
       void links.ask(read.urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
       const uri = read.card ? referenceOfValue(read.card) : undefined
       return {
+        // The box draws it in its own AttachedCard, with the ✕; the kit draws the one inside as its card alone.
         card: read.card && uri ? { value: read.card, view: <CommentCard uri={uri} /> } : undefined,
         parts: read.parts.map((part) => ({ key: `${part.address}#${part.block}`, view: <PartView pointer={part} /> })),
         names: [...read.values, ...read.parts.map((part) => part.address)],
@@ -259,9 +271,11 @@ function Box({
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
   const here = useContext(PageHere)
-  // What the comment named before the edit, so only a file the edit names first gets a card, as in Peek's edit box.
+  // What the comment named before the edit, so only a file the edit names first gets a card, as in Peek's edit box; and
+  // the cards it had then, so the one it shows is under the edit box too.
   const [previous] = useState(() => (editing ? namedBefore(editing.comment.body, LINK_CONTEXT) : undefined))
-  const under = useMemo(() => boxUnder(here, previous), [here, previous])
+  const [folded] = useState(() => editing?.comment.cards)
+  const under = useMemo(() => boxUnder(here, previous, folded), [here, previous, folded])
   const send = async (body: JSONContent, files: readonly BoxFile[] = [], shown: BoxSentUnder = {}): Promise<SendAnswer> => {
     const attached = filesOf(files)
     if (editing) {
@@ -269,8 +283,8 @@ function Box({
       const before = editing.comment.files
       if (!composerText(body as EditorDocument).text && attached.length === 0) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
       const same = attached.length === before.length && attached.every((file, i) => file.x === before[i].x)
-      // A file the edit names first adds its card to the set the comment has, unless ✕ took it off under the box.
-      const read = linksOfBox(body, here, previous)
+      // The card it had stays unless ✕ took it off under the box; with none, a file the edit names first adds its card, unless ✕ took that off.
+      const read = linksOfBox(body, here, previous, folded)
       const cards = embedsToEdit(read, new Set(read.card && read.card !== shown.card ? [read.card] : []), editing.comment.cards)
       const result = await onSend({ ...composerText(body as EditorDocument), ...(same ? {} : { files: attached }), ...(cards ? { cards } : {}) })
       return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
@@ -533,8 +547,9 @@ function CommentLine({
     const readable = new Set(readableKey.split('\n'))
     return placeComment(blocks, comment.event, { here, resolveLink, readable: (reference) => readable.has(reference), cards: comment.cards })
   }, [blocks, comment, here, resolveLink, readableKey])
-  const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} opensAt={opensAt} />
-  const row = (line: RowLine) => <BodyRow line={line} nameOf={named} page={page} fallback={reference(line.reference, line.url)} />
+  const messageOf = (quoted: CommentItem) => messageLinkOf(quoted, named, pictures, now, here)
+  const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} messageOf={messageOf} opensAt={opensAt} />
+  const row = (line: RowLine) => <BodyRow line={line} page={page} messageOf={messageOf} fallback={reference(line.reference, line.url)} />
   return (
     <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
@@ -611,12 +626,38 @@ function CommentLine({
 }
 
 /**
+ * One of this page's comments as the kit draws a message (widget review, item
+ * 53): its author's face and name, its opening words, and when. A comment has
+ * no address of its own in Leaf, so it opens the page it is on with its
+ * comments shown (`here`, `COMMENTS_HASH`).
+ */
+function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string | undefined, pictures: Record<string, string>, now: number, here: string | undefined): LinkState {
+  const name = nameOf(quoted.by) ?? 'Someone'
+  const picture = pictures[quoted.by]
+  const [kind, pubkey, ...d] = (here ?? '').split(':')
+  const page = here ? `${pagePath({ kind: Number(kind), address: here, naddr: encodeNaddr({ kind: Number(kind), pubkey, identifier: d.join(':'), relays: [] }) })}${COMMENTS_HASH}` : ''
+  return {
+    state: 'ready',
+    linked: {
+      id: quoted.id,
+      kind: 'message',
+      title: name,
+      href: page,
+      author: { name, ...(picture ? { picture } : {}) },
+      // An app link in it reads as what it names, never the raw URL (widget review, item 20).
+      body: openingWords(quoted.body, nameOf, { resolveLink: links.known }),
+      updated: whenOf(quoted.at * 1000, now),
+    },
+  }
+}
+
+/**
  * A comment's line that is only a link to a file or a message, as its row
  * (SPEC §13.2): a file as the page's compact card, one of this page's comments
- * as its author and opening words. Anything else keeps the chip it would draw
- * in a sentence, rather than a row with nothing in it.
+ * as the kit's message row. Anything else keeps the chip it would draw in a
+ * sentence, rather than a row with nothing in it.
  */
-function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; fallback: ReactNode }) {
+function BodyRow({ line, page, messageOf, fallback }: { line: RowLine; page: readonly CommentItem[]; messageOf: (quoted: CommentItem) => LinkState; fallback: ReactNode }) {
   if (line.unreadable) return fallback
   if (/^nostr:naddr1/i.test(line.reference)) {
     return (
@@ -629,21 +670,34 @@ function BodyRow({ line, nameOf, page, fallback }: { line: RowLine; nameOf: (pub
   const quoted = id ? page.find((c) => c.id === id) : undefined
   if (!quoted) return fallback
   return (
-    <Card className="flex items-center gap-2 px-3 py-2" data-comment-row={quoted.id}>
-      <IconMessage size={16} stroke={1.5} />
-      <span className="truncate text-body-2 text-text-secondary">{`${nameOf(quoted.by) ?? 'Someone'}: ${openingWords(quoted.body, nameOf)}`}</span>
-    </Card>
+    <div data-comment-row={quoted.id}>
+      <LinkRow link={messageOf(quoted)} />
+    </div>
   )
 }
 
 /**
  * What a comment's `nostr:` reference draws as, as Peek and Ship draw it: a
  * person as `@Name` (urgent when the comment's `urgent` tags name them, SPEC
- * §13.1), one of this page's comments as its author and opening words, and a
- * file as the page's own chip. Anything else, or anyone without a name, is its
+ * §13.1), one of this page's comments as the kit's message chip, and a file as
+ * the page's own chip. Anything else, or anyone without a name, is its
  * address, quiet.
  */
-function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; urgent: readonly string[]; nameOf: (pubkey: string) => string | undefined; page: readonly CommentItem[]; opensAt?: string }) {
+function BodyReference({
+  uri,
+  urgent,
+  nameOf,
+  page,
+  messageOf,
+  opensAt,
+}: {
+  uri: string
+  urgent: readonly string[]
+  nameOf: (pubkey: string) => string | undefined
+  page: readonly CommentItem[]
+  messageOf: (quoted: CommentItem) => LinkState
+  opensAt?: string
+}) {
   if (/^nostr:npub1/i.test(uri)) {
     const pubkey = pubkeyOf(uri)
     const name = pubkey ? nameOf(pubkey) : undefined
@@ -657,16 +711,7 @@ function BodyReference({ uri, urgent, nameOf, page, opensAt }: { uri: string; ur
   } else if (/^nostr:nevent1/i.test(uri)) {
     const id = eventIdOf(uri)
     const quoted = id ? page.find((c) => c.id === id) : undefined
-    if (quoted) {
-      const words = `${nameOf(quoted.by) ?? 'Someone'}: ${openingWords(quoted.body, nameOf)}`
-      return (
-        <WithTooltip inline label={words}>
-          <InlineChip tone="neutral" icon={<IconMessage size={14} stroke={1.5} />} className="max-w-full">
-            <span className="truncate">{words}</span>
-          </InlineChip>
-        </WithTooltip>
-      )
-    }
+    if (quoted) return <LinkChip link={messageOf(quoted)} />
   } else {
     return <PageLink uri={uri} href={opensAt} />
   }
@@ -1034,77 +1079,80 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   return (
     <PageHere.Provider value={doc.address}>
       <ReferencesProvider value={references}>
-        <Panel
-          title={
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-body-2-strong text-text-primary">Comments</p>
-              {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
-            </div>
-          }
-          bodyRef={setColumnBody}
-          bodyClassName="flex flex-col gap-3 p-3"
-          footer={
-            <div className="flex flex-col gap-2 p-3">
-              {draft && closed === undefined && (
-                <div className="flex items-center gap-2">
-                  <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
-                    <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
-                  </WithTooltip>
-                  <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
-                    <IconX size={16} stroke={1.5} />
-                  </IconButton>
-                </div>
-              )}
-              {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
-              <Box
-                key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
-                placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
-                draftKey={draftKeys.object(address ?? '')}
-                scope={pageScope}
-                people={people}
-                onSend={send}
-                // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
-                onSent={() => onDraft(null)}
-                autoFocus={!!draft && closed === undefined}
-                closed={closed}
-              />
-            </div>
-          }
-        >
-          {threads === null ? (
-            failed ? (
-              <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+        {/* An archived file's comments only show: their cards' status and owner too (PEEKM-8). */}
+        <CardActsProvider value={closed === undefined}>
+          <Panel
+            title={
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-body-2-strong text-text-primary">Comments</p>
+                {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
+              </div>
+            }
+            bodyRef={setColumnBody}
+            bodyClassName="flex flex-col gap-3 p-3"
+            footer={
+              <div className="flex flex-col gap-2 p-3">
+                {draft && closed === undefined && (
+                  <div className="flex items-center gap-2">
+                    <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
+                      <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
+                    </WithTooltip>
+                    <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
+                      <IconX size={16} stroke={1.5} />
+                    </IconButton>
+                  </div>
+                )}
+                {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
+                <Box
+                  key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
+                  placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
+                  draftKey={draftKeys.object(address ?? '')}
+                  scope={pageScope}
+                  people={people}
+                  onSend={send}
+                  // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
+                  onSent={() => onDraft(null)}
+                  autoFocus={!!draft && closed === undefined}
+                  closed={closed}
+                />
+              </div>
+            }
+          >
+            {threads === null ? (
+              failed ? (
+                <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+              ) : (
+                <SkeletonList rows={2} />
+              )
+            ) : all.length === 0 ? (
+              <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
             ) : (
-              <SkeletonList rows={2} />
-            )
-          ) : all.length === 0 ? (
-            <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
-          ) : (
-            <>
-              {open.map(card)}
-              {apart.map(card)}
-              {deleted.length > 0 && (
-                <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                  {deleted.map(card)}
-                </CollapsibleSection>
-              )}
-              {resolved.length > 0 && (
-                <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                  {resolved.map(card)}
-                </CollapsibleSection>
-              )}
-              {(reactionsOmitted > 0 || reactionsCut) && (
-                // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
-                <p className="shrink-0 text-caption text-text-muted">
-                  {reactionsOmitted > 0 &&
-                    `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
-                  {reactionsOmitted > 0 && reactionsCut && ' '}
-                  {reactionsCut && 'Some reactions may be missing.'}
-                </p>
-              )}
-            </>
-          )}
-        </Panel>
+              <>
+                {open.map(card)}
+                {apart.map(card)}
+                {deleted.length > 0 && (
+                  <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                    {deleted.map(card)}
+                  </CollapsibleSection>
+                )}
+                {resolved.length > 0 && (
+                  <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
+                    {resolved.map(card)}
+                  </CollapsibleSection>
+                )}
+                {(reactionsOmitted > 0 || reactionsCut) && (
+                  // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
+                  <p className="shrink-0 text-caption text-text-muted">
+                    {reactionsOmitted > 0 &&
+                      `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
+                    {reactionsOmitted > 0 && reactionsCut && ' '}
+                    {reactionsCut && 'Some reactions may be missing.'}
+                  </p>
+                )}
+              </>
+            )}
+          </Panel>
+        </CardActsProvider>
       </ReferencesProvider>
     </PageHere.Provider>
   )

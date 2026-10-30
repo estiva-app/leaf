@@ -1,7 +1,8 @@
 /**
  * What `[` offers on a Leaf page (SUM-7): files only — a page has no messages
- * — and in a comment box, its messages first (COMM-3); ranked by `@estiva-app/conversation`'s `rankReferences`, the order Peek and
- * Ship draw too. Ship's `api/references.ts` is the template.
+ * — and in a comment box, files then its messages (Katerina, 30 Oct); ranked by `@estiva-app/conversation`'s
+ * `rankReferences`, in its `referenceSectionsOf` order, as Peek and Ship draw them. Ship's `api/references.ts` is the
+ * template.
  *
  * - **This Folder's files**, the listing the tree already read, then, once you
  *   type, **relay search**. Leaf keeps no read markers, so there is no
@@ -14,12 +15,14 @@
  * landing tells the open list to draw again ({@link subscribeReferences}).
  */
 import { useEffect } from 'react'
-import { FILE_TIER, KIND_COMMENT, MESSAGE_TIER, messageReference, openingWords, rankReferences, referenceSearch, type ReferenceCandidate } from '@estiva-app/conversation'
+import { FILE_TIER, KIND_COMMENT, MESSAGE_TIER, messageCandidate, rankReferences, referenceSearch, referenceSectionsOf, type ReferenceCandidate } from '@estiva-app/conversation'
 import { fileCandidates, searchFileReferences, type ForeignObject } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
-import { KindIcon, thingKindOf } from '@estiva-app/ui'
+import { LinkedIcon } from '@estiva-app/ui'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
 import { projections as manifests } from '../relay/manifests'
+import { links } from '../comments/links'
+import { linkedKindOf } from './linked'
 import { query } from '../relay/bridge'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
@@ -47,17 +50,30 @@ const notify = () => listeners.forEach((listener) => listener())
 
 const search = referenceSearch({ search: (text) => searchFileReferences(text, query, { cache: manifests }) })
 
-/** Called while `[`'s list is open; told when the Folder's files or a search answer changes. */
+/**
+ * Called while `[`'s list is open; told when the Folder's files or a search answer changes, or what an app link
+ * names comes back, so a comment's caption reads that link as what it names.
+ */
 export function subscribeReferences(listener: () => void): () => void {
   listeners.add(listener)
   const unsubscribe = search.subscribe(listener)
+  const unlinked = links.changed(listener)
   return () => {
     listeners.delete(listener)
     unsubscribe()
+    unlinked()
   }
 }
 
+/**
+ * One row of `[`'s list, a file's or a message's alike. A message is its
+ * author with its opening words; a file its title, what it is in, its summary,
+ * and its kind's icon — a document is a page of text, not a generic file.
+ */
 function itemOf(candidate: ReferenceCandidate): CaptionedItem {
+  if (candidate.type === 'message') {
+    return { id: candidate.id, label: candidate.title, snippet: candidate.caption, uri: candidate.uri, ...(candidate.search ? { search: candidate.search } : {}) }
+  }
   return {
     id: candidate.id,
     label: candidate.title,
@@ -65,8 +81,7 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
     uri: candidate.uri,
     description: candidate.caption || undefined,
     summary: candidate.summary,
-    // What it is, as the tree's rows and the chips say it.
-    icon: <KindIcon kind={thingKindOf(candidate.kind)} tone="secondary" />,
+    icon: <LinkedIcon kind={linkedKindOf(candidate.kind)} tone="secondary" />,
   }
 }
 
@@ -94,25 +109,20 @@ export interface ReferableComment {
   body: string
 }
 
+/**
+ * A page's comments as `[`'s rows, the package's `messageCandidate` as Peek and
+ * Ship build theirs: the author, the opening words with an app link read as
+ * what it names, and found by their own words, not a link's raw text.
+ */
 const messageRows = (comments: readonly ReferableComment[], tier: number, nameOf: (pubkey: string) => string | undefined): ReferenceCandidate[] =>
-  comments.map((c) => ({
-    id: c.id,
-    uri: messageReference(c.id, KIND_COMMENT),
-    type: 'message' as const,
-    kind: KIND_COMMENT,
-    title: nameOf(c.by) ?? 'Someone',
-    // A comment's opening words, read as Peek and Ship read them (PEEKM-6).
-    caption: openingWords(c.body, nameOf),
-    search: c.body,
-    tier,
-    at: c.at,
-  }))
+  comments.map((c) => messageCandidate({ id: c.id, kind: KIND_COMMENT, author: nameOf(c.by) ?? 'Someone', body: c.body, at: c.at }, tier, nameOf, { resolveLink: links.known }))
 
 /**
- * What `[` offers in a comment box: Messages, then Files. A reply's box offers
- * its own thread's comments first, then the rest of the page's; a new comment's
- * box offers the page's (`here`, with nothing after it), as Ship's boxes do.
- * Files are the page's: this Folder's, then relay search, never the page itself.
+ * What `[` offers in a comment box: Files, then Messages (Katerina, 30 Oct),
+ * in the package's order (`referenceSectionsOf`). A reply's box offers its own
+ * thread's comments first, then the rest of the page's; a new comment's box
+ * offers the page's (`here`, with nothing after it), as Ship's boxes do. Files
+ * are the page's: this Folder's, then relay search, never the page itself.
  */
 export function commentReferenceSections(
   scope: { here: readonly ReferableComment[]; rest: readonly ReferableComment[] },
@@ -120,10 +130,7 @@ export function commentReferenceSections(
   nameOf: (pubkey: string) => string | undefined,
 ): ReferenceSection[] {
   const ranked = rankedFiles(typed, [...messageRows(scope.here, MESSAGE_TIER.here, nameOf), ...messageRows(scope.rest, MESSAGE_TIER.parent, nameOf)])
-  return [
-    { label: REFERENCE_COPY.messages, items: ranked.messages.map((m) => ({ id: m.id, label: m.title, snippet: m.caption, uri: m.uri, search: m.search })) },
-    { label: REFERENCE_COPY.files, items: ranked.files.map(itemOf) },
-  ]
+  return referenceSectionsOf(ranked).map(({ name, items }) => ({ label: REFERENCE_COPY[name], items: items.map(itemOf) }))
 }
 
 /**

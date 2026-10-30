@@ -1,21 +1,15 @@
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, useContext } from 'react'
 import { InlineChip, LinkCard, LinkChip, LinkRow } from '@estiva-app/ui'
 import type { ReferenceViewProps } from '@estiva-app/ui/editor'
 import { decodeNpub } from '@estiva-app/protocol'
 import { knownName } from '../comments/people'
-import { linkStateOf, useCardLinkState } from './linked'
+import { linkStateOf, useCardLinkState, useRowLinkState } from './linked'
 import { useFile } from './references'
 
 const Names = createContext<(pubkey: string) => string | undefined>(knownName)
 
 /** Hands the people's names to every person a page mentions, whose node views React does not otherwise reach. */
 export const PageNamesProvider = Names.Provider
-
-// Outside a page's text (a comment's box) an editable editor counts as being written in.
-const Focused = createContext(true)
-
-/** Says whether the page's text has the caret: a writer's page is always editable, so editable alone is not "being edited". */
-export const PageFocusedProvider = Focused.Provider
 
 /** The person a `nostr:npub` names, or `null` for any other reference. */
 function personOf(uri: string): string | null {
@@ -43,34 +37,30 @@ export function PageLink({ uri, href, place = 'chip', editing = false }: Referen
 
 /** A file's link, read once for the tab and shared with every other link to it. */
 function FileLink({ uri, href, place, editing }: Required<Pick<ReferenceViewProps, 'place' | 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
-  const link = linkStateOf(uri, useFile(uri), href)
-  if (place === 'card') return <PageCard uri={uri} href={href} editing={editing} />
-  if (place === 'row') return <LinkRow link={link} preview={!editing} />
-  return <LinkChip link={link} preview={!editing} />
+  if (place === 'card') return <PageCard uri={uri} href={href} />
+  if (place === 'row') return <PageRow uri={uri} href={href} editing={editing} />
+  return <PageChip uri={uri} href={href} editing={editing} />
+}
+
+/** A link in a sentence: the kit's chip. */
+function PageChip({ uri, href, editing }: Required<Pick<ReferenceViewProps, 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
+  return <LinkChip link={linkStateOf(uri, useFile(uri), href)} preview={!editing} />
+}
+
+/** A link alone on its line: the kit's row, with the file's comment count, which opens its conversation. */
+function PageRow({ uri, href, editing }: Required<Pick<ReferenceViewProps, 'editing'>> & Pick<ReferenceViewProps, 'uri' | 'href'>) {
+  return <LinkRow link={useRowLinkState(uri, href)} preview={!editing} />
 }
 
 /**
- * A link its writer chose to show as its card: the card a comment draws,
- * pickers included, and its values as words while the page's text is being
- * edited (Miky, 21 Oct) — while it has the caret, as Ship's description does.
+ * A link its writer chose to show as its card: the card a comment draws, its
+ * pickers kept while the caret is in the text too (Katerina, 30 Oct; record
+ * a-card-changes-what-a-files-app-shares says words while the text is edited,
+ * and she decided against it). Words only where the reader cannot act
+ * (`CardActsProvider`): an archived page, a signed-out reader. A press on a
+ * picker stays the picker's, not the text's: the kit's reference node keeps it.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
-function PageCard({ uri, href, editing }: Pick<ReferenceViewProps, 'uri' | 'href' | 'editing'>) {
-  const focused = useContext(Focused)
-  const card = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    const element = card.current
-    if (!element) return
-    // ProseMirror sees a press before React does and takes the caret into the text, which turned the card to words
-    // under the pointer, its picker gone before it opened. It leaves alone a press whose default is prevented.
-    const keep = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest('button, [role="combobox"]')) event.preventDefault()
-    }
-    element.addEventListener('mousedown', keep)
-    return () => element.removeEventListener('mousedown', keep)
-  }, [])
-  return (
-    <span ref={card} className="contents">
-      <LinkCard link={useCardLinkState(uri, href)} readOnly={editing && focused} />
-    </span>
-  )
+function PageCard({ uri, href }: Pick<ReferenceViewProps, 'uri' | 'href'>) {
+  return <LinkCard link={useCardLinkState(uri, href)} />
 }

@@ -101,17 +101,19 @@ export const PROFILES: SignedEvent[] = [
   event(0, KATERINA, [], JSON.stringify({ name: 'Katerina' })),
 ]
 
+/** A comment as the column holds it. Its id is an event id, 64 hex as the relay's are, so `[` can name it. */
 function comment(by: string, body: string, minutesAgo: number): CommentItem {
   const at = Math.floor(Date.now() / 1000) - minutesAgo * 60
-  return { id: `c${minutesAgo}`, by, at, body, edited: false, files: [], cards: [], reactions: [], event: event(1111, by, [], body, at) }
+  return { id: `${'c'.repeat(62)}${String(minutesAgo).padStart(2, '0')}`, by, at, body, edited: false, files: [], cards: [], reactions: [], event: event(1111, by, [], body, at) }
 }
 
 /** A file's comments, as the column's read hands them over: one on the whole text with a reply. */
 export function threadsOn(file: ForeignObject): ThreadsState {
+  const root = comment(KATERINA, `Can the row under "${file.slots.title?.value ?? ''}" show the status as words, not only its colour?`, 42)
   const threads: Thread[] = [
     {
-      id: 'c42',
-      root: comment(KATERINA, `Can the row under "${file.slots.title?.value ?? ''}" show the status as words, not only its colour?`, 42),
+      id: root.id,
+      root,
       replies: [comment(MIKY, 'Yes — words beside the mark, as on the card.', 12)],
       resolved: false,
     },

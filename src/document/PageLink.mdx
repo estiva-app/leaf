@@ -9,7 +9,7 @@ A link in Leaf's text, drawn by where it sits with the kit's widgets: the chip
 in a sentence, the row alone on its line, the card in the row's place. A person
 is `@` and their name.
 
-**Seen in**: *Document/PageLink*: **Chip**, **Row**, **As Card**; in a page,
+**Seen in**: *Document/PageLink*: **Chip**, **Row**, **As Card**, **Row With Its Comments**, **Card While Editing**, **Deleted**, **Written Url Not Read**, **Unassigned Card**; in a page,
 in a sent comment, and in the comment box.
 
 ## When
@@ -36,3 +36,12 @@ import { PageLink } from '../document/PageLink'
 - Choosing chip, row or card from `place`, and reading the file through
   **ReferencesProvider** (`useFile`). The look is the kit's `LinkChip`,
   `LinkRow` and `LinkCard`; where a written URL may open is `linkStateOf`'s.
+- The file's comment count on a row as on a card. It opens the conversation:
+  a file Leaf opens as a page opens there with its comments shown
+  (`#comments`), any other file in its own app.
+- A card's status and owner pickers, kept while the caret is in the text.
+  Where the reader cannot act they read as words (`CardActsProvider`): an
+  archived page, its closed comments, a reader who is not signed in.
+- What a link that cannot be read says: the URL it was written as, when it was
+  written as one (SPEC §13.1); else "deleted" when a trusted deletion names its
+  file, and "not available" otherwise (SPEC §13.6.1).
