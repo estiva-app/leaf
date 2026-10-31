@@ -44,13 +44,13 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A block of a Leaf document: "A part of this document", its title and Open take you to it at the block, in Leaf. */
+/** A block of a Leaf document: "A part of this document", its title takes you to it at the block, in Leaf. */
 export const OfADocument: Story = { args: { read: { state: 'resolved', block: SHORT, object: page } } }
 
-/** A long block: cut behind Show more, Open level with it. */
+/** A long block: cut behind Show more. */
 export const Long: Story = { args: { pointer: pointerOf(PAGE, LONG), read: { state: 'resolved', block: LONG, object: page } } }
 
-/** A block of a Ship issue: Open in Ship, in a new tab, at the block when Ship declares a link to one. */
+/** A block of a Ship issue: its title opens it in Ship, in a new tab, at the block when Ship declares a link to one. */
 export const OfAShipIssue: Story = { args: { pointer: pointerOf(ISSUE, SHORT), read: { state: 'resolved', block: SHORT, object: issue } } }
 
 /** While it is read: the card's placeholder, its kind known from the address. */

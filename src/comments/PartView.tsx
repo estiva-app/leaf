@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react'
-import { IconExternalLink } from '@tabler/icons-react'
 import { readAbsence, resolvePart, serializeBlockDocument, toRenderTree, type Block, type PartPointer } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, PartCard, RichText } from '@estiva-app/ui'
+import { PartCard, RichText } from '@estiva-app/ui'
 import { blockLinkOf } from '../document/blockLink'
 import { linkedKindOf } from '../document/linked'
 import { readDocument } from '../document/save'
 import { titleOf } from '../folders/tree'
 import { useOwnerBlockLinker } from '../pages/usePathAddress'
 import { query } from '../relay/bridge'
-import { navigate } from '../route'
 import { referenceOfValue } from './commentLines'
 
 /**
@@ -95,17 +93,17 @@ function usePart(pointer: PartPointer): PartRead {
  * https address of another app is followed, as every other link to another app: it comes from a manifest anyone may
  * publish.
  */
-function usePlace(object: ForeignObject | undefined, block: string): { href: string; whole: string; here: boolean } | undefined {
+function usePlace(object: ForeignObject | undefined, block: string): { href: string; whole: string } | undefined {
   const own = object ? blockLinkOf(object, block) : undefined
   const away = object && !own && object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : undefined
   const linker = useOwnerBlockLinker(away ? object! : null, away ? new URL(away).origin : undefined)
   if (own) {
     const url = new URL(own)
-    return { href: `${url.pathname}${url.search}${url.hash}`, whole: `${url.pathname}${url.search}`, here: true }
+    return { href: `${url.pathname}${url.search}${url.hash}`, whole: `${url.pathname}${url.search}` }
   }
   if (!away) return undefined
   const atBlock = linker?.(block, object!.slots.title?.value)
-  return { href: atBlock && new URL(atBlock).origin === new URL(away).origin ? atBlock : away, whole: away, here: false }
+  return { href: atBlock && new URL(atBlock).origin === new URL(away).origin ? atBlock : away, whole: away }
 }
 
 /**
@@ -119,9 +117,10 @@ export function PartView({ pointer }: { pointer: PartPointer }) {
 /**
  * A part from a read that has already happened: the package's PartCard frame
  * around the block as it is now, as Peek and Ship draw a message's part — cut
- * behind Show more when it is long, and the way to it, at the block, under it:
- * "Open" when it stays in Leaf, "Open in <app>" when it leaves (Ship's words,
- * Miky 2026-10-09). A document is labelled "Document", by its type. Every
+ * behind Show more when it is long. Its title is the way to it, at the block:
+ * a Leaf page in this tab, another app's file in a new tab. There is no "Open"
+ * button beside it, which said again what the title does (Katerina, 31 Oct).
+ * A document is labelled "Document", by its type. Every
  * other state is the kit's, in the SPEC's words; one that cannot be shown
  * opens the whole file.
  */
@@ -137,16 +136,10 @@ export function PartFrame({ pointer, read }: { pointer: PartPointer; read: PartR
     )
   }
   const frame = { kind: linkedKindOf(read.object.kind), heading: titleOf(read.object), href: place?.href }
-  // A Button, not a Link, by Katerina's call (2026-10-08): the way out reads as an action, level with Show more.
-  const open = place ? (
-    <Button size="small" leadingIcon={<IconExternalLink stroke={1.5} className="size-3.5" />} onClick={() => (place.here ? navigate(place.href) : window.open(place.href, '_blank', 'noopener,noreferrer'))}>
-      {place.here ? 'Open' : `Open in ${read.object.appName ?? 'app'}`}
-    </Button>
-  ) : undefined
   return (
     <div data-part={read.state} data-part-address={pointer.address} data-part-block={pointer.block}>
       {/* An attachment is never cut: its card is already the thumbnail. */}
-      <PartCard {...frame} action={open} maxHeight={read.block.type === 'attachment' ? Infinity : CUT_AT}>
+      <PartCard {...frame} maxHeight={read.block.type === 'attachment' ? Infinity : CUT_AT}>
         <RichText blocks={toRenderTree(serializeBlockDocument({ type: 'doc', content: [read.block] }), 'blocks')} size="small" />
       </PartCard>
     </div>
