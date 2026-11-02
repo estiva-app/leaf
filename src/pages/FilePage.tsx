@@ -330,11 +330,12 @@ function DocumentView({
               </div>
             </div>
             {!own && <OwnerRow file={file} />}
-            {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6). */}
-            <FileTopicsOf address={file.address} />
             {own && notice}
             {/* Another app's file keeps its line; so does a page whose file above has no address to open, so the way back is still named. */}
             {(!own || (archive?.with && !aboveHref)) && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
+            {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6); an archived
+                page's notice stays first, straight under its title. */}
+            <FileTopicsOf address={file.address} />
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}
