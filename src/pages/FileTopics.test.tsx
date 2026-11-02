@@ -29,10 +29,12 @@ vi.mock('../relay/bridge', () => ({
 }))
 // The reads are interop's topicsOfFile and resolveForeignRoots, covered in estiva-foundation; the writes stay real, so each
 // click is checked on the event that would reach the relay.
-const reads = vi.hoisted(() => ({ topics: [] as TopicOfFile[] | Error, choices: { yours: [], others: [] } as TopicChoices }))
+// 'pending': the read after a write has not answered yet, so what shows is the row's own rollback, not a fresh read.
+const reads = vi.hoisted(() => ({ topics: [] as TopicOfFile[] | Error | 'pending', choices: { yours: [], others: [] } as TopicChoices }))
 vi.mock('../document/fileTopics', async (original) => ({
   ...(await original<typeof import('../document/fileTopics')>()),
   readFileTopics: vi.fn(async () => {
+    if (reads.topics === 'pending') return new Promise<never>(() => {})
     if (reads.topics instanceof Error) throw reads.topics
     return reads.topics
   }),
@@ -159,8 +161,23 @@ describe('Add to topic and Remove', () => {
     answers = [{ ok: false, reason: 'restricted: not a channel member' }]
     const user = userEvent.setup()
     show()
-    await user.click(await screen.findByRole('button', { name: 'Remove from Widgets' }))
+    const remove = await screen.findByRole('button', { name: 'Remove from Widgets' })
+    reads.topics = 'pending'
+    await user.click(remove)
     expect((await screen.findAllByText('Only people in “Widgets”’s Folder can change what it lists.')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /Widgets/ })).toBeTruthy()
+  })
+
+  it('takes the chip away again and says why in words when the relay refuses an add', async () => {
+    answers = [{ ok: false, reason: 'restricted: not a channel member' }]
+    const user = userEvent.setup()
+    show()
+    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    const pick = await within(await screen.findByRole('dialog')).findByText('Design review')
+    reads.topics = 'pending'
+    await user.click(pick)
+    expect((await screen.findAllByText('Only people in “Design review”’s Folder can change what it lists.')).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('link', { name: /Design review/ })).toBeNull()
     expect(screen.getByRole('link', { name: /Widgets/ })).toBeTruthy()
   })
 })
