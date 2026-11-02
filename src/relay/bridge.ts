@@ -54,6 +54,13 @@ export async function query(filters: Record<string, unknown>[]): Promise<SignedE
   return b.relay.query(filters)
 }
 
+/** {@link query}, paged to the end: for a read that must be whole, which the relay's per-filter cap would cut. */
+export async function queryAll(filters: Record<string, unknown>[]): Promise<SignedEvent[]> {
+  const b = bridge()
+  if (!b) throw new Error('Not signed in to a relay.')
+  return b.relay.queryAll(filters)
+}
+
 /**
  * Sign through Estiva ID and publish. Read `ok`, never a status code: the relay
  * refuses as 200 with `accepted: false`.
