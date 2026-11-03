@@ -397,7 +397,8 @@ describe('the comments column', () => {
     it('says a carried card\'s file is not available, rather than drop the link, when it cannot be read', async () => {
       await open([comment([['embed', GONE_ADDRESS, 'detailed']], `See\n${GONE}`)])
       const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
-      await waitFor(() => expect(within(card).getByText(/not available/)).toBeTruthy())
+      // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this issue", not "Issue not available".
+      await waitFor(() => expect(within(card).getByText("You can't open this issue")).toBeTruthy())
       expect(card.querySelector('[data-card="detailed"]')).toBeTruthy()
     })
 

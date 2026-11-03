@@ -118,6 +118,8 @@ async function freshTab() {
 
 const dropped = () => Promise.reject(new Error('socket closed'))
 const hangs = () => new Promise<Record<string, unknown>>(() => {})
+/** What a link to a file that cannot be read says: its address decodes to no kind Leaf names, so "file". */
+const CANT_OPEN = "You can't open this file"
 
 describe('a link whose reads keep failing (widget review, item 41)', () => {
   it('says it is not available after its last retry, never a placeholder for good, and draws its file once a quiet read answers', async () => {
@@ -129,7 +131,8 @@ describe('a link whose reads keep failing (widget review, item 41)', () => {
     render(<FreshRow uri={uri} />)
     await act(async () => {})
     for (const wait of [5000, 10_000, 20_000]) await act(async () => void (await vi.advanceTimersByTimeAsync(wait)))
-    expect(screen.getByText(/not available/)).toBeTruthy()
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this file", not "File not available".
+    expect(screen.getByText(CANT_OPEN)).toBeTruthy()
     await act(async () => void (await vi.advanceTimersByTimeAsync(30_000)))
     expect(screen.getByText('Fix the login')).toBeTruthy()
     expect(reads.answers).toHaveLength(0)
@@ -144,12 +147,13 @@ describe('a link this device found not available (widget review, item 42)', () =
     reads.answers.push(async () => ({}))
     const Before = await freshTab()
     render(<Before uri={uri} />)
-    expect(await screen.findByText(/not available/)).toBeTruthy()
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this file", not "File not available".
+    expect(await screen.findByText(CANT_OPEN)).toBeTruthy()
     cleanup()
     reads.answers.push(hangs)
     const After = await freshTab()
     render(<After uri={uri} />)
-    expect(screen.getByText(/not available/)).toBeTruthy()
+    expect(screen.getByText(CANT_OPEN)).toBeTruthy()
   })
 
   it('is not remembered for reads that only failed: the next open waits for its read', async () => {
@@ -160,13 +164,14 @@ describe('a link this device found not available (widget review, item 42)', () =
     render(<Before uri={uri} />)
     await act(async () => {})
     for (const wait of [5000, 10_000, 20_000]) await act(async () => void (await vi.advanceTimersByTimeAsync(wait)))
-    expect(screen.getByText(/not available/)).toBeTruthy()
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this file", not "File not available".
+    expect(screen.getByText(CANT_OPEN)).toBeTruthy()
     cleanup()
     reads.answers.length = 0
     reads.answers.push(hangs)
     const After = await freshTab()
     render(<After uri={uri} />)
     await act(async () => {})
-    expect(screen.queryByText(/not available/)).toBeNull()
+    expect(screen.queryByText(CANT_OPEN)).toBeNull()
   })
 })
