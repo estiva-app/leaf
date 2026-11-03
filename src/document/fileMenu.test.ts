@@ -198,7 +198,7 @@ describe('moving a Leaf page', () => {
   it('sends nothing more when the relay refuses the move, and says nothing was moved', async () => {
     answers = [{ ok: false, message: 'blocked' } as PublishResult]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: false, reason: 'Nothing was moved: try again.' })
+    expect(result).toEqual({ ok: false, reason: 'Nothing was moved. Try again.' })
     expect(published).toHaveLength(1)
   })
 
@@ -228,6 +228,13 @@ describe('moving a Leaf page', () => {
       [1852, 'move', ALSO.id],
       [1851, undefined, undefined],
     ])
+  })
+
+  it('listed in two Folders: the second refused because its team is archived says so beside the Folder still listing it', async () => {
+    const ALSO = { id: '33333333-3333-4333-8333-333333333333', name: 'Ops', hasState: true, addresses: [`30842:${ME}:a`] }
+    answers = [{ ok: true } as PublishResult, { ok: false, reason: 'invalid: team 33333333 is archived; its list does not change', httpStatus: 200 } as PublishResult]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [ALSO], stillWhy: 'one of the Folders is archived.' })
   })
 
   it('refuses a private Folder for a page filed elsewhere, before anything is sent', async () => {

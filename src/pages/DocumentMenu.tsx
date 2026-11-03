@@ -143,7 +143,7 @@ export function DocumentMenu({
     setMovedTo(to.id)
     // Both ends, the Folder it went to first, so the open page is found in one of them throughout.
     for (const id of new Set([to.id, ...moving.from.map((folder) => folder.id)])) await onChanged?.(id)
-    if (result.stillIn.length) refuse(`Moved to ${to.name}, but ${result.stillIn.map((folder) => folder.name).join(' and ')} still lists it too. Try moving it again.`)
+    if (result.stillIn.length) refuse(`Moved to ${to.name}, but ${result.stillIn.map((folder) => folder.name).join(' and ')} still lists it too${result.stillWhy ? `: ${result.stillWhy}` : '. Try moving it again.'}`)
     else if (result.unplaced) refuse(`Moved to ${to.name}, but not all of it: ${result.unplaced}. Try moving it again.`)
     else showToast({ label: `Moved to ${parent.path.at(-1) ?? to.name}`, type: 'success' })
     return true

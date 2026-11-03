@@ -291,6 +291,8 @@ export type MoveOutcome =
       ok: true
       /** The Folders that still list it too: a move from an earlier one landed, and theirs was refused. */
       stillIn: MoveFolder[]
+      /** Why those Folders still list it, in Peek's words; absent when there is nothing to say but try again. */
+      stillWhy?: string
       /** Why it did not take its new place, when the Folder change landed and that did not. */
       unplaced?: string
     }
@@ -317,6 +319,7 @@ export async function moveDocument(
   const sources = move.from.filter((folder) => folder.id !== move.to.id)
   let moved = false
   const stillIn: MoveFolder[] = []
+  let stillWhy: string | undefined
   if (sources.length > 0) {
     let listings
     try {
@@ -338,13 +341,15 @@ export async function moveDocument(
       // words for the relay's reason (`readMoveRefusal`), never the relay's text (TEA-3).
       if (!moved && result.reason && result.httpStatus === undefined) return { ok: false, reason: result.reason }
       const refusal = readMoveRefusal(plan.events, index, result.reason ?? result.message)
-      if (refusal.nothingMoved) return { ok: false, reason: `Nothing was moved: ${refusalWhy[refusal.why]}` }
-      // The earlier moves did arrive, so each Folder not yet moved from is named, and the move goes on to its place.
+      const why = refusalWhy[refusal.why]
+      if (refusal.nothingMoved) return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.' }
+      // The earlier moves did arrive, so each Folder not yet moved from is named with why, and the move goes on to its place.
       for (const folder of refusal.notMovedFrom) stillIn.push(sources.find((source) => source.id === folder) ?? { id: folder, name: 'another Folder', hasState: true })
+      stillWhy = why
       break
     }
   }
-  if (move.parent === undefined || move.parent === (file.parentRef ?? '')) return { ok: true, stillIn }
+  if (move.parent === undefined || move.parent === (file.parentRef ?? '')) return { ok: true, stillIn, stillWhy }
   const built = buildActionEvent({
     manifest: OWN_MANIFEST,
     kind: file.kind,
@@ -358,9 +363,9 @@ export async function moveDocument(
   })
   if (typeof built === 'string') console.warn('[leaf] move under not built', built)
   const placed = typeof built === 'string' ? null : await publish(built as UnsignedEvent)
-  if (placed?.ok) return { ok: true, stillIn }
+  if (placed?.ok) return { ok: true, stillIn, stillWhy }
   if (placed) console.warn('[relay] move under refused', placed)
-  return moved ? { ok: true, stillIn, unplaced: 'it is not in its new place yet' } : { ok: false, reason: placed?.reason ?? 'Nothing was moved. Try again.' }
+  return moved ? { ok: true, stillIn, stillWhy, unplaced: 'it is not in its new place yet' } : { ok: false, reason: placed?.reason ?? 'Nothing was moved. Try again.' }
 }
 
 /** The planner's refusals in Peek's words (`moveFileAsViewer`). */
@@ -368,15 +373,15 @@ const refusalWords: Record<MoveRefusal, string> = {
   'source-has-no-state': 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.',
   'target-has-no-state': 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
   'target-is-private': 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.',
-  'target-is-not-home': 'This is in no Folder yet, so it can only go to the one it was started in.',
+  'target-is-not-home': 'This is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.',
 }
 
 /** Why the relay refused a move, in Peek's words (`moveFileAsViewer`), never the relay's text. */
-const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string> = {
+const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string | undefined> = {
   'team-archived': 'one of the Folders is archived.',
   'not-a-member': 'you need to be a member of both Folders to move this.',
   'changed-meanwhile': 'the Folders changed since you opened this. Try again.',
-  refused: 'try again.',
+  refused: undefined,
 }
 
 /**
