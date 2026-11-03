@@ -54,6 +54,8 @@ export interface CommentItem {
   body: string
   /** An edit changed the body. */
   edited: boolean
+  /** When an edit last changed the body, in ms: what the card says on its "(edited)" ("Edited 2 minutes ago"). */
+  editedAt?: number
   /** Its files now: its own `imeta`, replaced by the latest edit's, an edit with none taking them all off (SPEC §6.8). */
   files: Imeta[]
   /** Its cards now (`embed`, §13.6.2): its own, replaced by the latest edit carrying any, as Peek and Ship fold them. */
@@ -146,6 +148,7 @@ export async function readThreads(doc: Commented): Promise<Threads> {
       at: event.created_at * 1000,
       body: edit?.body ?? event.content,
       edited: edit?.edited ?? false,
+      ...(edit?.editedAt !== undefined ? { editedAt: edit.editedAt } : {}),
       files: edit?.attachments ?? imetaOf(event),
       cards: editedCards[event.id] ?? embedsOf(event),
       event,

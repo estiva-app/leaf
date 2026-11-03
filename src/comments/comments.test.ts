@@ -402,6 +402,22 @@ describe("a document's threads", () => {
     ])
   })
 
+  it('carries when an edited comment or reply was last edited, in ms, for "Edited 2 minutes ago"; none on one never edited', async () => {
+    const root = comment([], 'Too long?')
+    const answer = reply(root, [], 'Cut it')
+    const same = comment([], 'Fine as it is')
+    // Its `ts`, when the relay's seconds agree with it (SPEC §6.2), else those seconds.
+    const timed = event(40003, [['h', FOLDER], ['e', root.id]], 'Far too long?')
+    timed.tags.push(['ts', String(timed.created_at * 1000 + 250)])
+    const untimed = event(40003, [['h', FOLDER], ['e', answer.id]], 'Cut it in half', ME)
+    relay.events = [root, answer, same, timed, untimed, event(40003, [['h', FOLDER], ['e', same.id]], 'Fine as it is')]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.body, t.root?.editedAt, t.replies.map((r) => r.editedAt)])).toEqual([
+      ['Far too long?', timed.created_at * 1000 + 250, [untimed.created_at * 1000]],
+      ['Fine as it is', undefined, []],
+    ])
+  })
+
   it('does not mark a comment edited when its edit saved the same words', async () => {
     const root = comment([['block', 'b1']], 'Too long?')
     relay.events = [root, event(40003, [['h', FOLDER], ['e', root.id], ['ts', '1']], 'Too long?')]
