@@ -457,6 +457,44 @@ describe('the comments column hides and comes back (LED-3)', () => {
 })
 
 /*
+  While a page is read it is drawn in the shape it arrives in (ONE-5, step 5), as Ship's PageSkeleton draws an issue:
+  the kit's bar, the title, summary, Topics and text bars, and beside it what the column will hold. It was three list
+  rows (SkeletonList).
+*/
+describe('a page while it is read (ONE-5, step 5)', () => {
+  afterEach(() => window.localStorage.clear())
+  async function reload(file: ForeignObject | null, loading = true) {
+    vi.resetModules()
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    return render(<ToastProvider><FilePage file={file} loading={loading} /></ToastProvider>)
+  }
+  const placeholder = () => document.querySelector<HTMLElement>('[data-loading="page"]')
+
+  it('is the page’s shape: the kit’s bar over the text, and the comments column beside it with the kit’s placeholders for comments', async () => {
+    await reload(null)
+    const shape = placeholder()
+    expect(shape).not.toBeNull()
+    expect(shape!.getAttribute('aria-hidden')).toBe('true')
+    // The kit's 48px bar twice: the page's, and the column's under "Comments".
+    expect([...shape!.querySelectorAll('.h-12')].map((bar) => bar.textContent)).toEqual(['', 'Comments'])
+    expect(shape!.querySelectorAll('.animate-pulse').length).toBeGreaterThan(10)
+  })
+
+  it('has no column when the comments are hidden, as the page will have none', async () => {
+    window.localStorage.setItem('leaf.folded', JSON.stringify({ comments: true }))
+    await reload(null)
+    expect(placeholder()).not.toBeNull()
+    expect(placeholder()!.textContent).not.toContain('Comments')
+  })
+
+  it('is drawn the same while a file is read again before Leaf knows whether it writes its text', async () => {
+    const topic = { ...shipIssue(), kind: 30840, noun: 'topic', naddr: 'naddr1topic', actions: [], slots: { title: { value: 'Standup' } } } as unknown as ForeignObject
+    await reload(topic, false)
+    expect(placeholder()).not.toBeNull()
+  })
+})
+
+/*
   The header's side-panel button, shown to everyone wherever the comments button is (Katerina, 3 November; ONE-5,
   step 5), as Ship's (ONE-6, step 4d): the Overview in the comments' place, empty for now. Which of the two the column
   holds is `useSideColumn`'s, tested in sideColumn.test.tsx.
@@ -489,6 +527,16 @@ describe('the Overview, in the comments’ place (ONE-5, step 5)', () => {
     expect(screen.queryByText('Overview')).toBeNull()
     expect(shownComments()).toBe(true)
     expect(screen.getByRole('button', { name: 'Show side panel' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('while a page is read, its placeholder holds the Overview where it is shown, not the comments’', async () => {
+    const { rerender } = await reload(doc())
+    fireEvent.click(await screen.findByRole('button', { name: 'Show side panel' }))
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    rerender(<ToastProvider><FilePage file={null} loading /></ToastProvider>)
+    const placeholder = document.querySelector('[data-loading="page"]') as HTMLElement
+    expect(placeholder.textContent).toContain('Overview')
+    expect(placeholder.textContent).not.toContain('Comments')
   })
 
   it('is in the header of another app’s file too, beside its comments button', async () => {

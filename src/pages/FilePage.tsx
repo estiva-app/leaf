@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -21,6 +21,7 @@ import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
 import { useNarrow } from '../frame/folds'
 import { OverviewPanel } from './OverviewPanel'
+import { PageSkeleton } from './PageSkeleton'
 import { useSideColumn, type Shown } from './sideColumn'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
 import { FileTopicsOf } from './FileTopics'
@@ -63,12 +64,14 @@ export function FilePage({
   const recheck = listed && !listed.unreachable && listed.naddr && !sharesText(listed) ? listed.naddr : null
   const reread = useFileByAddress(recheck)
   const file = reread.file && !reread.file.unreachable ? reread.file : listed
+  // While it is read: the page in the shape it arrives in, with what the column beside it will hold (ONE-5, step 5).
+  const skeleton = <PageSkeleton comments={side.comments.open} overview={side.overview.open} />
   if (!file || file.unreachable) {
     // Gone, not yours to read, or never there: the link says nothing about which, and no title (the kit's notice).
-    return loading ? <SkeletonList rows={3} /> : <NoAccessNotice what="page" />
+    return loading ? skeleton : <NoAccessNotice what="page" />
   }
   if (!sharesText(file)) {
-    if (reread.loading) return <SkeletonList rows={3} />
+    if (reread.loading) return skeleton
     const opener = openerOf(file)
     return (
       <EmptyState
