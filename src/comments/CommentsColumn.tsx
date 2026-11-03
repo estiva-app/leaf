@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Extension } from '@tiptap/core'
 import type { Editor, JSONContent } from '@tiptap/react'
-import { IconX } from '@tabler/icons-react'
 import {
   boxReadOf,
   composerDocument,
@@ -23,24 +22,23 @@ import { contentFormatOf, decodeNevent, decodeNpub, encodeNaddr, findNostrUris, 
 import {
   caretOnOpen,
   Chip,
-  CollapsibleSection,
   ConversationCard,
+  ConversationLayout,
   EmptyState,
   FieldLine,
-  IconButton,
   InlineChip,
   LinkChip,
   LinkRow,
-  Panel,
   QuotedLine,
+  ReactionHorizon,
   ReplyCard,
   RichText,
-  SkeletonList,
   Thread as KitThread,
   WithTooltip,
   useToast,
   type ConversationCardProps,
   type ConversationEntryProps,
+  type ConversationItem,
   type LinkState,
 } from '@estiva-app/ui'
 import {
@@ -51,6 +49,7 @@ import {
   LinkChips,
   quoteText,
   setCommentAnchors,
+  type BoxAbout,
   type CommentAnchor,
   type CommentPlace,
   type BoxFile,
@@ -91,14 +90,15 @@ import { useThreads } from './useThreads'
  * "Resolved". A card and its blocks mark each other: choosing one shows the
  * other.
  *
+ * Since ONE-5 step 4 the column is the kit's one column (`ConversationLayout`, `threads="under"`): its frame, the one
+ * thread open under its comment, the two closed groups, its scrolling, and its loading, empty and below. The order,
+ * the words, the box and the text's side are Leaf's.
+ *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-points-at-blocks-and-the-words-quoted.md
  */
 
 /** The draft's highlight id, so the block being commented on stays marked while you write. */
 const DRAFT = 'draft'
-
-/** A tooltip's wrapper around a line that is cut: it must shrink with its row. */
-const LINE_WRAPPER = 'flex min-w-0 shrink'
 
 /** What one block is called in a card's line: "On 2 paragraphs". */
 function blockNoun(type: string, many: boolean): string {
@@ -256,6 +256,7 @@ function Box({
   onSent,
   editing,
   closed,
+  about,
 }: {
   /** Said in the empty box, and its accessible name. */
   placeholder: string
@@ -270,6 +271,8 @@ function Box({
   editing?: { comment: CommentItem; onCancel: () => void; typed?: () => JSONContent | null; onTyped?: (body: JSONContent) => void }
   /** Why nothing can be written here — an archived file's line (PEEKM-8) — said in the box's place; '' while the line is read, still closed. */
   closed?: string
+  /** What a new comment will be on, in the kit's strip above the box, with its ✕ (the kit's `about`). */
+  about?: BoxAbout
 }) {
   // Names from the latest read of the people, when the draft opens: they may land after the box does.
   const draft = useMemo(() => (draftKey ? composerDraft(draftStore(), draftKey, { personLabel: knownName }) : undefined), [draftKey])
@@ -351,6 +354,7 @@ function Box({
         autoFocus={autoFocus || !!edit}
         onSent={onSent ? () => onSent() : undefined}
         closed={closed !== undefined ? { reason: closed } : undefined}
+        about={about}
       />
     </div>
   )
@@ -736,8 +740,11 @@ interface OpenEdit {
   onTyped: (body: JSONContent) => void
 }
 
-/** What the comment's card takes that a reply's does not: what it is on, its replies row, opening, and resolving. */
-type CommentCardProps = Pick<ConversationCardProps, 'about' | 'replies' | 'onReply' | 'onClick' | 'selected' | 'resolved' | 'onResolve' | 'resolveRefused' | 'onReopen'>
+/**
+ * What the comment's card takes that a reply's does not: what it is on, its replies row, and resolving. Nothing for
+ * opening: the kit's layout opens its thread from a press on it, its replies row or Reply (ONE-5, step 4).
+ */
+type CommentCardProps = Pick<ConversationCardProps, 'about' | 'replies' | 'resolved' | 'onResolve' | 'resolveRefused' | 'onReopen'>
 
 /** A thread's comment on the kit's card, in Leaf's words: "Delete this message?", and Leaf's note with the replies that stay. */
 function LeafComment({ card, ...entry }: EntryProps & { card: CommentCardProps }) {
@@ -749,39 +756,8 @@ function LeafReply({ id, ...entry }: EntryProps & { id: string }) {
   return <ReplyCard {...useEntry(entry)} id={id} deleteNote={deleteNote(0)} />
 }
 
-/**
- * A thread in the column on the kit's cards (ONE-5, step 3): its comment on `ConversationCard` and, while it is the
- * open one, its thread under it, the kit's `Thread`: the replies on `ReplyCard`, then Leaf's reply box. A press on the
- * comment or on its replies row opens or closes it, and finds its place in the text; Reply opens it with the caret in
- * its box. Resolve asks for a note (the kit's dialog), and the card then says who resolved it and the note. Its comment
- * deleted, it says so, still on its place, with no reply and no Resolve, as in Peek (PER-24). Resolved or archived, no
- * reply box.
- */
-function LeafThread({
-  thread,
-  where,
-  editor,
-  names,
-  pictures,
-  bots,
-  now,
-  open,
-  onToggle,
-  onReplyPress,
-  caret,
-  onResolve,
-  onReopen,
-  onReply,
-  people,
-  page,
-  viewer,
-  onReact,
-  onEdit,
-  onDelete,
-  onRemoveCard,
-  edits,
-  closed,
-}: {
+/** What a thread's comment and its replies are drawn from: the thread, the people in the column, and what the viewer may do. */
+interface ThreadProps {
   thread: Thread
   where: Where
   editor: Editor | null
@@ -789,14 +765,6 @@ function LeafThread({
   pictures: Record<string, string>
   bots: Bots
   now: number
-  /** The one open: its thread is under it, and it is marked. */
-  open: boolean
-  /** A press on the comment or its replies row: open it, or close it. */
-  onToggle: () => void
-  /** Reply, on the strip: open it at its box. */
-  onReplyPress: () => void
-  /** How many times Reply has asked for the caret in its box (the kit's `caretOnOpen`); 0, the box waits to be pressed. */
-  caret: number
   /** Resolve, with the note written in the kit's dialog. */
   onResolve: (note: string) => Promise<WriteResult>
   onReopen: () => void
@@ -812,13 +780,12 @@ function LeafThread({
   edits: OpenEdit
   /** An archived file: the thread only shows — no reply, reaction, Resolve or Reopen, and no Edit or Delete, your own included (PEEKM-8). */
   closed?: boolean
-}) {
+}
+
+/** What `[` offers in a thread's boxes (its own comments first), and what each of its comments and replies is drawn from. */
+function useThreadEntries({ thread, names, pictures, bots, now, people, page, viewer, onReact, onEdit, onDelete, onRemoveCard, edits, closed }: ThreadProps) {
   const own = useMemo(() => commentsOf(thread), [thread])
   const scope = useMemo(() => ({ here: own, rest: page.filter((c) => !own.includes(c)) }), [own, page])
-  const [resolveRefused, setResolveRefused] = useState<string>()
-  // Its comment deleted, the thread takes no new replies and has nothing to resolve, as in Peek (PER-24).
-  const deleted = !thread.root
-  const takesReply = !thread.resolved && !deleted && !closed
   const actionsOn = (c: CommentItem): OwnActions | undefined =>
     !closed && offersEditAndDelete({ viewer, author: c.by })
       ? {
@@ -835,6 +802,21 @@ function LeafThread({
         }
       : undefined
   const entry = (c: CommentItem): EntryProps => ({ comment: c, names, now, nameOf: people.nameOf, pictures, bots, page, viewer, onReact: closed ? undefined : onReact, own: actionsOn(c), closed: !!closed })
+  return { scope, entry }
+}
+
+/**
+ * A thread's comment on the kit's `ConversationCard`, an item's `card` in the kit's layout (ONE-5, step 4): the layout
+ * opens its thread from a press on it, its replies row or Reply, and marks it open. Resolve asks for a note (the kit's
+ * dialog), and the card then says who resolved it and the note. Its comment deleted, it says so, still on its place,
+ * with no reply and no Resolve, as in Peek (PER-24).
+ */
+function ThreadComment(props: ThreadProps) {
+  const { thread, where, editor, names, pictures, bots, now, people, onResolve, onReopen, closed } = props
+  const { entry } = useThreadEntries(props)
+  const [resolveRefused, setResolveRefused] = useState<string>()
+  // Its comment deleted, the thread has nothing to resolve, as in Peek (PER-24).
+  const deleted = !thread.root
   const named = (pubkey: string) => people.nameOf(pubkey) ?? names[pubkey] ?? 'Someone'
   const last = thread.replies.at(-1)
   // Who replied, once each, for the replies row's faces.
@@ -842,11 +824,7 @@ function LeafThread({
   const resolution = !deleted ? thread.resolution : undefined
   const card: CommentCardProps = {
     about: aboutOf(thread, where, editor),
-    replies: last ? { count: thread.replies.length, faces, last: whenOf(last.at, now), open, onOpen: onToggle } : undefined,
-    onReply: takesReply ? onReplyPress : undefined,
-    onClick: onToggle,
-    // Marked while open, as the column's chosen card always was: its words are marked in the text too.
-    selected: open,
+    replies: last ? { count: thread.replies.length, faces, last: whenOf(last.at, now) } : undefined,
     resolved: resolution && { by: named(resolution.by), note: resolution.note, at: inSentence(whenOf(resolution.at, now)) },
     onResolve:
       !thread.resolved && !deleted && !closed
@@ -860,30 +838,58 @@ function LeafThread({
     resolveRefused,
     onReopen: thread.resolved && !deleted && !closed ? onReopen : undefined,
   }
-  return (
-    // Its comment and, open, its thread, under the id the kit's layout gives each comment (`data-conversation-item`).
-    <div data-conversation-item={thread.id} data-open={open || undefined} className="flex shrink-0 flex-col">
-      {thread.root ? (
-        <LeafComment {...entry(thread.root)} card={card} />
-      ) : (
-        <ConversationCard deleted author={{ name: '' }} time="" {...card}>
-          {null}
-        </ConversationCard>
-      )}
-      {open && (
-        <caretOnOpen.Provider value={caret}>
-          <KitThread
-            place="under"
-            box={takesReply ? <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} /> : undefined}
-          >
-            {thread.replies.map((reply) => (
-              <LeafReply key={reply.id} id={reply.id} {...entry(reply)} />
-            ))}
-          </KitThread>
-        </caretOnOpen.Provider>
-      )}
-    </div>
+  return thread.root ? (
+    <LeafComment {...entry(thread.root)} card={card} />
+  ) : (
+    <ConversationCard deleted author={{ name: '' }} time="" {...card}>
+      {null}
+    </ConversationCard>
   )
+}
+
+/**
+ * A thread open under its comment, an item's `thread` in the kit's layout: the kit's `Thread`, the replies on
+ * `ReplyCard`, then Leaf's reply box. Resolved, deleted or archived, no reply box.
+ */
+function ThreadReplies(props: ThreadProps) {
+  const { thread, people, onReply, closed } = props
+  const { scope, entry } = useThreadEntries(props)
+  // Its comment deleted, the thread takes no new replies, as in Peek (PER-24).
+  const takesReply = !thread.resolved && !!thread.root && !closed
+  return (
+    <KitThread place="under" box={takesReply ? <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} /> : undefined}>
+      {thread.replies.map((reply) => (
+        <LeafReply key={reply.id} id={reply.id} {...entry(reply)} />
+      ))}
+    </KitThread>
+  )
+}
+
+/**
+ * The caret, for a thread that opens in the kit's layout (K3). The layout counts each time `open` changes, and the box
+ * at the open thread's foot takes the caret on each count (`caretOnOpen`). Leaf lets a count through only when the
+ * layout itself asked for the open (a press on the card, its replies row, Reply) or when Reply asks again on the open
+ * one. Opened any other way, `quiet` — a click in its words in the text, which is often to edit them, or back after a
+ * draft — the count this open brings is not passed on, and the caret stays where it is.
+ *
+ * The open's own count comes a moment after the thread is drawn (the layout's effect): quiet, the box waits for one
+ * past it. Once it has come, `onQuiet` tells the column, so the thread drawn again later (moved under "On deleted
+ * blocks") counts afresh.
+ */
+function QuietCaret({ quiet, onQuiet, children }: { quiet: boolean; onQuiet: () => void; children: ReactNode }) {
+  const counted = useContext(caretOnOpen)
+  const [past] = useState(() => counted + (quiet ? 1 : 0))
+  useEffect(() => {
+    if (quiet && counted >= past) onQuiet()
+  }, [quiet, counted, past, onQuiet])
+  return <caretOnOpen.Provider value={counted > past ? counted : 0}>{children}</caretOnOpen.Provider>
+}
+
+/** What a new comment will be on, as the card it posts will say it ({@link aboutOf}): the words it quotes, or Leaf's words for its blocks. */
+function draftAboutOf(draft: Anchor, editor: Editor | null): ReactNode {
+  if (draft.quote) return <QuotedLine words={quoteText(draft.quote)} />
+  const place = editor ? commentPlace(editor, { id: DRAFT, ...draft }) : null
+  return <QuotedLine label={place ? wholeBlocksLine(editor, place) : 'On whole blocks'} />
 }
 
 /** Scroll `box` — a Panel's body — until `el` shows. Only that box moves. */
@@ -937,9 +943,13 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const { showToast } = useToast()
   const [held] = useState(() => heldComments(doc.address))
   const [active, setActive] = useState<string | null>(held?.active ?? null)
-  // Reply on a card's strip: the thread it opens takes the caret in its box, each time (the kit's `caretOnOpen`). Opened
-  // any other way — a press on the card, a click in its words in the text — the caret stays where it is.
-  const [replying, setReplying] = useState<{ id: string; times: number } | null>(null)
+  // The thread open not by the kit's layout — from its words in the text, or back after a draft — whose box the caret
+  // does not go to as it opens ({@link QuietCaret}); `null` once the layout opens one, or the open has been counted.
+  const [quiet, setQuiet] = useState<string | null>(null)
+  const settled = useCallback(() => setQuiet(null), [])
+  // A highlight chosen in the text: its card comes into view in the column, each time; and the thread a sign-in ending
+  // held open, once the comments are read (AUT-5).
+  const [shown, setShown] = useState<{ id: string } | null>(() => (held?.active ? { id: held.active } : null))
   const [editingId, setEditingId] = useState<string | null>(held?.editing?.id ?? null)
   const typed = useRef<JSONContent | null>(held?.editing?.body ?? null)
   const edits = useMemo<OpenEdit>(
@@ -1010,7 +1020,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const deleted = all.filter((t) => !t.resolved && whereOf(t)?.state === 'detached')
   const resolved = all.filter((t) => t.resolved)
 
-  // A highlight clicked in the text: its thread.
+  // A highlight clicked in the text: its thread opens, and its card comes into view.
   useEffect(() => {
     if (!editor) return
     const select = ({ id }: { id: string }) => {
@@ -1018,7 +1028,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       onDraft(null)
       setActive(id)
       // A click in commented words is often to edit them: the caret stays in the text.
-      setReplying(null)
+      setQuiet(id)
+      setShown({ id })
     }
     editor.on('commentSelect', select)
     return () => {
@@ -1034,17 +1045,25 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     setCommentAnchors(editor, anchors, hidden ? null : draft ? DRAFT : active)
   }, [editor, all, draft, active, addressable, hidden])
 
-  // A card chosen: its blocks come into view. A highlight chosen: its card does.
+  // A card chosen: its blocks come into view.
   useEffect(() => {
     if (!active || !editor) return
     const thread = all.find((t) => t.id === active)
     const anchor = thread && anchorOf(thread)
     const frame = requestAnimationFrame(() => {
       if (anchor && addressable) scrollWithin(docBody.current, commentElement(editor, anchor))
-      scrollWithin(columnBody, columnBody?.querySelector(`[data-conversation-item="${active}"]`) ?? null)
     })
     return () => cancelAnimationFrame(frame)
-  }, [active, editor, all, docBody, columnBody, addressable])
+  }, [active, editor, all, docBody, addressable])
+
+  // A highlight chosen: its card comes into view, once its thread is drawn open. A card pressed stays where it was:
+  // that is the kit's layout's (the pressed comment does not move).
+  const read = threads !== null
+  useEffect(() => {
+    if (!shown || !read) return
+    const frame = requestAnimationFrame(() => scrollWithin(columnBody, columnBody?.querySelector(`[data-conversation-item="${CSS.escape(shown.id)}"]`) ?? null))
+    return () => cancelAnimationFrame(frame)
+  }, [shown, columnBody, read])
 
   const { address, folder } = doc
   const commented = useMemo(() => (address && folder ? { address, folder } : null), [address, folder])
@@ -1098,124 +1117,92 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     return result
   }
 
-  const draftPlace = editor && draft ? commentPlace(editor, { id: DRAFT, ...draft }) : null
-  const draftLine = draft?.quote ? `On “${quoteText(draft.quote)}”` : draftPlace ? wholeBlocksLine(editor, draftPlace) : ''
+  // Back to the whole document: the thread open before the draft comes back, and its box takes no caret from yours.
+  const backToWhole = () => {
+    setQuiet(active)
+    onDraft(null)
+  }
 
-  // One thread open at a time, under its comment.
-  const card = (t: Thread) => (
-    <LeafThread
-      key={t.id}
-      thread={t}
-      where={whereOf(t)}
-      editor={editor}
-      names={names}
-      pictures={pictures}
-      bots={bots}
-      now={readAt}
-      // A handle's Comment: the draft takes over from the open card.
-      open={!draft && t.id === active}
-      onToggle={() => {
-        onDraft(null)
-        setReplying(null)
-        setActive(t.id === active ? null : t.id)
-      }}
-      onReplyPress={() => {
-        onDraft(null)
-        setReplying((was) => ({ id: t.id, times: (was?.id === t.id ? was.times : 0) + 1 }))
-        setActive(t.id)
-      }}
-      caret={replying?.id === t.id ? replying.times : 0}
-      onResolve={(note) => resolve(t, true, note)}
-      onReopen={() => void reopen(t)}
-      onReply={(written) => reply(t, written)}
-      people={people}
-      page={page}
-      viewer={viewer}
-      onReact={viewer ? toggleReaction : undefined}
-      onEdit={edit}
-      onDelete={remove}
-      onRemoveCard={removeCardOf}
-      edits={edits}
-      closed={closed !== undefined}
-    />
-  )
+  // What each thread's comment and thread are drawn from.
+  const propsOf = (t: Thread): ThreadProps => ({
+    thread: t,
+    where: whereOf(t),
+    editor,
+    names,
+    pictures,
+    bots,
+    now: readAt,
+    onResolve: (note) => resolve(t, true, note),
+    onReopen: () => void reopen(t),
+    onReply: (written) => reply(t, written),
+    people,
+    page,
+    viewer,
+    onReact: viewer ? toggleReaction : undefined,
+    onEdit: edit,
+    onDelete: remove,
+    onRemoveCard: removeCardOf,
+    edits,
+    closed: closed !== undefined,
+  })
+  // In Leaf's order: the open ones in the order of the text, the whole document's last, a deleted comment that
+  // remembers no place after them. Those on deleted blocks, and the resolved ones, the kit closes under their names at
+  // the end. Each thread is drawn only while it is the open one.
+  const items: ConversationItem[] = [...open, ...apart, ...deleted, ...resolved].map((t) => ({
+    id: t.id,
+    card: <ThreadComment {...propsOf(t)} />,
+    thread: () => (
+      <QuietCaret quiet={quiet === t.id} onQuiet={settled}>
+        <ThreadReplies {...propsOf(t)} />
+      </QuietCaret>
+    ),
+    resolved: t.resolved,
+    gone: whereOf(t)?.state === 'detached',
+  }))
 
   return (
     <PageHere.Provider value={doc.address}>
       <ReferencesProvider value={references}>
         {/* An archived file's comments only show: their cards' status and owner too (PEEKM-8). */}
         <CardActsProvider value={closed === undefined}>
-          <Panel
+          <ConversationLayout
+            threads="under"
             title={
               <div className="flex min-w-0 items-center gap-2">
                 <p className="truncate text-body-2-strong text-text-primary">Comments</p>
                 {open.length > 0 && <Chip type="neutral" label={String(open.length)} className="shrink-0" />}
               </div>
             }
+            items={items}
+            // A handle's Comment, or the selection's: the draft takes over from the open thread.
+            open={draft ? undefined : (active ?? undefined)}
+            onOpenChange={(next) => {
+              onDraft(null)
+              setQuiet(null)
+              setActive(next ?? null)
+            }}
             bodyRef={setColumnBody}
-            bodyClassName="flex flex-col gap-3 p-3"
-            footer={
-              <div className="flex flex-col gap-2 p-3">
-                {draft && closed === undefined && (
-                  <div className="flex items-center gap-2">
-                    <WithTooltip label={draftLine} wrapperClassName={`${LINE_WRAPPER} flex-1`}>
-                      <p data-draft-line className="truncate text-caption text-text-secondary">{draftLine}</p>
-                    </WithTooltip>
-                    <IconButton tooltip="Comment on the whole document instead" aria-label="Comment on the whole document instead" onClick={() => onDraft(null)}>
-                      <IconX size={16} stroke={1.5} />
-                    </IconButton>
-                  </div>
-                )}
-                {/* A new place to comment on is a new box, which takes the focus: its draft keeps what was written. */}
-                <Box
-                  key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
-                  placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
-                  draftKey={draftKeys.object(address ?? '')}
-                  scope={pageScope}
-                  people={people}
-                  onSend={send}
-                  // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
-                  onSent={() => onDraft(null)}
-                  autoFocus={!!draft && closed === undefined}
-                  closed={closed}
-                />
-              </div>
+            loading={threads === null && !failed}
+            empty={failed ? <EmptyState scope="section" message="Could not read the comments. Try again in a moment." /> : 'No comments yet. Select words and press Comment, or write below.'}
+            // The reaction horizon said out loud (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
+            below={(reactionsOmitted > 0 || reactionsCut) && <ReactionHorizon limit={REACTION_HORIZON} omitted={reactionsOmitted} cut={reactionsCut} />}
+            box={
+              // A new place to comment on is a new box, which takes the focus: its draft keeps what was written.
+              <Box
+                key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
+                placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
+                draftKey={draftKeys.object(address ?? '')}
+                scope={pageScope}
+                people={people}
+                onSend={send}
+                // Back to the whole document once the box has let go of what it sent, so the next box opens empty.
+                onSent={backToWhole}
+                autoFocus={!!draft && closed === undefined}
+                closed={closed}
+                about={draft ? { view: draftAboutOf(draft, editor), remove: { label: 'Comment on the whole document instead', onRemove: backToWhole } } : undefined}
+              />
             }
-          >
-            {threads === null ? (
-              failed ? (
-                <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
-              ) : (
-                <SkeletonList rows={2} />
-              )
-            ) : all.length === 0 ? (
-              <EmptyState scope="section" message="No comments yet. Select words and press Comment, or write below." />
-            ) : (
-              <>
-                {open.map(card)}
-                {apart.map(card)}
-                {deleted.length > 0 && (
-                  <CollapsibleSection title="On deleted blocks" trailing={<Chip type="neutral" label={String(deleted.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                    {deleted.map(card)}
-                  </CollapsibleSection>
-                )}
-                {resolved.length > 0 && (
-                  <CollapsibleSection title="Resolved" trailing={<Chip type="neutral" label={String(resolved.length)} />} defaultOpen={false} className="shrink-0" contentClassName="flex flex-col gap-3">
-                    {resolved.map(card)}
-                  </CollapsibleSection>
-                )}
-                {(reactionsOmitted > 0 || reactionsCut) && (
-                  // The reaction horizon said out loud, in Peek's words (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
-                  <p className="shrink-0 text-caption text-text-muted">
-                    {reactionsOmitted > 0 &&
-                      `Reactions are shown for ${REACTION_HORIZON} comments and replies on this page. ${reactionsOmitted} older ${reactionsOmitted === 1 ? 'one was' : 'ones were'} not checked.`}
-                    {reactionsOmitted > 0 && reactionsCut && ' '}
-                    {reactionsCut && 'Some reactions may be missing.'}
-                  </p>
-                )}
-              </>
-            )}
-          </Panel>
+          />
         </CardActsProvider>
       </ReferencesProvider>
     </PageHere.Provider>

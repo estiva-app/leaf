@@ -523,13 +523,24 @@ describe('a comment on a selection (LEAF-7)', () => {
     })
   }
 
+  /*
+    What a new comment will be on is the kit's strip above the box (CommentBox `about`, ONE-5 step 4), drawn as the
+    posted card will say it: the quoted words in the page's highlight (`data-quoted="here"`), or Leaf's words for whole
+    blocks on the grey (`data-quoted="part"`). Changed on purpose: Leaf's own line said "On “words”".
+  */
+  /** The strip's line: how it is drawn, and what it says. */
+  const aboutTheBox = () => {
+    const line = document.querySelector<HTMLElement>('[data-box-about] [data-quoted]')
+    return line && [line.dataset.quoted, line.textContent]
+  }
+
   afterEach(() => vi.useRealTimers())
 
   it('sends a few selected words as a comment on their paragraph quoting exactly them, and says so over the box', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     await open([], PAGE)
     await commentOnSelection('wrote this')
-    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On “wrote this”'))
+    await waitFor(() => expect(aboutTheBox()).toEqual(['here', 'wrote this']))
     write('Comment on these words…', 'Which draft?')
     sendWithEnter('Comment on these words…')
     await waitFor(() => expect(publish).toHaveBeenCalled())
@@ -558,7 +569,7 @@ describe('a comment on a selection (LEAF-7)', () => {
     await commentOnSelection('wrote this')
     write('Comment on these words…', 'Half a thought')
     await commentOnSelection('Katerina owns')
-    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On “Katerina owns”'))
+    await waitFor(() => expect(aboutTheBox()).toEqual(['here', 'Katerina owns']))
     sendWithEnter('Comment on these words…')
     await waitFor(() => expect(publish).toHaveBeenCalled())
     const e = publish.mock.calls[0][0]
@@ -571,7 +582,7 @@ describe('a comment on a selection (LEAF-7)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     await open([], PAGE)
     await commentOnSelection('QA-2 wrote this paragraph.', 'Katerina owns the press notes.')
-    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On 2 paragraphs'))
+    await waitFor(() => expect(aboutTheBox()).toEqual(['part', 'On 2 paragraphs']))
     write('Comment on these blocks…', 'Merge these?')
     sendWithEnter('Comment on these blocks…')
     await waitFor(() => expect(publish).toHaveBeenCalled())
@@ -593,7 +604,7 @@ describe('a comment on a selection (LEAF-7)', () => {
     cleanup()
 
     await open([], PAGE)
-    await waitFor(() => expect(document.querySelector('[data-draft-line]')?.textContent).toBe('On “wrote this”'))
+    await waitFor(() => expect(aboutTheBox()).toEqual(['here', 'wrote this']))
     expect(box('Comment on these words…').editor.getText()).toBe('Which draft?')
     sendWithEnter('Comment on these words…')
     await waitFor(() => expect(publish).toHaveBeenCalled())
@@ -1581,10 +1592,12 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     await waitFor(() => expect(line(own.id)?.querySelector('[data-card="detailed"]')?.textContent).toContain('Card on an archived page'))
     expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
-    // Chosen, a thread opens no reply box: a press on its card still chooses it, to find its words in the text.
-    act(() => void fireEvent.click(line(theirs.id)!))
+    // Changed on purpose (ONE-5, step 4): a card with nothing to open — no replies, and no box on an archived page —
+    // opens nothing when pressed (the kit's layout, Peek's way); its words in the text still open it, with no reply box.
     act(() => void fireEvent.click(line(own.id)!))
-    expect(item(own.id)!.getAttribute('data-open')).toBe('true')
+    expect(item(own.id)!.hasAttribute('data-open')).toBe(false)
+    act(() => void page().editor.emit('commentSelect', { id: theirs.id }))
+    await waitFor(() => expect(item(theirs.id)!.getAttribute('data-open')).toBe('true'))
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
     // Pointed at, a card shows no strip: no React, Reply, Resolve, Reopen or its own More (Edit, Delete); the page's
     // More in the header is the page's (LED-4).
@@ -1678,7 +1691,7 @@ describe("a thread on the kit's cards", () => {
   /*
     The cursor check (K3). A click in commented words is often to edit them: CommentHighlights says which thread, and it
     opens, but the caret stays in the text. The kit's layout gives the box the caret on every open (`caretOnOpen`);
-    the column gives it only for Reply.
+    the column passes it on only for an open the layout asked for, or for Reply (QuietCaret, ONE-5 step 4).
   */
   it('opening a thread from its words in the text leaves the caret in the text, to go on editing them', async () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')

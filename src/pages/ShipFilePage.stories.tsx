@@ -71,17 +71,15 @@ function SharedTextView({ file, value, changedBy = null, onCommit = async () => 
         </Panel>
       </div>
       <Divider orientation="vertical" />
-      <div className="flex w-96 flex-none flex-col">
-        <CommentsColumn
-          doc={{ address: file.address, folder: file.folder }}
-          addressable={addressable}
-          editor={editor}
-          docBody={docBody}
-          draft={locked ? null : draft}
-          onDraft={setDraft}
-          closed={locked ? (archivedLine(file.archived) ?? '') : undefined}
-        />
-      </div>
+      <CommentsColumn
+        doc={{ address: file.address, folder: file.folder }}
+        addressable={addressable}
+        editor={editor}
+        docBody={docBody}
+        draft={locked ? null : draft}
+        onDraft={setDraft}
+        closed={locked ? (archivedLine(file.archived) ?? '') : undefined}
+      />
     </div>
   )
 }
