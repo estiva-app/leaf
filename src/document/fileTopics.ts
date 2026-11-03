@@ -11,6 +11,7 @@ import {
   type ForeignObject,
   type ReadTopic,
 } from '@estiva-app/interop'
+import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
 import { publish, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
@@ -63,15 +64,40 @@ export async function readFileTopics(file: string): Promise<TopicOfFile[]> {
 }
 
 /**
+ * Add to topic's choices, held per tab as Ship holds them, so the palette opened again draws at once while it reads
+ * again. Not retried on its own: the next open reads, and a failed read never replaces a good one.
+ */
+const held = createRetryingRead<TopicChoices>({ retryable: () => false })
+
+/** Test seam: forget the held choices. */
+export function resetTopicChoicesForTests(): void {
+  held.clear()
+}
+
+/** Add to topic's choices as this tab last read them, for the palette to draw at once; `undefined` before the first read. */
+export function topicChoicesNow(): TopicChoices | undefined {
+  return held.snapshot().value
+}
+
+/**
  * What Add to topic offers (SHIPS-2), from interop's one read of every topic, as Ship's does: the open topics in a
  * Folder the relay lists for the reader — every one, not only the tree's top level, since that is where it accepts
- * their entry — theirs first, then the rest, each A–Z; none archived, by itself or with its project.
+ * their entry — theirs first, then the rest, each A–Z; none archived, by itself or with its project. Read afresh on
+ * each open, so a topic made or archived since shows; the palette draws {@link topicChoicesNow} until this lands.
  */
 export async function readTopicChoices(): Promise<TopicChoices> {
-  const [read, folders] = await Promise.all([readTopics(queryAll, viewerPubkey() ?? '', { cache: manifests }), listFolders(query)])
-  const { yours, others } = addableTopics(read, new Set(folders.map((folder) => folder.id)))
-  const drawn = (topic: ReadTopic) => asDrawn(topic.address, topic.folder, topic.object)
-  return { yours: yours.map(drawn), others: others.map(drawn) }
+  const me = viewerPubkey()
+  if (!me) throw new Error('Sign in to add it to a topic.')
+  await held.reload(async () => {
+    // Only the Folders' ids are used: their record channels are not placed (interop's listFolders, 149 s for the agent).
+    const [read, folders] = await Promise.all([readTopics(queryAll, me, { cache: manifests }), listFolders(query, { recordChannels: false })])
+    const { yours, others } = addableTopics(read, new Set(folders.map((folder) => folder.id)))
+    const drawn = (topic: ReadTopic) => asDrawn(topic.address, topic.folder, topic.object)
+    return { yours: yours.map(drawn), others: others.map(drawn) }
+  })
+  const { value, error } = held.snapshot()
+  if (value) return value
+  throw error ?? new Error('Topics could not be read.')
 }
 
 /** Put a file on a topic's list, or take it off: one `lists:<d>` entry on the topic, signed by the reader. */

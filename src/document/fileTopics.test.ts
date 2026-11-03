@@ -13,7 +13,9 @@ const HQ = 'hq-folder'
 /* What the relay holds, answered filter by filter as it matches. */
 let held: SignedEvent[] = []
 /* What each topic's projection says: its title, where it opens, archived, or unreachable to this reader. */
-let projected: Record<string, { title: string; openUrl?: string; archived?: boolean; archivedWithProject?: boolean; unreachable?: boolean }> = {}
+let projected: Record<string, { title: string; openUrl?: string; archived?: boolean; unreachable?: boolean }> = {}
+/* Who is signed in: nobody when undefined. */
+let viewer: string | undefined = ME
 
 type Filter = { ids?: string[]; kinds?: number[]; authors?: string[]; [tag: `#${string}`]: string[] | undefined }
 function relay(filters: Filter[]): SignedEvent[] {
@@ -26,25 +28,35 @@ function relay(filters: Filter[]): SignedEvent[] {
 }
 
 vi.mock('../relay/bridge', () => ({
-  viewerPubkey: () => ME,
+  viewerPubkey: () => viewer,
   query: async (filters: Filter[]) => relay(filters),
-  queryAll: async (filters: Filter[]) => relay(filters),
+  queryAll: async (filters: Filter[]) => {
+    reads += 1
+    return relay(filters)
+  },
   publish: async () => ({ ok: true }),
 }))
 vi.mock('../relay/manifests', () => ({ resolveQuery: async (filters: Filter[]) => relay(filters), projections: undefined }))
-// A topic's projection needs Peek's manifest; what it answers is stood in for here, and resolveForeignRoots is interop's to test.
-vi.mock('@estiva-app/interop', async (original) => ({
-  ...(await original<typeof import('@estiva-app/interop')>()),
-  // Archived with its project is said only by a read that asks for the parents' archive, as interop's does.
-  resolveForeignRoots: async (addresses: readonly string[], _query: unknown, _cache: unknown, options?: { archivedWith?: boolean }) =>
-    addresses.map((address) => {
-      const p = projected[address]
-      const archived = p?.archived || (options?.archivedWith && p?.archivedWithProject)
-      return { address, unreachable: p?.unreachable, openUrl: p?.openUrl, archived: archived ? { at: 1 } : undefined, slots: { title: { value: p?.title } } } as unknown as ForeignObject
-    }),
-}))
+// A topic's link and its unreachable stub need Peek's manifest; for a topic made with `topic` below, what it answers is
+// stood in for here. Any other address is interop's own read of the events the relay holds.
+vi.mock('@estiva-app/interop', async (original) => {
+  const interop = await original<typeof import('@estiva-app/interop')>()
+  return {
+    ...interop,
+    resolveForeignRoots: async (addresses: readonly string[], ...rest: unknown[]) =>
+      !addresses.some((address) => address in projected)
+        ? (interop.resolveForeignRoots as (...args: unknown[]) => Promise<ForeignObject[]>)(addresses, ...rest)
+        : addresses.map((address) => {
+            const p = projected[address]
+            return { address, unreachable: p?.unreachable, openUrl: p?.openUrl, archived: p?.archived ? { at: 1 } : undefined, slots: { title: { value: p?.title } } } as unknown as ForeignObject
+          }),
+  }
+})
 
-const { readFileTopics, readTopicChoices } = await import('./fileTopics')
+/* Reads that went to the relay through queryAll. */
+let reads = 0
+
+const { readFileTopics, readTopicChoices, resetTopicChoicesForTests, topicChoicesNow } = await import('./fileTopics')
 
 let n = 0
 const sign = (e: UnsignedEvent): SignedEvent => ({ ...e, id: `e${++n}`.padStart(64, '0'), sig: '' }) as SignedEvent
@@ -60,6 +72,9 @@ const unlist = (by: string, t: { address: string; folder: string }, at: number) 
 beforeEach(() => {
   held = []
   projected = {}
+  viewer = ME
+  reads = 0
+  resetTopicChoicesForTests()
 })
 
 describe('the topics a file’s row names', () => {
@@ -94,9 +109,12 @@ describe('the topics a file’s row names', () => {
     expect((await readFileTopics(DOC))[0]).toMatchObject({ title: 'Old launch', archived: true })
   })
 
-  it('marks a topic archived with its project, so its chip has no Remove either', async () => {
-    const under = topic(MIKY, 'under', 'Under the launch', { archivedWithProject: true })
-    list(MIKY, under, 1_700_000_100_000)
+  it('marks a topic archived with the one it sits under, so its chip has no Remove either', async () => {
+    // What the relay holds, read by interop: the parent's archive is a change on the parent, none on the topic itself.
+    const parent = rootOf(MIKY, 'launch', 'Launch')
+    archive(parent)
+    const under = rootOf(MIKY, 'under', 'Under the launch', HQ, parent)
+    list(MIKY, { address: under, folder: HQ }, 1_700_000_100_000)
     expect((await readFileTopics(DOC))[0]).toMatchObject({ title: 'Under the launch', archived: true })
   })
 })
@@ -120,7 +138,7 @@ describe('what Add to topic offers', () => {
     folderState(SUB)
     rootOf(ME, 'mine', 'My notes')
     rootOf(MIKY, 'zeta', 'Zeta')
-    // In a Folder the relay lists for you though the tree draws only its parent.
+    // In a second Folder the relay lists for you.
     rootOf(MIKY, 'alpha', 'Alpha', SUB)
     archive(rootOf(MIKY, 'old', 'Old launch'))
     // Archived with the topic it sits under: read-only too.
@@ -150,5 +168,25 @@ describe('what Add to topic offers', () => {
     const choices = await readTopicChoices()
     expect(choices.yours.map((t) => t.title)).toEqual(['Zeta'])
     expect(choices.others).toEqual([])
+  })
+
+  it('opened again, gives the held choices at once, and a topic made or archived since once the fresh read lands', async () => {
+    folderState(HQ)
+    rootOf(MIKY, 'beta', 'Beta')
+    const old = rootOf(MIKY, 'old', 'Old')
+    expect(topicChoicesNow()).toBeUndefined()
+    await readTopicChoices()
+    rootOf(MIKY, 'gamma', 'Gamma')
+    archive(old)
+    expect(topicChoicesNow()?.others.map((t) => t.title)).toEqual(['Beta', 'Old'])
+    expect((await readTopicChoices()).others.map((t) => t.title)).toEqual(['Beta', 'Gamma'])
+  })
+
+  it('asks the relay nothing when nobody is signed in, and says why', async () => {
+    folderState(HQ)
+    rootOf(MIKY, 'beta', 'Beta')
+    viewer = undefined
+    await expect(readTopicChoices()).rejects.toThrow('Sign in to add it to a topic.')
+    expect(reads).toBe(0)
   })
 })
