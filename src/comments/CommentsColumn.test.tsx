@@ -124,6 +124,42 @@ const box = (name: string) => screen.getByRole('textbox', { name }) as EditorBox
 const write = (name: string, text: string) => act(() => void box(name).editor.chain().focus().insertContent(text).run())
 const sendWithEnter = (name: string) => act(() => void fireEvent.keyDown(box(name), { key: 'Enter' }))
 
+/*
+  The column draws each thread on the kit's cards (ONE-5, step 3). A thread is its comment and, open, its replies,
+  under the id the kit's layout gives each comment (`data-conversation-item`, `data-open` while open); a reply is the
+  kit's ReplyCard (`data-reply-id`). Leaf's own `data-thread-id` and `data-comment-id` are gone.
+*/
+/** A thread in the column, by its comment's id. */
+const item = (id: string) => document.querySelector<HTMLElement>(`[data-conversation-item="${id}"]`)
+const items = () => [...document.querySelectorAll<HTMLElement>('[data-conversation-item]')]
+/** A comment's card (its id is its thread's) or a reply's: the kit's ConversationCard, or its ReplyCard. */
+const entry = (id: string) => document.querySelector<HTMLElement>(`[data-reply-id="${id}"]`) ?? item(id)?.querySelector<HTMLElement>('[data-comment-body]')?.parentElement ?? null
+/** Every comment's and open reply's card in the column, in order. */
+const entries = () => items().flatMap((t) => [t.querySelector<HTMLElement>('[data-comment-body]')?.parentElement, ...t.querySelectorAll<HTMLElement>('[data-reply-id]')].filter((c): c is HTMLElement => !!c))
+/** The kit shows a card's strip (React, Reply, Resolve, More) while it is pointed at, as a person does before pressing. */
+const pointAt = (card: HTMLElement) => act(() => void fireEvent.mouseEnter(card))
+/** Open a thread from its replies row ("1 reply"), as a person does: its replies show under it. */
+const openReplies = (id: string) => act(() => void fireEvent.click(within(item(id)!).getByRole('button', { name: /^\d+ repl(y|ies), open the thread$/ })))
+/** On a card: point at it, open its More, and choose. */
+/** What `get` finds, once it is drawn. */
+const found = <T,>(get: () => T | null | undefined) =>
+  waitFor(() => {
+    const it = get()
+    expect(it).toBeTruthy()
+    return it!
+  })
+/** Whether a thread waits in one of the column's groups ("Resolved", "On deleted blocks"): the group whose panel holds it is titled so. */
+const under = (group: string, id: string) => {
+  const panel = item(id)?.parentElement?.closest<HTMLElement>('[data-closed], [data-open]')
+  const title = panel?.parentElement?.querySelector('button[aria-expanded]')
+  return !!title && title.textContent?.startsWith(group) === true
+}
+const choose = (id: string, row: 'Edit message' | 'Delete message' | 'Resolve' | 'Reopen') => {
+  pointAt(entry(id)!)
+  act(() => void fireEvent.click(within(entry(id)!).getByRole('button', { name: 'More' })))
+  act(() => void fireEvent.click(screen.getByRole('menuitem', { name: row })))
+}
+
 async function open(events: SignedEvent[], body = BODY) {
   relay.events = events
   render(
@@ -137,9 +173,8 @@ async function open(events: SignedEvent[], body = BODY) {
 describe('the comments column', () => {
   it('lists a comment on a paragraph by its place in the text, the whole document after it, and one on a deleted paragraph apart', async () => {
     await open([comment([], 'About the page'), comment([['block', 'gone00000000']], 'About a paragraph since deleted'), comment([['block', PARAGRAPH]], 'Too long?')])
-    await waitFor(() => expect(document.querySelectorAll('[data-thread-id]')).toHaveLength(3))
-    const cards = [...document.querySelectorAll<HTMLElement>('[data-thread-id]')]
-    expect(cards.map((c) => [within(c).queryByText(/^On /)?.textContent, c.querySelector('[data-comment-id]')?.textContent?.match(/Too long\?|About the page|since deleted/)?.[0]])).toEqual([
+    await waitFor(() => expect(items()).toHaveLength(3))
+    expect(items().map((c) => [within(c).queryByText(/^On /)?.textContent, c.querySelector('[data-comment-body]')?.textContent?.match(/Too long\?|About the page|since deleted/)?.[0]])).toEqual([
       ['On the paragraph', 'Too long?'],
       ['On the whole document', 'About the page'],
       // Detached is said, in its own section, never drawn as a comment on the whole document (SPEC §13.6).
@@ -156,7 +191,7 @@ describe('the comments column', () => {
     const byFace: SignedEvent = { ...comment([], 'Mine has a face'), id: '8'.repeat(64), pubkey: FACE }
     const byQa2: SignedEvent = { ...comment([], 'No picture here'), id: '9'.repeat(64), pubkey: QA2 }
     await open([roster, pictured, profile(QA2, 'QA-2'), byFace, byQa2])
-    const card = (words: RegExp) => [...document.querySelectorAll<HTMLElement>('[data-comment-id]')].find((c) => words.test(c.textContent ?? ''))
+    const card = (words: RegExp) => entries().find((c) => words.test(c.textContent ?? ''))
     await waitFor(() => expect(card(/Mine has a face/)?.querySelector('img')?.getAttribute('src')).toBe(PICTURE))
     await waitFor(() => expect(card(/No picture here/)?.textContent).toContain('QA-2'))
     expect(card(/No picture here/)?.querySelector('img')).toBeNull()
@@ -170,7 +205,7 @@ describe('the comments column', () => {
     const byAgent: SignedEvent = { ...comment([], 'Written by an agent'), id: '6'.repeat(64), pubkey: AGENT }
     const byPerson: SignedEvent = { ...comment([], 'Written by a person'), id: '7'.repeat(64), pubkey: PERSON }
     await open([roster, agent, profile(PERSON, 'Ana'), byAgent, byPerson])
-    const card = (words: RegExp) => [...document.querySelectorAll<HTMLElement>('[data-comment-id]')].find((c) => words.test(c.textContent ?? ''))
+    const card = (words: RegExp) => entries().find((c) => words.test(c.textContent ?? ''))
     // The kit's robot, in place of the initials.
     const robot = (words: RegExp) => !!card(words)?.querySelector('path[d^="M13.5 2C13.5 2.44425"]')
     await waitFor(() => expect(card(/Written by a person/)?.textContent).toContain('Ana'))
@@ -180,8 +215,8 @@ describe('the comments column', () => {
 
   it('draws a second-level item in a comment nested under the item above it, as the box wrote it', async () => {
     await open([comment([], '- Agenda\n  - budget\n- Next')])
-    await waitFor(() => expect(document.querySelector('[data-comment-id] li')).not.toBeNull())
-    const card = document.querySelector<HTMLElement>('[data-comment-id]')!
+    await waitFor(() => expect(document.querySelector('[data-conversation-item] li')).not.toBeNull())
+    const card = entries()[0]
     // Each item's own words, and how many items it sits inside.
     const depth = (li: Element) => {
       let n = 0
@@ -203,10 +238,11 @@ describe('the comments column', () => {
   it("marks a paragraph's card when its highlight is chosen in the text", async () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
     act(() => void page().editor.emit('commentSelect', { id: onParagraph.id }))
     // The open card takes a reply.
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Reply…' })).toBeTruthy())
+    expect(item(onParagraph.id)!.getAttribute('data-open')).toBe('true')
   })
 
   it('sends a comment on the whole document from the box at its foot', async () => {
@@ -261,7 +297,7 @@ describe('the comments column', () => {
     relay.events = [roster, profile(QA2, 'QA-2'), { ...comment(e.tags.filter((t) => t[0] === 'p' && t[1] === QA2), e.content) }]
     cleanup()
     await open(relay.events)
-    const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+    const card = await waitFor(() => entries()[0])
     await waitFor(() => expect(within(card).getByText('@QA-2')).toBeTruthy())
     expect(card.querySelector('strong')?.textContent).toBe('this')
   })
@@ -270,7 +306,7 @@ describe('the comments column', () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     const elsewhere = comment([], 'About the page')
     await open([roster, profile(AUTHOR, 'QA-1'), onParagraph, elsewhere])
-    await waitFor(() => expect(document.querySelectorAll('[data-thread-id]')).toHaveLength(2))
+    await waitFor(() => expect(items()).toHaveLength(2))
     act(() => void page().editor.emit('commentSelect', { id: onParagraph.id }))
     await waitFor(() => expect(box('Reply…')).toBeTruthy())
     write('Reply…', '[')
@@ -324,7 +360,7 @@ describe('the comments column', () => {
   it('moves a thread under Resolved without a reload when someone else resolves it', async () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
     const theirs: SignedEvent = { id: 'e'.repeat(64), pubkey: AUTHOR, created_at: 1_760_000_200, kind: 9101, tags: [['h', FOLDER], ['e', onParagraph.id], ['t', 'resolution'], ['action', 'resolved']], content: '', sig: '' }
     relay.events = [onParagraph, theirs]
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -334,20 +370,25 @@ describe('the comments column', () => {
     } finally {
       vi.useRealTimers()
     }
-    await waitFor(() => expect(document.querySelector('[data-thread-id][data-resolved]')).not.toBeNull())
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
   })
 
+  // Changed on purpose: Resolve is on the card's strip, shown while it is pointed at, and asks for an optional note
+  // first (the kit's ResolveDialog), where it was a button always shown that resolved at once.
   it('moves a thread under Resolved with the 9101 resolution', async () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
     // The relay keeps what it accepts, so the column's read after the write finds it.
     publish.mockImplementationOnce(async (e) => {
       relay.events = [...relay.events, { ...e, id: 'f'.repeat(64), sig: '' } as SignedEvent]
       return { ok: true }
     })
-    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Resolve' })))
-    await waitFor(() => expect(screen.getByText('Resolved')).toBeTruthy())
+    pointAt(entry(onParagraph.id)!)
+    act(() => void fireEvent.click(within(entry(onParagraph.id)!).getByRole('button', { name: 'Resolve' })))
+    const dialog = await screen.findByRole('dialog')
+    act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' })))
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
     expect(publish.mock.calls[0][0].kind).toBe(9101)
     expect(publish.mock.calls[0][0].tags).toContainEqual(['e', onParagraph.id])
   })
@@ -368,7 +409,7 @@ describe('the comments column', () => {
 
     it('draws a file alone on its line as its row, and the same file in a sentence as its chip', async () => {
       await open([comment([], `See\n${ISSUE}\nand ${OTHER} too`)])
-      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const card = await found(() => entries()[0])
       const row = await waitFor(() => {
         const found = card.querySelector<HTMLElement>('[data-link-row]')
         expect(found).toBeTruthy()
@@ -384,7 +425,7 @@ describe('the comments column', () => {
 
     it("draws the card another app's writer carried under the text, and nothing for its file's line, which the card stands for", async () => {
       await open([comment([['embed', ISSUE_ADDRESS, 'detailed']], `See\n${ISSUE}`)])
-      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const card = await found(() => entries()[0])
       const carried = await waitFor(() => {
         const found = card.querySelector<HTMLElement>('[data-card="detailed"]')
         expect(found).toBeTruthy()
@@ -397,7 +438,7 @@ describe('the comments column', () => {
 
     it('draws a bullet that is only a link as its row, and keeps the bullet', async () => {
       await open([comment([], `Read these:\n\n- ${ISSUE}\n- and ${OTHER} later`)])
-      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const card = await found(() => entries()[0])
       const row = await waitFor(() => {
         const found = card.querySelector<HTMLElement>('[data-link-row]')
         expect(found).toBeTruthy()
@@ -412,7 +453,7 @@ describe('the comments column', () => {
 
     it('says a carried card\'s file is not available, rather than drop the link, when it cannot be read', async () => {
       await open([comment([['embed', GONE_ADDRESS, 'detailed']], `See\n${GONE}`)])
-      const card = await waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+      const card = await found(() => entries()[0])
       // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this issue", not "Issue not available".
       await waitFor(() => expect(within(card).getByText("You can't open this issue")).toBeTruthy())
       expect(card.querySelector('[data-card="detailed"]')).toBeTruthy()
@@ -422,7 +463,7 @@ describe('the comments column', () => {
       const first = comment([], 'The export drops the tables.')
       const second = comment([['q', first.id]], `Same as\nnostr:${encodeNevent({ id: first.id, relays: [] })}`)
       await open([profile(AUTHOR, 'QA-1'), first, second])
-      const card = await waitFor(() => document.querySelector<HTMLElement>(`[data-comment-id="${second.id}"]`)!)
+      const card = await found(() => entry(second.id))
       const row = await waitFor(() => {
         const found = card.querySelector<HTMLElement>(`[data-comment-row="${first.id}"]`)
         expect(found).toBeTruthy()
@@ -439,13 +480,13 @@ describe('the comments column', () => {
       const inSentence = comment([['q', first.id]], `Same as ${reference} again`)
       await open([profile(AUTHOR, 'QA-1'), first, alone, inSentence])
       const row = await waitFor(() => {
-        const found = document.querySelector<HTMLElement>(`[data-comment-id="${alone.id}"] [data-comment-row="${first.id}"]`)
-        expect(found && within(found).queryByText('QA-1')).toBeTruthy()
-        return found!
+        const drawn = entry(alone.id)?.querySelector<HTMLElement>(`[data-comment-row="${first.id}"]`)
+        expect(drawn && within(drawn).queryByText('QA-1')).toBeTruthy()
+        return drawn!
       })
       expect(within(row).getByText('The export drops the tables.')).toBeTruthy()
       expect(within(row).getByText('QA-1').closest('a')?.getAttribute('href')).toMatch(/^\/document\/.+#comments$/)
-      const chip = await waitFor(() => within(document.querySelector<HTMLElement>(`[data-comment-id="${inSentence.id}"]`)!).getByText('QA-1: The export drops the tables.'))
+      const chip = await waitFor(() => within(entry(inSentence.id)!).getByText('QA-1: The export drops the tables.'))
       expect(chip.closest('a')?.getAttribute('href')).toMatch(/^\/document\/.+#comments$/)
     })
   })
@@ -565,7 +606,7 @@ describe('a comment on a selection (LEAF-7)', () => {
   it('keeps a reply box open on its thread through a sign-in ending, and the reply goes to that thread after the tap', async () => {
     const onFirst = comment([['block', FIRST]], 'Too long?')
     await open([onFirst], PAGE)
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(items()).not.toHaveLength(0))
     act(() => void page().editor.emit('commentSelect', { id: onFirst.id }))
     await waitFor(() => expect(box('Reply…')).toBeTruthy())
     write('Reply…', 'Shorter now')
@@ -610,24 +651,29 @@ describe('reactions on a comment (COMM-4)', () => {
     }
   }
 
+  // Changed on purpose: a reply shows once its thread is open (the kit's replies row, one thread open at a time).
   it("draws someone else's reactions on a comment and on its reply, not lit, and names who reacted", async () => {
     const root = comment([], 'Too long?')
     const reply = replyTo(root, 'Cut it')
     await open([root, reply, reaction(root.id, '👍', QA2, '7'.repeat(64)), reaction(reply.id, '🙏', QA2, '6'.repeat(64)), profile(QA2, 'QA-2')])
     const onRoot = await pill('Makes sense, 1')
     expect(onRoot.getAttribute('aria-pressed')).toBe('false')
-    expect((await pill('Thank you, 1')).closest('[data-comment-id]')?.getAttribute('data-comment-id')).toBe(reply.id)
+    openReplies(root.id)
+    expect((await pill('Thank you, 1')).closest('[data-reply-id]')?.getAttribute('data-reply-id')).toBe(reply.id)
     fireEvent.pointerEnter(onRoot)
     fireEvent.focus(onRoot)
     expect(await screen.findByText('QA-2 reacted with Makes sense')).toBeTruthy()
   })
 
+  // Changed on purpose: the add button is the card strip's React, shown while the card is pointed at, where it was
+  // "Add a reaction" on the comment's header line.
   it('reacts from the picker with a kind:7 on the comment and no h, and the pill shows, lit, once the relay accepts it', async () => {
     const root = comment([], 'Too long?')
     await open([root])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(items()).not.toHaveLength(0))
     relayKeeps()
-    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Add a reaction' })))
+    pointAt(entry(root.id)!)
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
     act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
     await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
     const e = publish.mock.calls[0][0]
@@ -642,7 +688,8 @@ describe('reactions on a comment (COMM-4)', () => {
       await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
       const shown = await pill('Makes sense, 1')
       expect((shown as HTMLButtonElement).disabled).toBe(true)
-      expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+      pointAt(entry(root.id)!)
+      for (const name of ['React', 'Add a reaction']) expect(screen.queryByRole('button', { name })).toBeNull()
       act(() => void fireEvent.click(shown))
       await act(async () => {})
       expect(publish).not.toHaveBeenCalled()
@@ -654,14 +701,15 @@ describe('reactions on a comment (COMM-4)', () => {
   it('writes nothing more while the read after an accepted reaction is still out', async () => {
     const root = comment([], 'Too long?')
     await open([root])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(items()).not.toHaveLength(0))
     const { query } = await import('../relay/bridge')
     const real = vi.mocked(query).getMockImplementation()!
     // The relay accepts the reaction; the column's read after it does not answer yet.
     vi.mocked(query).mockImplementation(() => new Promise(() => {}))
     try {
       const pick = () => {
-        act(() => void fireEvent.click(screen.getByRole('button', { name: 'Add a reaction' })))
+        pointAt(entry(root.id)!)
+        act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
         act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
       }
       pick()
@@ -708,7 +756,7 @@ describe('reactions on a comment (COMM-4)', () => {
   it("shows someone else's reaction without a reload, and its going when they take it back", async () => {
     const root = comment([], 'Too long?')
     await open([root])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(items()).not.toHaveLength(0))
     const theirs = reaction(root.id, '👍', QA2, '7'.repeat(64))
     relay.events = [root, theirs]
     await deliver(theirs)
@@ -726,23 +774,33 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     pubkey: by,
     tags: [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['p', root.pubkey], ...place, ['h', FOLDER]],
   })
-  const line = (id: string) => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${id}"]`)
-  const more = (id: string) => within(line(id)!).queryByRole('button', { name: 'More' })
-  const choose = async (id: string, item: 'Edit message' | 'Delete message') => {
-    act(() => void fireEvent.click(more(id)!))
-    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: item })))
+  const line = entry
+  /** What a card's More offers once it is pointed at: its rows, or null when it has no More. */
+  const offered = async (id: string) => {
+    pointAt(entry(id)!)
+    const more = within(entry(id)!).queryByRole('button', { name: 'More' })
+    if (!more) return null
+    act(() => void fireEvent.click(more))
+    const menu = await screen.findByRole('menu')
+    const rows = within(menu).getAllByRole('menuitem').map((m) => m.textContent)
+    act(() => void fireEvent.keyDown(menu, { key: 'Escape' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    return rows
   }
 
+  // Changed on purpose: the kit's More holds Resolve on every open comment, so someone else's comment has a More too,
+  // with Resolve alone; and a reply shows once its thread is open.
   it("offers Edit and Delete on your own comment and reply, and neither on someone else's", async () => {
     const theirs = comment([], 'Too long?')
     const yours = replyTo(theirs, 'Cut it', ME)
     const own = mine([], 'Mine')
     await open([theirs, yours, own])
     await waitFor(() => expect(line(own.id)).not.toBeNull())
-    expect(more(theirs.id)).toBeNull()
-    expect(more(yours.id)).not.toBeNull()
-    act(() => void fireEvent.click(more(own.id)!))
-    expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Edit message', 'Delete message'])
+    expect(await offered(theirs.id)).toEqual(['Resolve'])
+    expect(await offered(own.id)).toEqual(['Resolve', 'Edit message', 'Delete message'])
+    openReplies(theirs.id)
+    await waitFor(() => expect(line(yours.id)).not.toBeNull())
+    expect(await offered(yours.id)).toEqual(['Edit message', 'Delete message'])
   })
 
   it("shows someone else's edit, made in Peek, without a reload", async () => {
@@ -761,13 +819,14 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     await waitFor(() => expect(within(line(theirs.id)!).getByText('Far too long?')).toBeTruthy())
   })
 
+  // Changed on purpose: More is there for Resolve, which the column offered signed out before too; Edit and Delete are not.
   it('signed out, offers neither on what you wrote', async () => {
     const own = mine([], 'Mine')
     signedIn.pubkey = null
     try {
       await open([own])
       await waitFor(() => expect(line(own.id)).not.toBeNull())
-      expect(more(own.id)).toBeNull()
+      expect(await offered(own.id)).toEqual(['Resolve'])
     } finally {
       signedIn.pubkey = ME
     }
@@ -805,7 +864,7 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     expect(e.tags.some((t) => t[0] === 'block')).toBe(false)
     await waitFor(() => expect(within(line(own.id)!).getByText('Far too long?')).toBeTruthy())
     expect(within(line(own.id)!).getByText('(edited)')).toBeTruthy()
-    expect(within(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!).getByText('On the paragraph')).toBeTruthy()
+    expect(within(item(own.id)!).getByText('On the paragraph')).toBeTruthy()
   })
 
   describe("the one file's card under a sent comment (WBD-6)", () => {
@@ -913,11 +972,13 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     expect(box('Edit message').textContent).toContain('Far too long?')
   })
 
+  // Changed on purpose: the reply shows once the thread is open (the kit's replies row), here from its highlight in the
+  // text; and the deleted card has no strip at all, so no Resolve.
   it("deletes your comment after asking; QA-2's reply stays on its paragraph, highlighted, under the note, with no reply box and no Resolve", async () => {
     const own = mine([['block', PARAGRAPH]], 'Too long?')
     const theirs = replyTo(own, 'Cut it', QA2, [['block', PARAGRAPH]])
     await open([own, theirs])
-    await waitFor(() => expect(line(theirs.id)).not.toBeNull())
+    await waitFor(() => expect(within(item(own.id)!).getByRole('button', { name: /^1 reply/ })).toBeTruthy())
     await choose(own.id, 'Delete message')
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('Its reply stays, under “This comment was deleted.”')).toBeTruthy()
@@ -931,16 +992,18 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
     expect([publish.mock.calls[0][0].kind, publish.mock.calls[0][0].tags]).toEqual([5, [['e', own.id]]])
     const card = await waitFor(() => {
-      const c = document.querySelector<HTMLElement>(`[data-thread-id="${own.id}"]`)!
+      const c = item(own.id)!
       expect(within(c).getByText('This comment was deleted.')).toBeTruthy()
       return c
     })
-    expect(within(card).getByText('Cut it')).toBeTruthy()
     expect(within(card).getByText('On the paragraph')).toBeTruthy()
+    pointAt(entry(own.id)!)
     expect(within(card).queryByRole('button', { name: 'Resolve' })).toBeNull()
+    // Its highlight stays in the text, and choosing it opens the thread: the reply, and no box.
     expect(page().querySelector(`[data-comment-id="${own.id}"]`)).not.toBeNull()
     act(() => void page().editor.emit('commentSelect', { id: own.id }))
-    await waitFor(() => expect(card.getAttribute('data-active')).toBe('true'))
+    await waitFor(() => expect(card.getAttribute('data-open')).toBe('true'))
+    expect(within(card).getByText('Cut it')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
   })
 })
@@ -982,11 +1045,11 @@ describe('attaching a file to a comment (COMM-6)', () => {
     blobs.upload.mockResolvedValue({ ok: true, file: PNG })
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
-    await waitFor(() => expect(document.querySelector('[data-thread-id]')).not.toBeNull())
+    await waitFor(() => expect(items()).not.toHaveLength(0))
     act(() => void page().editor.emit('commentSelect', { id: onParagraph.id }))
     await waitFor(() => expect(box('Reply…')).toBeTruthy())
     write('Reply…', 'This one')
-    const card = document.querySelector<HTMLElement>('[data-thread-id]')!
+    const card = item(onParagraph.id)!
     act(() => void fireEvent.click(within(card).getByRole('button', { name: 'Attach a file' })))
     expect(screen.queryByRole('textbox', { name: 'Reply…' }), 'the reply box stays open').not.toBeNull()
     act(() => void fireEvent.change(card.querySelector('input[type=file]')!, { target: { files: [new File(['png'], 'shot.png', { type: 'image/png' })] } }))
@@ -1003,10 +1066,8 @@ describe('attaching a file to a comment (COMM-6)', () => {
     blobs.upload.mockResolvedValue({ ok: true, file: PNG })
     const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], 'The plan'), pubkey: ME }
     await open([own])
-    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
-    await waitFor(() => expect(row()).not.toBeNull())
-    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
-    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    await waitFor(() => expect(entry(own.id)).not.toBeNull())
+    choose(own.id, 'Edit message')
     let at: HTMLElement | null = box('Edit message')
     while (at && !at.querySelector('input[type=file]')) at = at.parentElement
     expect(within(at!).getByText('plan.pdf')).toBeTruthy()
@@ -1024,10 +1085,8 @@ describe('attaching a file to a comment (COMM-6)', () => {
     const imeta = (f: typeof PNG) => ['imeta', `url ${f.url}`, `m ${f.m}`, `x ${f.x}`, `size ${f.size}`, `filename ${f.filename}`]
     const own: SignedEvent = { ...comment([imeta(PDF), imeta(PNG)], 'The plan'), pubkey: ME }
     await open([own])
-    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
-    await waitFor(() => expect(row()).not.toBeNull())
-    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
-    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    await waitFor(() => expect(entry(own.id)).not.toBeNull())
+    choose(own.id, 'Edit message')
     let at: HTMLElement | null = box('Edit message')
     while (at && !at.querySelector('input[type=file]')) at = at.parentElement
     act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove shot.png' })))
@@ -1043,10 +1102,8 @@ describe('attaching a file to a comment (COMM-6)', () => {
   it('takes the only file off while editing your comment, and the edit names none, which takes it off (SPEC §6.8)', async () => {
     const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], 'The plan'), pubkey: ME }
     await open([own])
-    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
-    await waitFor(() => expect(row()).not.toBeNull())
-    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
-    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    await waitFor(() => expect(entry(own.id)).not.toBeNull())
+    choose(own.id, 'Edit message')
     let at: HTMLElement | null = box('Edit message')
     while (at && !at.querySelector('input[type=file]')) at = at.parentElement
     act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove plan.pdf' })))
@@ -1063,10 +1120,8 @@ describe('attaching a file to a comment (COMM-6)', () => {
   it('refuses taking the only file off a comment with no words, and publishes nothing: Delete removes it', async () => {
     const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], ''), pubkey: ME }
     await open([own])
-    const row = () => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${own.id}"]`)
-    await waitFor(() => expect(row()).not.toBeNull())
-    act(() => void fireEvent.click(within(row()!).getByRole('button', { name: 'More' })))
-    act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+    await waitFor(() => expect(entry(own.id)).not.toBeNull())
+    choose(own.id, 'Edit message')
     let at: HTMLElement | null = box('Edit message')
     while (at && !at.querySelector('input[type=file]')) at = at.parentElement
     act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove plan.pdf' })))
@@ -1101,7 +1156,7 @@ describe('attaching a file to a comment (COMM-6)', () => {
     await open([posted])
     const card = await waitFor(() => {
       // The column's line, not the page's highlight of the same comment.
-      const c = document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${posted.id}"]`)
+      const c = entry(posted.id)
       expect(c).not.toBeNull()
       return c!
     })
@@ -1265,9 +1320,9 @@ describe('the card and the live parts under the box (COMM-8)', () => {
 
   it("draws a sent comment's card named only by its URL, and a block of another page live under it", async () => {
     await open([...EVENTS, comment([['embed', ISSUE, 'detailed']], `see ${ISSUE_URL}`), comment([['part', TWO_ADDRESS, TWO_BLOCK]], `see ${PART_URL}`)])
-    await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(2))
+    await waitFor(() => expect(entries()).toHaveLength(2))
     const text = (c: Element) => c.textContent ?? ''
-    await waitFor(() => expect([...document.querySelectorAll('[data-comment-id]')].map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
+    await waitFor(() => expect(entries().map(text).join('|')).toMatch(/Fix it.*\|.*The block that stays live\.|The block that stays live\..*\|.*Fix it/))
   })
 
   /** A `kind:5` its author signed, naming `address`: a trusted deletion (SPEC §13.6.1). */
@@ -1285,7 +1340,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     const D = '88888888-8888-4888-8888-888888888888'
     const GONE = `30851:${SHIP}:${D}`
     await open([...EVENTS, deletion(GONE), comment([['embed', GONE, 'detailed']], `See\n${uriOf(GONE)}`)])
-    await waitFor(() => expect(document.querySelector('[data-comment-id] [data-card="detailed"]')?.textContent).toContain('Issue deleted'))
+    await waitFor(() => expect(document.querySelector('[data-conversation-item] [data-card="detailed"]')?.textContent).toContain('Issue deleted'))
   })
 
   it('a sent comment’s part of a page its author deleted says that part’s page was deleted (widget review, items 56 and 57)', async () => {
@@ -1300,9 +1355,9 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     const second = comment([['q', first.id]], `See\nnostr:${encodeNevent({ id: first.id, relays: [] })}`)
     await open([...EVENTS, first, second])
     const row = await waitFor(() => {
-      const found = document.querySelector<HTMLElement>(`[data-comment-id="${second.id}"] [data-comment-row="${first.id}"]`)
-      expect(found?.textContent).toContain('Same as Issue then')
-      return found!
+      const drawn = entry(second.id)?.querySelector<HTMLElement>(`[data-comment-row="${first.id}"]`)
+      expect(drawn?.textContent).toContain('Same as Issue then')
+      return drawn!
     })
     expect(row.textContent).not.toContain('https://')
   })
@@ -1344,7 +1399,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     try {
       await open([...EVENTS, comment([['embed', ISSUE, 'detailed']], `see\n${leafUrl}`)])
       const card = await waitFor(() => {
-        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-card="detailed"]')
+        const found = document.querySelector<HTMLElement>('[data-conversation-item] [data-card="detailed"]')
         expect(found?.textContent).toContain('Fix it')
         return found!
       })
@@ -1371,13 +1426,13 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     try {
       await open([...EVENTS, file(30851, SHIP, FRESH_D), comment([['embed', FRESH, 'detailed'], ['content-format', 'estiva-blocks-1']], serializeBlockDocument(doc))])
       const card = await waitFor(() => {
-        const found = document.querySelector<HTMLElement>('[data-comment-id] [data-card="detailed"]')
+        const found = document.querySelector<HTMLElement>('[data-conversation-item] [data-card="detailed"]')
         expect(found?.textContent).toContain('Fresh issue')
         return found!
       })
       expect(opensAt(card)).toBe(issueOpens)
       // Its chip in the sentence is no link to the URL it was written as either.
-      const links = [...card.closest('[data-comment-id]')!.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))
+      const links = [...card.closest('[data-conversation-item]')!.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))
       expect(links).not.toContain(otherUrl)
     } finally {
       delete files.known[uriOf(FRESH)]
@@ -1386,7 +1441,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
 
   describe('an app URL in a sent comment, as Peek and Ship draw it (LTX-6)', () => {
     const leafUrl = `https://leaf.example/issue/fix-it-${ISSUE_D}`
-    const sentComment = () => waitFor(() => document.querySelector<HTMLElement>('[data-comment-id]')!)
+    const sentComment = () => found(() => entries()[0])
 
     it('draws an issue’s URL in a sentence, on Leaf’s host or Ship’s, as the issue’s chip, which opens the URL as written', async () => {
       await open([...EVENTS, comment([], `see ${leafUrl} and ${ISSUE_URL} now`)])
@@ -1420,12 +1475,10 @@ describe('the card and the live parts under the box (COMM-8)', () => {
   })
 
   describe('editing your comment to link an issue (PEEKM-7)', () => {
-    const line = (id: string) => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${id}"]`)
     const editSaying = async (own: SignedEvent, words: string) => {
       await open([...EVENTS, own])
-      await waitFor(() => expect(line(own.id)).not.toBeNull())
-      act(() => void fireEvent.click(within(line(own.id)!).getByRole('button', { name: 'More' })))
-      act(() => void fireEvent.click(screen.getByRole('menuitem', { name: 'Edit message' })))
+      await waitFor(() => expect(entry(own.id)).not.toBeNull())
+      choose(own.id, 'Edit message')
       act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent(words).run())
     }
     const saved = async () => {
@@ -1494,9 +1547,9 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       // The one that draws, so the two that do not are told apart from parts never drawn.
       comment([['part', TWO_ADDRESS, TWO_BLOCK]], `still ${PART_URL}`),
     ])
-    await waitFor(() => expect(document.querySelectorAll('[data-comment-id]')).toHaveLength(3))
+    await waitFor(() => expect(entries()).toHaveLength(3))
     await waitFor(() => expect(document.querySelectorAll('[data-part-address]')).toHaveLength(1))
-    const drawn = document.querySelector('[data-part-address]')!.closest('[data-comment-id]')!
+    const drawn = document.querySelector('[data-part-address]')!.closest('[data-conversation-item]')!
     expect(drawn.textContent).toContain('still')
   })
 })
@@ -1507,7 +1560,7 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
   beforeAll(() => {
     files.known[CARD] = { ref: 'r', kind: 30851, eventId: 'e', widget: 'card', noun: 'issue', meta: [], actions: [], viaRecommendation: false, address: CARD_ADDRESS, slots: { title: { value: 'Card on an archived page' } } }
   })
-  const line = (id: string) => document.querySelector<HTMLElement>(`[data-thread-id] [data-comment-id="${id}"]`)
+  const line = entry
   const reaction = (target: string): SignedEvent => ({ id: '7'.repeat(64), pubkey: QA2, created_at: 1_760_000_100, kind: 7, tags: [['e', target]], content: '👍', sig: '' })
 
   async function openArchived(events: SignedEvent[]) {
@@ -1528,13 +1581,16 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     await waitFor(() => expect(line(own.id)?.querySelector('[data-card="detailed"]')?.textContent).toContain('Card on an archived page'))
     expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Comment on this document…' })).toBeNull()
-    // Chosen, a thread opens no reply box.
-    act(() => void fireEvent.click(line(theirs.id)!.closest<HTMLElement>('[data-thread-id]')!))
-    act(() => void fireEvent.click(line(own.id)!.closest<HTMLElement>('[data-thread-id]')!))
+    // Chosen, a thread opens no reply box: a press on its card still chooses it, to find its words in the text.
+    act(() => void fireEvent.click(line(theirs.id)!))
+    act(() => void fireEvent.click(line(own.id)!))
+    expect(item(own.id)!.getAttribute('data-open')).toBe('true')
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
-    for (const name of ['Resolve', 'Reopen', 'Add a reaction', 'Remove']) expect(screen.queryByRole('button', { name })).toBeNull()
-    // A comment's own ⋯ (Edit, Delete); the page's ⋯ in the header is the page's (LED-4).
-    for (const thread of document.querySelectorAll<HTMLElement>('[data-thread-id]')) expect(within(thread).queryByRole('button', { name: 'More' })).toBeNull()
+    // Pointed at, a card shows no strip: no React, Reply, Resolve, Reopen or its own More (Edit, Delete); the page's
+    // More in the header is the page's (LED-4).
+    for (const id of [theirs.id, own.id]) pointAt(line(id)!)
+    for (const name of ['Resolve', 'Reopen', 'React', 'Reply', 'Add a reaction', 'Remove']) expect(screen.queryByRole('button', { name })).toBeNull()
+    for (const thread of items()) expect(within(thread).queryByRole('button', { name: 'More' })).toBeNull()
     const pill = await screen.findByRole('button', { name: 'Makes sense, 1' })
     act(() => void fireEvent.click(pill))
     await act(async () => {})
