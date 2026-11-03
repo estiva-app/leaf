@@ -13,9 +13,10 @@ import type { Anchor, CommentItem, Thread } from './comments'
 import { useThreads } from './useThreads'
 
 /*
-  A Leaf page's comments column in its states, on the kit's cards (ONE-5, step 3): the column, its groups and its box
-  are still Leaf's; each comment is the kit's ConversationCard, and its thread the kit's Thread, open under it. Only
-  the reads are handed in.
+  A Leaf page's comments column in its states, the kit's one column (ONE-5, step 4): ConversationLayout with its
+  threads under their comments, its "On deleted blocks" and "Resolved" groups, and Leaf's box at its foot, with what a
+  new comment will be on in the kit's strip above it. Each comment is the kit's ConversationCard, and its thread the
+  kit's Thread. Only the reads are handed in.
 */
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
@@ -50,10 +51,10 @@ const THREADS: Thread[] = [
   { id: resolvedOne.id, blocks: [FIRST], root: resolvedOne, replies: [], resolved: true, resolution: { by: KATERINA, note: 'Monday stays: the teams are all in Europe.', at: NOW - 70 * 60_000 } },
 ]
 
-/** The page's text and its comments column beside it, as a Leaf page lays them out. */
-function PageWithComments({ closed }: { closed?: string }) {
+/** The page's text and its comments column beside it, as a Leaf page lays them out. `drafting`: what a comment is begun on, as the selection's Comment does. */
+function PageWithComments({ closed, drafting = null }: { closed?: string; drafting?: Anchor | null }) {
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [draft, setDraft] = useState<Anchor | null>(null)
+  const [draft, setDraft] = useState<Anchor | null>(drafting)
   const docBody = useRef<HTMLDivElement | null>(null)
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
@@ -74,7 +75,7 @@ function PageWithComments({ closed }: { closed?: string }) {
         </Panel>
       </div>
       <Divider orientation="vertical" />
-      <div className="flex w-96 flex-none flex-col">
+      <div className="flex flex-none flex-col">
         <CommentsColumn doc={{ address: ADDRESS, folder: FOLDER }} addressable editor={editor} docBody={docBody} draft={draft} onDraft={setDraft} closed={closed} />
       </div>
     </div>
@@ -105,10 +106,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** At rest: each comment on the kit's card, what it is on above its words, its thread folded behind its replies row; "On deleted blocks" and "Resolved" closed at the end. */
+/** At rest: each comment on the kit's card, what it is on above its words, its thread folded behind its replies row; the kit's "On deleted blocks" and "Resolved" closed at the end. */
 export const AtRest: Story = {}
 
-/** A thread open under its comment, from its replies row: its reply on the kit's ReplyCard, then Leaf's reply box. */
+/** A thread open under its comment, from its replies row: the kit's one card round the comment and its thread, its reply on the kit's ReplyCard, then Leaf's reply box. */
 export const ThreadOpen: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -139,3 +140,13 @@ export const Resolved: Story = {
 
 /** An archived page: the box's place says why, and the cards only show. */
 export const Archived: Story = { args: { closed: archivedLine({}) ?? '' } }
+
+/** A comment begun on selected words: they are marked in the text, and the kit's strip above the box says them as the posted card will, with ✕ to comment on the whole document instead. */
+export const DraftingOnWords: Story = {
+  args: { drafting: { blocks: [SECOND], quote: { start: 'the press notes' } } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('button', { name: 'Comment on the whole document instead' })).toBeVisible()
+    await expect(canvas.getByRole('textbox', { name: 'Comment on these words…' })).toBeVisible()
+  },
+}
