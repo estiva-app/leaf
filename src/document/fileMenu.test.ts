@@ -176,18 +176,17 @@ const project = (d: string) =>
 const topic = (d: string) => ({ kind: 30840, ref: `30840:${KAT}:${d}`, address: `30840:${KAT}:${d}`, folder: FOLDER, slots: { title: { value: d } }, actions: [] }) as unknown as ForeignObject
 
 describe('moving a Leaf page', () => {
-  it('to another Folder: one 1852 add there naming it and the page under it, then the remove here, then its place at the top', async () => {
+  it('to another Folder: one 1852 move from here to there naming it and the page under it, then its place at the top', async () => {
     const listing = [page('p'), page('a', 'p', { scopedTo: FOLDER }), page('b', 'a')]
     const result = await moveDocument(listing[1], { from: [HERE], to: THERE, parent: '' }, async () => listing)
     expect(result).toEqual({ ok: true, stillIn: [] })
-    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op')])).toEqual([
-      [1852, OTHER_FOLDER, 'add'],
-      [1852, FOLDER, 'remove'],
-      [1851, FOLDER, undefined],
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([
+      [1852, OTHER_FOLDER, 'move', FOLDER],
+      [1851, FOLDER, undefined, undefined],
     ])
     expect(tags(published[0], 'a').sort()).toEqual([`30842:${ME}:a`, `30842:${ME}:b`])
     // Its place is a change on its own `parent`, in the Folder it was filed in: the `h` never moves.
-    expect([tag(published[2], 'a'), tag(published[2], 'field'), tag(published[2], 'value')]).toEqual([`30842:${ME}:a`, 'parent', ''])
+    expect([tag(published[1], 'a'), tag(published[1], 'field'), tag(published[1], 'value')]).toEqual([`30842:${ME}:a`, 'parent', ''])
   })
 
   it('under another page in the same Folder: only the change of its place, naming that page', async () => {
@@ -196,24 +195,39 @@ describe('moving a Leaf page', () => {
     expect(published.map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'h')])).toEqual([[1851, 'parent', `30842:${ME}:c`, FOLDER]])
   })
 
-  it('sends nothing more when the relay refuses the add, and says nothing was moved', async () => {
+  it('sends nothing more when the relay refuses the move, and says nothing was moved', async () => {
     answers = [{ ok: false, message: 'blocked' } as PublishResult]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: false, reason: 'Nothing was moved. Try again.' })
+    expect(result).toEqual({ ok: false, reason: 'Nothing was moved: try again.' })
     expect(published).toHaveLength(1)
   })
 
-  it('says why when the add is refused with a reason, such as a sign-in that ended', async () => {
+  it.each([
+    ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the Folders is archived.'],
+    ["invalid: only the team's members may move a space in or out", 'Nothing was moved: you need to be a member of both Folders to move this.'],
+    ['invalid: the source does not list 30842:…', 'Nothing was moved: the Folders changed since you opened this. Try again.'],
+  ])('a refused move says why in Leaf’s words, never the relay’s: %s', async (relaySaid, leafSays) => {
+    answers = [{ ok: false, reason: relaySaid, httpStatus: 200 } as PublishResult]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: false, reason: leafSays })
+  })
+
+  it('says why when the move never reached the relay, such as a sign-in that ended', async () => {
     answers = [{ ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' } as PublishResult]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
     expect(result).toEqual({ ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' })
   })
 
-  it('names the Folder that still lists it when its remove is refused, and still gives it its new place', async () => {
+  it('listed in two Folders: a move from each; the second refused names the Folder that still lists it, and it still gets its new place', async () => {
+    const ALSO = { id: '33333333-3333-4333-8333-333333333333', name: 'Ops', hasState: true, addresses: [`30842:${ME}:a`] }
     answers = [{ ok: true } as PublishResult, { ok: false, message: 'blocked' } as PublishResult]
-    const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: true, stillIn: [HERE] })
-    expect(published.map((e) => e.kind)).toEqual([1852, 1852, 1851])
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [ALSO] })
+    expect(published.map((e) => [e.kind, tag(e, 'op'), tag(e, 'from')])).toEqual([
+      [1852, 'move', FOLDER],
+      [1852, 'move', ALSO.id],
+      [1851, undefined, undefined],
+    ])
   })
 
   it('refuses a private Folder for a page filed elsewhere, before anything is sent', async () => {

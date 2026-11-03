@@ -530,7 +530,7 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     await user.click(await screen.findByRole('option', { name: option }))
   }
 
-  it('to the top of another Folder: the add there, the remove here, then both Folders read again so the sidebar shows it there', async () => {
+  it('to the top of another Folder: one move from here to there, then both Folders read again so the sidebar shows it there', async () => {
     const reread: string[] = []
     render(
       <ToastProvider>
@@ -543,10 +543,7 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     await pick('Put it under', 'The top of Steer')
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
-    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op')])).toEqual([
-      [1852, STEER, 'add'],
-      [1852, FOLDER, 'remove'],
-    ])
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([[1852, STEER, 'move', FOLDER]])
     expect(reread).toEqual([STEER, FOLDER])
   })
 
@@ -600,9 +597,6 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     await pick('Put it under', 'The top of Steer')
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
-    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op')])).toEqual([
-      [1852, STEER, 'add'],
-      [1852, FOLDER, 'remove'],
-    ])
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([[1852, STEER, 'move', FOLDER]])
   })
 })
