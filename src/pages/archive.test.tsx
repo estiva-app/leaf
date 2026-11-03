@@ -42,7 +42,8 @@ describe('the archive question, in Leaf’s words (LED-4)', () => {
   it('says what goes with the page as "under it", names the apps with one "in", and the button archives a page', () => {
     render(<ArchiveDialog {...archiveWordsOf('2 pages and 1 topic')} title="Launch plan" onArchive={() => true} onClose={() => {}} />)
     expect(screen.getByText('Archive “Launch plan”?')).toBeTruthy()
-    expect(screen.getByText('This hides the page and the 2 pages and 1 topic under it from every list, in Leaf, Peek and Ship.')).toBeTruthy()
+    // Changed on purpose: the kit's words, as Peek and Ship say them (Katerina, 3 November).
+    expect(screen.getByText('This hides the page and the 2 pages and 1 topic under it from every list, in Leaf, in Peek and in Ship.')).toBeTruthy()
     expect(screen.getByText('Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Archive page' })).toBeTruthy()
   })

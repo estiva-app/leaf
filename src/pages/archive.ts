@@ -3,15 +3,14 @@ import type { ArchiveDialogProps, ArchivedNoticeProps } from '@estiva-app/ui'
 
 /**
  * The kit's `ArchiveDialog`, in Leaf's words, as Leaf's own question said them: what it hides is "the 2 pages and
- * 1 topic under it" (`archiveHides`' words, empty for nothing), the apps are named once, "in Leaf, Peek and Ship",
- * as Delete names them, and nothing is deleted.
+ * 1 topic under it" (`archiveHides`' words, empty for nothing), the apps as the kit names them, "in Leaf, in Peek and
+ * in Ship", as Peek and Ship say it (Katerina, 3 November), and nothing is deleted.
  */
 export function archiveWordsOf(hides: string): Pick<ArchiveDialogProps, 'what' | 'hides' | 'apps' | 'getBack'> {
   return {
     what: 'page',
     hides: hides ? [`the ${hides} under it`] : [],
-    // One entry, so the kit's "in" is said once: its list of three would read "in Leaf, in Peek and in Ship".
-    apps: ['Leaf, Peek and Ship'],
+    apps: ['Leaf', 'Peek', 'Ship'],
     getBack: 'Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.',
   }
 }

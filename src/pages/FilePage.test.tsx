@@ -494,7 +494,8 @@ describe('Archive from a page’s ⋯ menu (LED-4)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Archive…' }))
     expect(await screen.findByText('Archive “Friday notes”?')).toBeTruthy()
-    expect(screen.getByText('This hides the page from every list, in Leaf, Peek and Ship.')).toBeTruthy()
+    // Changed on purpose: the kit's words, as Peek and Ship say them (Katerina, 3 November).
+    expect(screen.getByText('This hides the page from every list, in Leaf, in Peek and in Ship.')).toBeTruthy()
     expect(screen.getByText('Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.')).toBeTruthy()
     fireEvent.change(screen.getByRole('textbox', { name: 'Resolution (optional)' }), { target: { value: 'Superseded by the Q4 plan.' } })
     const archive = screen.getByRole('button', { name: 'Archive page' })
