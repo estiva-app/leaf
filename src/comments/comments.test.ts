@@ -316,6 +316,30 @@ describe("a document's threads", () => {
     ])
   })
 
+  it('carries the resolution that stands, for the card to say: who, the note and when (ms); none once reopened', async () => {
+    const QA2 = 'c'.repeat(64)
+    const merged = comment([], 'Merge these?')
+    const bare = comment([], 'Ship it?')
+    const reopened = comment([], 'Split it?')
+    const withNote = event(9101, [['h', FOLDER], ['e', merged.id], ['t', 'resolution'], ['action', 'resolved']], 'Merged into the plan.', QA2)
+    const noNote = event(9101, [['h', FOLDER], ['e', bare.id], ['t', 'resolution'], ['action', 'resolved']])
+    relay.events = [
+      merged,
+      bare,
+      reopened,
+      withNote,
+      noNote,
+      event(9101, [['h', FOLDER], ['e', reopened.id], ['t', 'resolution'], ['action', 'resolved']], 'Done.'),
+      event(9101, [['h', FOLDER], ['e', reopened.id], ['t', 'resolution'], ['action', 'reopened']]),
+    ]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.body, t.resolved, t.resolution])).toEqual([
+      ['Merge these?', true, { by: QA2, note: 'Merged into the plan.', at: withNote.created_at * 1000 }],
+      ['Ship it?', true, { by: AUTHOR, at: noNote.created_at * 1000 }],
+      ['Split it?', false, undefined],
+    ])
+  })
+
   it('reads reactions on replies as on comments, and says how many of the oldest were past the horizon of 100', async () => {
     const root = comment([], 'Plan?')
     const replies = Array.from({ length: 100 }, (_, i) => event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['h', FOLDER]], `reply ${i}`))

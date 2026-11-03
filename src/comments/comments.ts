@@ -78,6 +78,15 @@ export interface Thread {
   replies: CommentItem[]
   /** The last resolution says resolved. */
   resolved: boolean
+  /** While it stands resolved: who resolved it, the note they wrote with it, and when, in ms — what the card says. */
+  resolution?: Resolved
+}
+
+/** A thread's resolution, as the card says it: who, the note when there is one, and when (ms). */
+export interface Resolved {
+  by: string
+  note?: string
+  at: number
 }
 
 /** What a write tells the person: `ok`, or the plain words for a refusal. */
@@ -151,13 +160,16 @@ export async function readThreads(doc: Commented): Promise<Threads> {
     const quote = placed && blocks ? quoteOf(placed) : undefined
     // A resolved thread stays resolved when its comment is deleted.
     const last = decorations?.byId[id]?.resolutions.at(-1)
+    const resolved = last?.action === 'resolved'
     return {
       id,
       ...(blocks ? { blocks } : {}),
       ...(quote ? { quote } : {}),
       root: root ? item(root) : null,
       replies: answers.map(item),
-      resolved: last?.action === 'resolved',
+      resolved,
+      // Whoever wrote it, in Leaf, Peek or Ship: the relay's seconds as ms, as every moment a card takes.
+      ...(resolved ? { resolution: { by: last.by, ...(last.message ? { note: last.message } : {}), at: last.at * 1000 } } : {}),
     }
   }
   const threads = [...on.map((root) => thread(root.id, root)), ...deleted.map((id) => thread(id, null))]
