@@ -1,7 +1,7 @@
-import { ArchivedNotice } from '@estiva-app/ui'
+import { ArchiveDialog, ArchivedNotice } from '@estiva-app/ui'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { archivedNoticeOf } from './archive'
+import { archivedNoticeOf, archiveWordsOf } from './archive'
 
 const BY = 'a'.repeat(64)
 const NOW = new Date(2026, 10, 3, 15, 0)
@@ -35,5 +35,15 @@ describe('the archived card, in Leaf’s words (a3257366)', () => {
     expect(screen.getByText('Archived with its parent by Miky · Today')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open parent' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
+  })
+})
+
+describe('the archive question, in Leaf’s words (LED-4)', () => {
+  it('says what goes with the page as "under it", names the apps with one "in", and the button archives a page', () => {
+    render(<ArchiveDialog {...archiveWordsOf('2 pages and 1 topic')} title="Launch plan" onArchive={() => true} onClose={() => {}} />)
+    expect(screen.getByText('Archive “Launch plan”?')).toBeTruthy()
+    expect(screen.getByText('This hides the page and the 2 pages and 1 topic under it from every list, in Leaf, Peek and Ship.')).toBeTruthy()
+    expect(screen.getByText('Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Archive page' })).toBeTruthy()
   })
 })

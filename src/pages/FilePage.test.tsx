@@ -486,6 +486,33 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
   })
 })
 
+describe('Archive from a page’s ⋯ menu (LED-4)', () => {
+  it('asks in Leaf’s words, and Archive page waits while the archive is written, so a second press writes one archive', async () => {
+    let answer: (result: PublishResult) => void = () => {}
+    answers = [new Promise<PublishResult>((resolve) => (answer = resolve)) as unknown as PublishResult]
+    render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Archive…' }))
+    expect(await screen.findByText('Archive “Friday notes”?')).toBeTruthy()
+    expect(screen.getByText('This hides the page from every list, in Leaf, Peek and Ship.')).toBeTruthy()
+    expect(screen.getByText('Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.')).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Resolution (optional)' }), { target: { value: 'Superseded by the Q4 plan.' } })
+    const archive = screen.getByRole('button', { name: 'Archive page' })
+    fireEvent.click(archive)
+    // Whatever settles at once has settled: a dialog that did not wait would take the second press as a second archive.
+    await act(async () => {})
+    fireEvent.click(archive)
+    await act(async () => {})
+    const archives = published.filter((e) => tag(e, 'field') === 'archived')
+    expect(archives).toHaveLength(1)
+    expect(tag(archives[0], 'value')).toBe('true')
+    expect(JSON.stringify(archives[0])).toContain('Superseded by the Q4 plan.')
+    answer({ ok: true })
+    expect(await screen.findByText('Archived “Friday notes”')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText('Archive “Friday notes”?')).toBeNull())
+  })
+})
+
 describe('New document inside, from a page’s ⋯ menu (LFB-8)', () => {
   const STEER = '11111111-1111-4111-8111-111111111111'
   // Stored in QA, listed in Steer: as after a move.

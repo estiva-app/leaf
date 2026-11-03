@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { IconDots } from '@tabler/icons-react'
-import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, MenuSeparator, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
+import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, ToolbarButton, useToast } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
 import {
   archiveDocument,
@@ -21,6 +21,7 @@ import {
 import { titleOf } from '../folders/tree'
 import { readFolder, takesNewDocuments } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
+import { archiveWordsOf } from './archive'
 import { MoveDialog } from './MoveDialog'
 
 /** The Folder that lists a page, by the sidebar's read, else its `h`. */
@@ -226,7 +227,12 @@ export function DocumentMenu({
         />
       )}
       {dialog?.kind === 'archive' && (
-        <ArchiveDialog title={title} hides={dialog.hides} onArchive={(resolution) => setArchived(true, resolution || undefined)} onClose={() => setDialog(null)} />
+        <ArchiveDialog
+          {...archiveWordsOf(dialog.hides)}
+          title={title}
+          onArchive={(resolution) => setArchived(true, resolution || undefined)}
+          onClose={() => setDialog(null)}
+        />
       )}
       {dialog?.kind === 'delete' && (
         <ConfirmDialog title={`Delete “${title}”?`} confirmLabel="Delete page" destructive onConfirm={() => remove(dialog.plan)} onClose={() => setDialog(null)}>
@@ -275,38 +281,4 @@ export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced }: Extr
 function moveCount(beneath: readonly ForeignObject[]): string {
   const kinds = new Set(beneath.map((one) => one.kind))
   return kinds.size === 1 ? countOf(beneath[0].kind, beneath.length) : `${beneath.length} files`
-}
-
-/** "Archive …?" for a Leaf page: what it hides with it, that nothing is deleted, and an optional resolution (the prototype's words). */
-function ArchiveDialog({ title, hides, onArchive, onClose }: { title: string; hides: string; onArchive: (resolution: string) => Promise<boolean>; onClose: () => void }) {
-  const [resolution, setResolution] = useState('')
-  const archive = async () => {
-    if (await onArchive(resolution.trim())) onClose()
-  }
-  return (
-    <DialogShell
-      title={`Archive “${title}”?`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="muted" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" type="submit" form="archive-form">
-            Archive page
-          </Button>
-        </>
-      }
-    >
-      <Form id="archive-form" onSubmit={archive}>
-        <div className="flex flex-col gap-2 text-body-2 text-text-primary">
-          <p>{hides ? `This hides the page and the ${hides} under it from every list, in Leaf, Peek and Ship.` : 'This hides the page from every list, in Leaf, Peek and Ship.'}</p>
-          <p className="text-text-secondary">Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.</p>
-        </div>
-        <Field label="Resolution (optional)">
-          <Textarea value={resolution} rows={3} placeholder="What happened with this page?" onChange={(event) => setResolution(event.target.value)} />
-        </Field>
-      </Form>
-    </DialogShell>
-  )
 }
