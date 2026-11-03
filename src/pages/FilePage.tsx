@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
-import { IconMessage, IconMessageOff } from '@tabler/icons-react'
+import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/icons-react'
 import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
@@ -19,7 +19,9 @@ import { isDocument, titleOf, typeOf } from '../folders/tree'
 import { FileKey, OpenIn, OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
-import { useFold, useNarrow } from '../frame/folds'
+import { useNarrow } from '../frame/folds'
+import { OverviewPanel } from './OverviewPanel'
+import { useSideColumn, type Shown } from './sideColumn'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
 import { FileTopicsOf } from './FileTopics'
 import { archivedNoticeOf } from './archive'
@@ -54,9 +56,8 @@ export function FilePage({
   /** Its menu's "New document inside": a new page under this one, listed in `listedIn` (LFB-8). */
   onNewInside?: (page: ForeignObject, listedIn: string) => void
 }) {
-  // Above the document, so it holds from one document to the next (LED-3).
-  const [commentsOpen, setCommentsOpen] = useFold('comments')
-  const comments = { open: commentsOpen, onOpenChange: setCommentsOpen }
+  // Above the document, so it holds from one document to the next (LED-3): the comments, or the Overview in their place.
+  const side = useSideColumn()
   // A project's issues come from its row's read, which carries no actions: such a file is read on its own before it
   // is taken for one Leaf cannot write.
   const recheck = listed && !listed.unreachable && listed.naddr && !sharesText(listed) ? listed.naddr : null
@@ -78,7 +79,7 @@ export function FilePage({
       />
     )
   }
-  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} folders={folders} onChanged={onChanged} onNewInside={onNewInside} />
+  return <DocumentView key={file.address ?? file.ref} opened={file} comments={side.comments} overview={side.overview} folders={folders} onChanged={onChanged} onNewInside={onNewInside} />
 }
 
 /** Now, in ms, moved on each minute: what "Edited 2 minutes ago" counts from. */
@@ -91,9 +92,6 @@ function useMinute(): number {
   return now
 }
 
-/** Whether the comments column is shown, and its toggle. */
-type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
-
 /**
  * A document, written in place: its title at the top and its text below,
  * each saved when you leave it, and someone else's save drawn as it arrives
@@ -103,12 +101,16 @@ type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
 function DocumentView({
   opened,
   comments,
+  overview,
   folders,
   onChanged,
   onNewInside,
 }: {
   opened: ForeignObject
-  comments: CommentsFold
+  /** Whether the comments column is shown, and its button. */
+  comments: Shown
+  /** Whether the Overview is shown in the comments' place, and its button. */
+  overview: Shown
   folders?: readonly FolderSummary[]
   onChanged?: (folder: string) => void | Promise<void>
   onNewInside?: (page: ForeignObject, listedIn: string) => void
@@ -235,7 +237,7 @@ function DocumentView({
   }
   // Opened at `#block-<id>`: scrolled to it, or told it is gone (Ship's issue page says the same).
   const [missing, dismissMissing] = useLinkedBlock(body?.value ?? '', body?.format ?? 'marker')
-  // Commenting on a block brings a hidden comments column back, where the comment is written.
+  // Commenting on a block brings a hidden comments column back, where the comment is written, the Overview put away.
   function commentOn(anchor: Anchor | null) {
     setDraft(anchor)
     if (anchor && !comments.open) comments.onOpenChange(true)
@@ -276,6 +278,16 @@ function DocumentView({
             onClick={() => comments.onOpenChange(!comments.open)}
           >
             {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
+          </ToolbarButton>
+          {/* Ship's side-panel button, its icon and its words, pressed while the Overview is shown, to everyone, on every
+              file (Katerina, 3 November). */}
+          <ToolbarButton
+            tooltip={overview.open ? 'Hide side panel' : 'Show side panel'}
+            aria-label={overview.open ? 'Hide side panel' : 'Show side panel'}
+            pressed={overview.open}
+            onClick={() => overview.onOpenChange(!overview.open)}
+          >
+            <IconLayoutSidebarRight size={16} stroke={1.5} />
           </ToolbarButton>
           {own && (
             <DocumentMenu
@@ -368,6 +380,16 @@ function DocumentView({
           />
         </div>
       </div>
+      {/* Its Overview, in the comments' place (ONE-5, step 5), as Ship's: drawn only while it is shown; the comments
+          stay as they were behind it. */}
+      {overview.open && (
+        <>
+          <Divider orientation="vertical" />
+          <div className="flex flex-none flex-col" data-overview-column>
+            <OverviewPanel />
+          </div>
+        </>
+      )}
     </div>
   )
 }

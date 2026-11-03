@@ -1,0 +1,48 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './OverviewPanel.stories'
+
+<Meta of={Stories} />
+
+# OverviewPanel
+
+A page's Overview: the kit's **Panel** "Overview" in the column beside the
+page, in the comments' place, empty for now (ONE-5, step 5; Katerina,
+3 November).
+
+**Seen in**: *Pages/OverviewPanel*: **Empty**.
+
+## When
+
+- Beside a page, when the header's side-panel button ("Show side panel") is
+  pressed. It takes the comments' place, and hiding it brings back what the
+  column held before (`useSideColumn`).
+
+## When not
+
+- Not for the comments. They are the column's other occupant,
+  **CommentsColumn**, the kit's one column.
+- Not for the page's Topics. They stay under the title (`FileTopicsOf`).
+
+## How
+
+```tsx
+import { OverviewPanel } from './OverviewPanel'
+
+{overview.open && (
+  <>
+    <Divider orientation="vertical" />
+    <div className="flex flex-none flex-col" data-overview-column>
+      <OverviewPanel />
+    </div>
+  </>
+)}
+```
+
+## What it owns
+
+- **Its name**, "Overview", in the panel's bar.
+- **Its empty line**, "Nothing here yet.", the kit's **EmptyState** for one
+  part of a page, placed by the kit's Panel padding (16px in, 12px under the
+  bar). Nothing is planned for it yet.
+- **Its width**: 384px, the comments column's, so the page does not move
+  when one replaces the other.
