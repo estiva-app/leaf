@@ -11,6 +11,8 @@ import type { Archive } from '@estiva-app/interop'
  * The comment box keeps its plain line.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
+ *
+ * @registry namesake: Leaf's own archived card, drawn before the package had one (ui 0.96.0); kept until Leaf takes the package's ArchivedNotice in its place.
  */
 export interface ArchivedNoticeProps {
   archive: Archive

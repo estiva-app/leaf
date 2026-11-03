@@ -9,6 +9,8 @@ const TOP = '__top__'
  * prototype draws it in Leaf. It opens on the Folder it is in, as Peek's does, and Move waits for a place to be picked:
  * a preselected destination is a move nobody chose. Its own Folder is listed for a new place inside it; another Folder's targets are read
  * when it is picked. Only real moves are listed: never the page, what is under it, or where it already is.
+ *
+ * @registry namesake: Leaf's own Move, drawn before the package had one (ui 0.99.0); kept until Leaf takes the package's MoveDialog in its place.
  */
 export function MoveDialog({
   title,
