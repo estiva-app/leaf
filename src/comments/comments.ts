@@ -341,13 +341,15 @@ export function deleteComment(comment: CommentItem): Promise<WriteResult> {
 
 /**
  * Resolve or reopen a thread: the same `kind:9101` Peek writes, so both apps read the same state (Miky, LEAF-5 kickoff).
- * It goes in the Folder its comment was filed in, which may not be the document's.
+ * It goes in the Folder its comment was filed in, which may not be the document's. A resolve carries the note written
+ * in the kit's Resolve dialog, as its content, as Peek's does; a reopen carries none.
  */
-export function setResolved(doc: Commented, thread: Thread, resolved: boolean): Promise<WriteResult> {
+export function setResolved(doc: Commented, thread: Thread, resolved: boolean, note = ''): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const folder = thread.root?.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
+  const rationale = resolved && note ? { rationale: note } : {}
   return send(
-    pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened' }) : null,
+    pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened', ...rationale }) : null,
     resolved ? 'Could not resolve it. Try again.' : 'Could not reopen it. Try again.',
   )
 }

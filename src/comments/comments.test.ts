@@ -86,6 +86,17 @@ describe('a comment from the column', () => {
     expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', root.id], ['action', 'resolved']]))
   })
 
+  it("resolves with the note written in the kit's Resolve dialog, as Peek writes it; an empty note and a reopen carry none", async () => {
+    const root = comment([], 'x')
+    const thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
+    await setResolved(DOC, thread, true, 'Merged into the plan.')
+    expect([sent().kind, sent().content, sent().tags]).toEqual([9101, 'Merged into the plan.', expect.arrayContaining([['e', root.id], ['action', 'resolved']])])
+    await setResolved(DOC, thread, true, '')
+    expect(sent().content).toBe('')
+    await setResolved(DOC, { ...thread, resolved: true }, false)
+    expect([sent().content, sent().tags]).toEqual(['', expect.arrayContaining([['action', 'reopened']])])
+  })
+
   it("edits your comment with the 40003 Peek writes, in the comment's own Folder, carrying no place of its own", async () => {
     const root = comment([['block', 'b1'], ['quote', 'words']], 'Too long?', 'another-folder')
     expect(await editComment(itemOf(root), { text: 'Far too long?' })).toEqual({ ok: true })
