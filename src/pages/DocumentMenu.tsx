@@ -15,6 +15,7 @@ import {
   readMovePlace,
   type DeletePlan,
   type MoveFolder,
+  type MoveOutcome,
   type MoveTarget,
 } from '../document/fileMenu'
 import { titleOf } from '../folders/tree'
@@ -80,6 +81,8 @@ export function DocumentMenu({
   const [dialog, setDialog] = useState<{ kind: 'archive'; hides: string } | { kind: 'delete'; plan: DeletePlan; words: string } | Moving | null>(null)
   // One read at a time: a second press while the count is read would open a second dialog over the first.
   const reading = useRef(false)
+  // The open Move's Folders changed since they were read: the next Move reads them again.
+  const stale = useRef(false)
   const title = titleOf(file)
   const refuse = (label: string) => showToast({ label, type: 'error' })
   // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
@@ -120,6 +123,7 @@ export function DocumentMenu({
 
   /** Open Move on where the page is now, read from the relay, and that Folder's places; another Folder's are read when picked. */
   function openMove() {
+    stale.current = false
     read(
       readMovePlace(file, folders),
       ({ from, files, beneath }) => {
@@ -135,16 +139,28 @@ export function DocumentMenu({
   }
 
   async function relocate(moving: Moving, to: MoveFolder, parent: MoveTarget): Promise<boolean> {
-    const result = await moveDocument(file, { from: moving.from, to, parent: parent.address })
+    // After the Folders changed under a move, which Folders list it is read again, so "Try again" can succeed.
+    let from = moving.from
+    if (stale.current) {
+      try {
+        from = (await readMovePlace(file, folders)).from
+      } catch {
+        refuse('The Folder it is in could not be read, so nothing was moved. Try again.')
+        return false
+      }
+      stale.current = false
+    }
+    const result = await moveDocument(file, { from, to, parent: parent.address })
     if (!result.ok) {
+      stale.current = !!result.changed
       refuse(result.reason)
       return false
     }
     setMovedTo(to.id)
     // Both ends, the Folder it went to first, so the open page is found in one of them throughout.
-    for (const id of new Set([to.id, ...moving.from.map((folder) => folder.id)])) await onChanged?.(id)
-    if (result.stillIn.length) refuse(`Moved to ${to.name}, but ${result.stillIn.map((folder) => folder.name).join(' and ')} still lists it too. Try moving it again.`)
-    else if (result.unplaced) refuse(`Moved to ${to.name}, but not all of it: ${result.unplaced}. Try moving it again.`)
+    for (const id of new Set([to.id, ...from.map((folder) => folder.id)])) await onChanged?.(id)
+    const half = halfMovedWords(to.name, result)
+    if (half) refuse(half)
     else showToast({ label: `Moved to ${parent.path.at(-1) ?? to.name}`, type: 'success' })
     return true
   }
@@ -239,6 +255,20 @@ export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeleteP
   const one = children.length === 1
   if (back) return `The ${what} under it ${one ? 'comes' : 'come'} back into ${place}.`
   return `The ${what} under it ${one ? 'moves' : 'move'} up into ${place}.`
+}
+
+/**
+ * A move that landed in part, in words, each part that did not follow said once: "Moved to Steer, but QA still lists
+ * it too: one of the Folders is archived. It is not in its new place yet." Empty when all of it landed.
+ */
+export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced }: Extract<MoveOutcome, { ok: true }>): string {
+  const names = stillIn.map((folder) => folder.name).join(' and ')
+  const still = names && `${names} still ${stillIn.length === 1 ? 'lists' : 'list'} it too`
+  // "Try moving it again" only once, last, and only when no why says a retry cannot succeed.
+  const retry = !stillWhy && (!!still || !!unplaced)
+  const first = still ? (stillWhy ? `${still}: ${stillWhy}` : `${still}.`) : stillWhy
+  if (!first) return unplaced ? `Moved to ${to}, but not all of it: ${unplaced}. Try moving it again.` : ''
+  return [`Moved to ${to}, but ${first}`, unplaced && `${unplaced[0].toUpperCase()}${unplaced.slice(1)}.`, retry && 'Try moving it again.'].filter(Boolean).join(' ')
 }
 
 /** What moves with a page, in words: "2 pages", or "3 files" when they are of more than one kind. */

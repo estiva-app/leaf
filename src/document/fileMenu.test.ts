@@ -33,7 +33,7 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 const { archiveDocument, deleteDocument, moveDocument, moveFoldersFor, moveSourcesOf, moveTargetsIn, planDelete, readMovePlace } = await import('./fileMenu')
-const { deleteWords } = await import('../pages/DocumentMenu')
+const { deleteWords, halfMovedWords } = await import('../pages/DocumentMenu')
 
 const page = (d: string, parent?: string, more: Partial<ForeignObject> = {}): ForeignObject =>
   ({
@@ -162,6 +162,12 @@ const tags = (event: UnsignedEvent, name: string) => event.tags.filter((t) => t[
 const folderOf = (id: string, name: string, more: Partial<FolderSummary> = {}) => ({ id, name, hasState: true, addresses: [], ...more }) as FolderSummary
 const HERE = { id: FOLDER, name: 'QA', hasState: true, addresses: [`30842:${ME}:a`] }
 const THERE = { id: OTHER_FOLDER, name: 'Steer', hasState: true }
+const ALSO = { id: '33333333-3333-4333-8333-333333333333', name: 'Ops', hasState: true, addresses: [`30842:${ME}:a`] }
+/** A refusal as the relay answers it (`parsePublishResponse`: accepted false, its message, the status). */
+const refused = (reason: string): PublishResult => ({ ok: false, duplicate: false, eventId: 'e'.repeat(64), reason, httpStatus: 200 })
+/** Leaf's own failure, as `bridge.publish` returns it: it never reached the relay, so no status. */
+const SIGNED_OUT: PublishResult = { ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' }
+type MovedInPart = Parameters<typeof halfMovedWords>[1]
 /** A Ship project, which shares its text with Leaf: Leaf's sidebar draws it. */
 const project = (d: string) =>
   ({
@@ -176,18 +182,17 @@ const project = (d: string) =>
 const topic = (d: string) => ({ kind: 30840, ref: `30840:${KAT}:${d}`, address: `30840:${KAT}:${d}`, folder: FOLDER, slots: { title: { value: d } }, actions: [] }) as unknown as ForeignObject
 
 describe('moving a Leaf page', () => {
-  it('to another Folder: one 1852 add there naming it and the page under it, then the remove here, then its place at the top', async () => {
+  it('to another Folder: one 1852 move from here to there naming it and the page under it, then its place at the top', async () => {
     const listing = [page('p'), page('a', 'p', { scopedTo: FOLDER }), page('b', 'a')]
     const result = await moveDocument(listing[1], { from: [HERE], to: THERE, parent: '' }, async () => listing)
     expect(result).toEqual({ ok: true, stillIn: [] })
-    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op')])).toEqual([
-      [1852, OTHER_FOLDER, 'add'],
-      [1852, FOLDER, 'remove'],
-      [1851, FOLDER, undefined],
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([
+      [1852, OTHER_FOLDER, 'move', FOLDER],
+      [1851, FOLDER, undefined, undefined],
     ])
     expect(tags(published[0], 'a').sort()).toEqual([`30842:${ME}:a`, `30842:${ME}:b`])
     // Its place is a change on its own `parent`, in the Folder it was filed in: the `h` never moves.
-    expect([tag(published[2], 'a'), tag(published[2], 'field'), tag(published[2], 'value')]).toEqual([`30842:${ME}:a`, 'parent', ''])
+    expect([tag(published[1], 'a'), tag(published[1], 'field'), tag(published[1], 'value')]).toEqual([`30842:${ME}:a`, 'parent', ''])
   })
 
   it('under another page in the same Folder: only the change of its place, naming that page', async () => {
@@ -196,24 +201,109 @@ describe('moving a Leaf page', () => {
     expect(published.map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'h')])).toEqual([[1851, 'parent', `30842:${ME}:c`, FOLDER]])
   })
 
-  it('sends nothing more when the relay refuses the add, and says nothing was moved', async () => {
-    answers = [{ ok: false, message: 'blocked' } as PublishResult]
+  it('sends nothing more when the relay refuses the move for a reason Leaf has no words for, and says nothing was moved', async () => {
+    answers = [refused('invalid: rate-limited')]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
     expect(result).toEqual({ ok: false, reason: 'Nothing was moved. Try again.' })
     expect(published).toHaveLength(1)
   })
 
-  it('says why when the add is refused with a reason, such as a sign-in that ended', async () => {
-    answers = [{ ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' } as PublishResult]
+  it.each([
+    ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the Folders is archived.'],
+    ['invalid: channel is archived', 'Nothing was moved: one of the Folders is archived.'],
+    ["invalid: only the team's members mark or unmark its spaces", 'Nothing was moved: you need to be a member of both Folders to move this.'],
+  ])('a refused move says why in Leaf’s words, never the relay’s: %s', async (relaySaid, leafSays) => {
+    answers = [refused(relaySaid)]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: false, reason: leafSays })
+  })
+
+  it.each([`invalid: the team a move leaves does not list 30842:${ME}:a`, 'invalid: the team a move leaves lists none of its files'])(
+    'a move refused because the Folders changed says so, and asks for the Folders to be read again before a retry: %s',
+    async (relaySaid) => {
+      answers = [refused(relaySaid)]
+      const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
+      expect(result).toEqual({ ok: false, reason: 'Nothing was moved: the Folders changed since you opened this. Try again.', changed: true })
+    },
+  )
+
+  it('says why when the move never reached the relay, such as a sign-in that ended', async () => {
+    answers = [SIGNED_OUT]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
     expect(result).toEqual({ ok: false, reason: 'Your sign-in ended. Sign in again, then try again.' })
   })
 
-  it('names the Folder that still lists it when its remove is refused, and still gives it its new place', async () => {
-    answers = [{ ok: true } as PublishResult, { ok: false, message: 'blocked' } as PublishResult]
-    const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: true, stillIn: [HERE] })
-    expect(published.map((e) => e.kind)).toEqual([1852, 1852, 1851])
+  it('listed in two Folders: a move from each; the second refused names the Folder that still lists it, and it still gets its new place', async () => {
+    answers = [{ ok: true }, refused('invalid: rate-limited')]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [ALSO] })
+    expect(published.map((e) => [e.kind, tag(e, 'op'), tag(e, 'from')])).toEqual([
+      [1852, 'move', FOLDER],
+      [1852, 'move', ALSO.id],
+      [1851, undefined, undefined],
+    ])
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Ops still lists it too. Try moving it again.')
+  })
+
+  it('listed in two Folders: the second refused because its team is archived says so beside the Folder still listing it', async () => {
+    answers = [{ ok: true }, refused('invalid: team 33333333 is archived; its list does not change')]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [ALSO], stillWhy: 'one of the Folders is archived.' })
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Ops still lists it too: one of the Folders is archived.')
+  })
+
+  it('listed in two Folders: a sign-in that ends at the second says what moved and why the rest did not, and sends nothing more', async () => {
+    answers = [{ ok: true }, SIGNED_OUT]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [ALSO], stillWhy: 'Your sign-in ended. Sign in again, then try again.', unplaced: 'it is not in its new place yet' })
+    // No change of its place after: signed out, it would fail the same way.
+    expect(published.map((e) => [e.kind, tag(e, 'from')])).toEqual([
+      [1852, FOLDER],
+      [1852, ALSO.id],
+    ])
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe(
+      'Moved to Steer, but Ops still lists it too: Your sign-in ended. Sign in again, then try again. It is not in its new place yet.',
+    )
+  })
+
+  it('listed in three Folders: the second refused because it no longer lists it is not named as still listing it; the third, never asked, is', async () => {
+    const THIRD = { id: '44444444-4444-4444-8444-444444444444', name: 'Board', hasState: true, addresses: [`30842:${ME}:a`] }
+    answers = [{ ok: true }, refused('invalid: the team a move leaves lists none of its files')]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO, THIRD], to: THERE }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [THIRD], stillWhy: 'the Folders changed since you opened this. Try again.' })
+    expect(published.map((e) => tag(e, 'from'))).toEqual([FOLDER, ALSO.id])
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Board still lists it too: the Folders changed since you opened this. Try again.')
+  })
+
+  it('listed in two Folders: the second refused because it no longer lists it says only that the Folders changed', async () => {
+    answers = [{ ok: true }, refused(`invalid: the team a move leaves does not list 30842:${ME}:a`)]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: true, stillIn: [], stillWhy: 'the Folders changed since you opened this. Try again.' })
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but the Folders changed since you opened this. Try again.')
+  })
+
+  it('under another page in the same Folder, refused: says nothing was moved in Leaf’s words, never the relay’s', async () => {
+    answers = [refused('invalid: rate-limited')]
+    const listing = [page('a'), page('c')]
+    const result = await moveDocument(listing[0], { from: [HERE], to: HERE, parent: `30842:${ME}:c` }, async () => listing)
+    expect(result).toEqual({ ok: false, reason: 'Nothing was moved. Try again.' })
+  })
+
+  it('from a Folder that lists it though its row did not resolve: the move names the page by its address', async () => {
+    states = [{ d: FOLDER, pubkey: RELAY, lists: [`30842:${ME}:a`] }]
+    const { from } = await readMovePlace(page('a'), [folderOf(FOLDER, 'QA'), folderOf(OTHER_FOLDER, 'Steer')])
+    await moveDocument(page('a'), { from, to: THERE, parent: '' }, async () => [])
+    expect(published.map((e) => [e.kind, tag(e, 'op'), tag(e, 'h'), tag(e, 'from')])).toEqual([[1852, 'move', OTHER_FOLDER, FOLDER]])
+    expect(tags(published[0], 'a')).toEqual([`30842:${ME}:a`])
+  })
+
+  it('listed by no Folder, though the sidebar’s summary still says so: placed in the target, never moved from a Folder that does not list it', async () => {
+    // The relay holds no state naming it; the summary read earlier still does.
+    const { from } = await readMovePlace(page('a'), [folderOf(FOLDER, 'QA', { addresses: [`30842:${ME}:a`] }), folderOf(OTHER_FOLDER, 'Steer')])
+    const result = await moveDocument(page('a'), { from, to: THERE, parent: '' }, async () => [])
+    expect(result).toEqual({ ok: true, stillIn: [] })
+    expect(published.map((e) => [e.kind, tag(e, 'op'), tag(e, 'h'), tag(e, 'from')])).toEqual([[1852, 'add', OTHER_FOLDER, undefined]])
+    expect(tags(published[0], 'a')).toEqual([`30842:${ME}:a`])
   })
 
   it('refuses a private Folder for a page filed elsewhere, before anything is sent', async () => {

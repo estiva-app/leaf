@@ -9,13 +9,16 @@ import {
   listedBeneath,
   nestingOf,
   planMoveFromFolders,
+  readMoveRefusal,
   resolveFolderContents,
   type FolderRef,
+  type MoveRefusal,
   type FolderSummary,
   type ForeignObject,
 } from '@estiva-app/interop'
 import { addressToPointer, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { isListed, titleOf } from '../folders/tree'
+import { ownFailure } from '../folders/workspace'
 import { manifestContent } from '../manifest'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
@@ -195,6 +198,7 @@ const moveFolderOf = (folder: FolderSummary): MoveFolder => ({
   name: folder.name ?? 'Untitled Folder',
   hasState: folder.hasState,
   ...(folder.private ? { private: true } : {}),
+  ...(folder.company ? { company: true } : {}),
   addresses: folder.addresses ?? [],
 })
 
@@ -207,12 +211,21 @@ const moveFolderOf = (folder: FolderSummary): MoveFolder => ({
 export function moveSourcesOf(file: Pick<ForeignObject, 'address' | 'folder'>, listedIn: readonly string[], folders: readonly FolderSummary[]): MoveFolder[] {
   const named = (id: string) => folders.find((folder) => folder.id === id)
   if (listedIn.length === 0) {
+    // The relay's read just said no state names it, so this Folder lists none of it whatever the sidebar's summary
+    // said: the planner places it in the target rather than moving it from a Folder that would refuse (TEA-3).
     const own = file.folder ? named(file.folder) : undefined
-    return own ? [moveFolderOf(own)] : []
+    return own ? [{ ...moveFolderOf(own), addresses: [] }] : []
   }
   return listedIn.map((id) => {
     const folder = named(id)
-    return { id, name: folder?.name ?? 'Untitled Folder', hasState: true, ...(folder?.private ? { private: true } : {}), addresses: file.address ? [file.address] : [] }
+    return {
+      id,
+      name: folder?.name ?? 'Untitled Folder',
+      hasState: true,
+      ...(folder?.private ? { private: true } : {}),
+      ...(folder?.company ? { company: true } : {}),
+      addresses: file.address ? [file.address] : [],
+    }
   })
 }
 
@@ -276,11 +289,17 @@ export function moveTargetsIn(files: readonly ForeignObject[], file: ForeignObje
 
 /** How a move ended: refused before anything changed, or done, with the part that did not follow. */
 export type MoveOutcome =
-  | { ok: false; reason: string }
+  /** `changed`: the Folders changed since they were read, so a retry reads them again first. */
+  | { ok: false; reason: string; changed?: true }
   | {
       ok: true
-      /** The Folders that still list it too: their remove was refused after the add landed. */
+      /** The Folders that still list it too: a move from an earlier one landed, and theirs was refused or never sent. */
       stillIn: MoveFolder[]
+      /**
+       * Why the move stopped, in Peek's words or as Leaf's own failure; absent when there is nothing to say but try
+       * again. Set with no `stillIn` when the Folder that refused no longer lists it as it did: the Folders changed.
+       */
+      stillWhy?: string
       /** Why it did not take its new place, when the Folder change landed and that did not. */
       unplaced?: string
     }
@@ -292,8 +311,8 @@ async function readMoveListing(id: string): Promise<ForeignObject[]> {
 
 /**
  * Move a document to `to`, under `parent` (an address, `''` for the top), as Peek moves a topic (FOL-45): first its
- * listing — one `1852 add` in the target naming it and everything listed under it, then a `remove` in each source,
- * planned by interop's `planMoveFromFolders` (SPEC §3.3) — then its place, the manifest's `move`, a `1851` on
+ * listing — one `1852 move` from each source to the target, naming it and everything listed under it there, each
+ * changing both lists or neither, planned by interop's `planMoveFromFolders` (SPEC §3.3) — then its place, the manifest's `move`, a `1851` on
  * `parent`. Each source is read again here, at the move. `parent` absent leaves it where it is in the new Folder.
  */
 export async function moveDocument(
@@ -305,36 +324,47 @@ export async function moveDocument(
   if (!pubkey) return { ok: false, reason: 'Sign in to move it.' }
   if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be moved from here.' }
   const sources = move.from.filter((folder) => folder.id !== move.to.id)
-  let moved = false
-  const stillIn: MoveFolder[] = []
-  if (sources.length > 0) {
-    let listings
-    try {
-      listings = new Map(await Promise.all(sources.map(async (folder) => [folder.id, await read(folder.id)] as const)))
-    } catch {
-      return { ok: false, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
-    }
-    const plan = planMoveFromFolders(pubkey, Date.now(), { file, from: sources, to: move.to, listings })
-    if (!plan.ok) return { ok: false, reason: refusalWords[plan.reason] }
-    if (plan.add) {
-      const added = await publish(plan.add)
-      if (!added.ok) {
-        console.warn('[relay] move refused', added)
-        // Estiva ID's and the relay's own words, as Peek says them: a lapsed sign-in is not something to retry.
-        return { ok: false, reason: added.reason ?? 'Nothing was moved. Try again.' }
-      }
-      moved = true
-    }
-    // It did arrive, so a Folder that refused to let it go is named, and the move goes on to its place (Peek's order).
-    for (const { folder, event } of plan.removes) {
-      const removed = await publish(event)
-      if (!removed.ok) {
-        console.warn('[relay] unlist refused', removed)
-        stillIn.push(sources.find((source) => source.id === folder) ?? { id: folder, name: 'another Folder', hasState: true })
-      }
-    }
+  let listings
+  try {
+    listings = new Map(await Promise.all(sources.map(async (folder) => [folder.id, await read(folder.id)] as const)))
+  } catch {
+    return { ok: false, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
   }
-  if (move.parent === undefined || move.parent === (file.parentRef ?? '')) return { ok: true, stillIn }
+  // Always the planner, even from no Folder: one that lists none of it is placed in the target, never moved from a
+  // Folder that does not list it.
+  const plan = planMoveFromFolders(pubkey, Date.now(), { file, from: move.from, to: move.to, listings })
+  if (!plan.ok) return { ok: false, reason: refusalWords[plan.reason] }
+  const { parent } = move
+  const placing = parent !== undefined && parent !== (file.parentRef ?? '')
+  let moved = false
+  let stillIn: MoveFolder[] = []
+  let stillWhy: string | undefined
+  // One move per source, each changing both lists or neither, in order; the first refusal stops the rest.
+  for (const [index, event] of plan.events.entries()) {
+    const result = await publish(event)
+    if (result.ok) {
+      moved = true
+      continue
+    }
+    // Leaf's own words when it never reached the relay (a lapsed sign-in), on any command; else Leaf's words for the
+    // relay's reason (`readMoveRefusal`), never the relay's text (TEA-3).
+    const own = ownFailure(result)
+    if (!own) console.warn('[relay] move refused', result)
+    const refusal = readMoveRefusal(plan.events, index, own ? undefined : result.reason)
+    const why = own ?? refusalWhy[refusal.why]
+    const changed = !own && refusal.why === 'changed-meanwhile'
+    if (refusal.nothingMoved)
+      return { ok: false, reason: own ?? (why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.'), ...(changed ? { changed } : {}) }
+    // The earlier moves did arrive. The Folders after the refused one were never asked, so they still list it; the
+    // refused one does too, unless the Folders changed — then it no longer lists it as read, and is not named.
+    const refused = tagOf(event, 'from')
+    stillIn = refusal.notMovedFrom.filter((id) => !(changed && id === refused)).flatMap((id) => sources.filter((source) => source.id === id))
+    stillWhy = why
+    // Nothing more after Leaf's own failure: the next write would fail the same way.
+    if (own) return { ok: true, stillIn, stillWhy, ...(placing ? { unplaced: 'it is not in its new place yet' } : {}) }
+    break
+  }
+  if (!placing) return { ok: true, stillIn, stillWhy }
   const built = buildActionEvent({
     manifest: OWN_MANIFEST,
     kind: file.kind,
@@ -342,22 +372,32 @@ export async function moveDocument(
     objectAuthor: addressToPointer(file.address).pubkey,
     folder: file.folder,
     actionId: 'move',
-    value: move.parent,
+    value: parent,
     pubkey,
     createdAtMs: Date.now(),
   })
   if (typeof built === 'string') console.warn('[leaf] move under not built', built)
   const placed = typeof built === 'string' ? null : await publish(built as UnsignedEvent)
-  if (placed?.ok) return { ok: true, stillIn }
-  if (placed) console.warn('[relay] move under refused', placed)
-  return moved ? { ok: true, stillIn, unplaced: 'it is not in its new place yet' } : { ok: false, reason: placed?.reason ?? 'Nothing was moved. Try again.' }
+  if (placed?.ok) return { ok: true, stillIn, stillWhy }
+  if (placed && !ownFailure(placed)) console.warn('[relay] move under refused', placed)
+  if (moved) return { ok: true, stillIn, stillWhy, unplaced: 'it is not in its new place yet' }
+  return { ok: false, reason: (placed && ownFailure(placed)) ?? 'Nothing was moved. Try again.' }
 }
 
 /** The planner's refusals in Peek's words (`moveFileAsViewer`). */
-const refusalWords: Record<'source-has-no-state' | 'target-has-no-state' | 'target-is-private', string> = {
+const refusalWords: Record<MoveRefusal, string> = {
   'source-has-no-state': 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.',
   'target-has-no-state': 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
   'target-is-private': 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.',
+  'target-is-not-home': 'This is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.',
+}
+
+/** Why the relay refused a move, in Peek's words (`moveFileAsViewer`), never the relay's text. */
+const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string | undefined> = {
+  'team-archived': 'one of the Folders is archived.',
+  'not-a-member': 'you need to be a member of both Folders to move this.',
+  'changed-meanwhile': 'the Folders changed since you opened this. Try again.',
+  refused: undefined,
 }
 
 /**
@@ -377,5 +417,9 @@ async function relayStates(filter: Record<string, unknown>): Promise<SignedEvent
 }
 
 function dOf(event: { tags: string[][] }): string | undefined {
-  return event.tags.find((tag) => tag[0] === 'd')?.[1]
+  return tagOf(event, 'd')
+}
+
+function tagOf(event: { tags: string[][] }, name: string): string | undefined {
+  return event.tags.find((tag) => tag[0] === name)?.[1]
 }
