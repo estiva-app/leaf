@@ -1167,6 +1167,8 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
         <CardActsProvider value={closed === undefined}>
           <ConversationLayout
             threads="under"
+            // Placement: the full height of the column the page puts it in, a `flex flex-col` box (Ship's way).
+            className="min-h-0 flex-1"
             title={
               <div className="flex min-w-0 items-center gap-2">
                 <p className="truncate text-body-2-strong text-text-primary">Comments</p>

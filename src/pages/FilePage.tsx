@@ -353,17 +353,19 @@ function DocumentView({
           `[hidden]` loses to `.contents`, and the column stayed drawn (LED-3, found on production). */}
       <div className={comments.open ? 'contents' : 'hidden'} hidden={!comments.open}>
         <Divider orientation="vertical" />
-        {/* The kit's one column, 384px (ONE-5, step 4). */}
-        <CommentsColumn
-          doc={{ address: file.address, folder: file.folder }}
-          addressable={addressable}
-          editor={editor}
-          docBody={docBody}
-          draft={locked ? null : draft}
-          onDraft={setDraft}
-          closed={locked ? (commentLine ?? '') : undefined}
-          hidden={!comments.open}
-        />
+        {/* The kit's one column, 384px (ONE-5, step 4), the page's full height: placed as Ship places it. */}
+        <div className="flex flex-none flex-col">
+          <CommentsColumn
+            doc={{ address: file.address, folder: file.folder }}
+            addressable={addressable}
+            editor={editor}
+            docBody={docBody}
+            draft={locked ? null : draft}
+            onDraft={setDraft}
+            closed={locked ? (commentLine ?? '') : undefined}
+            hidden={!comments.open}
+          />
+        </div>
       </div>
     </div>
   )
