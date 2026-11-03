@@ -551,6 +551,28 @@ describe('a comment on a selection (LEAF-7)', () => {
     expect(e.tags.filter((t) => t[0] === 'block')).toHaveLength(1)
   })
 
+  it('✕ on the strip goes back to the whole document, and the thread open before comes back without taking the caret', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onFirst = comment([['block', FIRST]], 'Too long?')
+    await open([onFirst], PAGE)
+    await waitFor(() => expect(item(onFirst.id)).not.toBeNull())
+    act(() => void fireEvent.click(entry(onFirst.id)!))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    await commentOnSelection('Katerina owns')
+    await waitFor(() => expect(aboutTheBox()).toEqual(['here', 'Katerina owns']))
+    // The draft takes over from the open thread.
+    expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Comment on the whole document instead' })))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    expect(aboutTheBox()).toBeNull()
+    expect(box('Comment on this document…')).toBeTruthy()
+    // Two frames and more: the box would take the caret a frame after it is drawn.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(100)))
+    expect(item(onFirst.id)!.getAttribute('data-open')).toBe('true')
+    const reply = box('Reply…')
+    expect(reply === document.activeElement || reply.contains(document.activeElement)).toBe(false)
+  })
+
   it('sends a passage across two paragraphs as both, quoting the words where it starts and where it ends', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     await open([], PAGE)
@@ -1711,6 +1733,32 @@ describe("a thread on the kit's cards", () => {
     expect(hasCaret(page())).toBe(true)
     expect(hasCaret(box('Reply…'))).toBe(false)
     expect(editor.state.selection.from).toBe(inWords)
+  })
+
+  /* The kit's one column (ONE-5, step 4): its layout opens a thread from a press, and gives the thread's box the caret. */
+  it('a press on a comment opens its thread with the caret in its reply box', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    act(() => void fireEvent.click(entry(onParagraph.id)!))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    await frames()
+    expect(item(onParagraph.id)!.getAttribute('data-open')).toBe('true')
+    expect(hasCaret(box('Reply…'))).toBe(true)
+  })
+
+  it('Reply on a thread opened from its words in the text still puts the caret in its box', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    act(() => void page().editor.emit('commentSelect', { id: onParagraph.id }))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    await frames()
+    expect(hasCaret(box('Reply…'))).toBe(false)
+    pointAt(entry(onParagraph.id)!)
+    act(() => void fireEvent.click(within(entry(onParagraph.id)!).getByRole('button', { name: 'Reply' })))
+    await frames()
+    expect(hasCaret(box('Reply…'))).toBe(true)
   })
 
   it('says who resolved a thread and their note, on its card under Resolved', async () => {
