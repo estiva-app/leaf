@@ -340,6 +340,14 @@ describe("a document's threads", () => {
     ])
   })
 
+  it('carries when each comment and reply was written in ms, the moment the card says exactly under the pointer', async () => {
+    const root = comment([], 'Too long?')
+    const answer = reply(root, [], 'Cut it')
+    relay.events = [root, answer]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.at, t.replies.map((r) => r.at)])).toEqual([[root.created_at * 1000, [answer.created_at * 1000]]])
+  })
+
   it('reads reactions on replies as on comments, and says how many of the oldest were past the horizon of 100', async () => {
     const root = comment([], 'Plan?')
     const replies = Array.from({ length: 100 }, (_, i) => event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['h', FOLDER]], `reply ${i}`))

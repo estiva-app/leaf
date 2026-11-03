@@ -563,8 +563,8 @@ function CommentLine({
         <span className="min-w-0 text-body-2-strong text-text-primary">
           <Person name={names[comment.by] ?? 'Someone'} picture={pictures[comment.by]} bot={bots[comment.by]} />
         </span>
-        <WithTooltip label={exactly(comment.at * 1000)}>
-          <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
+        <WithTooltip label={exactly(comment.at)}>
+          <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at, now)}</span>
         </WithTooltip>
         {comment.edited && <span className="text-caption text-text-muted">(edited)</span>}
         {(onReact || own) && !editing && (
@@ -654,7 +654,7 @@ function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string |
       author: { name, ...(picture ? { picture } : {}), ...(bot ? { bot } : {}) },
       // An app link in it reads as what it names, never the raw URL (widget review, item 20).
       body: openingWords(quoted.body, nameOf, { resolveLink: links.known }),
-      updated: whenOf(quoted.at * 1000, now),
+      updated: whenOf(quoted.at, now),
     },
   }
 }

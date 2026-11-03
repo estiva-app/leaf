@@ -48,7 +48,7 @@ export interface Commented {
 export interface CommentItem {
   id: string
   by: string
-  /** Unix seconds. */
+  /** When it was written, in ms: the moment the card says exactly under the pointer. */
   at: number
   /** What it says now: its latest edit's body, else its own (SPEC §6.8). */
   body: string
@@ -143,7 +143,7 @@ export async function readThreads(doc: Commented): Promise<Threads> {
     return {
       id: event.id,
       by: event.pubkey,
-      at: event.created_at,
+      at: event.created_at * 1000,
       body: edit?.body ?? event.content,
       edited: edit?.edited ?? false,
       files: edit?.attachments ?? imetaOf(event),
