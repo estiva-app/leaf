@@ -1634,3 +1634,122 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     }
   })
 })
+
+/* What the kit's cards do that Leaf's own did not (ONE-5, step 3). */
+describe("a thread on the kit's cards", () => {
+  const replyTo = (root: SignedEvent, content: string, by = QA2): SignedEvent => ({
+    ...comment([], content),
+    pubkey: by,
+    tags: [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['p', root.pubkey], ['h', FOLDER]],
+  })
+  /** Two frames: the box takes the caret, when it does, a frame after it is drawn. */
+  const frames = () => act(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
+  const hasCaret = (el: HTMLElement) => el === document.activeElement || el.contains(document.activeElement)
+
+  it("folds a thread's replies behind its replies row until it is opened, one thread open at a time", async () => {
+    const first = comment([], 'First?')
+    const second = comment([], 'Second?')
+    await open([first, second, replyTo(first, 'Cut it'), replyTo(second, 'Keep it')])
+    await waitFor(() => expect(within(item(first.id)!).getByRole('button', { name: '1 reply, open the thread' })).toBeTruthy())
+    expect(screen.queryByText('Cut it')).toBeNull()
+    openReplies(first.id)
+    expect(within(item(first.id)!).getByText('Cut it')).toBeTruthy()
+    expect(item(first.id)!.getAttribute('data-open')).toBe('true')
+    openReplies(second.id)
+    expect(within(item(second.id)!).getByText('Keep it')).toBeTruthy()
+    expect(screen.queryByText('Cut it')).toBeNull()
+    // A second press closes it.
+    act(() => void fireEvent.click(within(item(second.id)!).getByRole('button', { name: '1 reply, close the thread' })))
+    expect(screen.queryByText('Keep it')).toBeNull()
+    expect(items().some((t) => t.hasAttribute('data-open'))).toBe(false)
+  })
+
+  it("Reply on a comment's strip opens its thread with the caret in the reply box", async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    pointAt(entry(onParagraph.id)!)
+    act(() => void fireEvent.click(within(entry(onParagraph.id)!).getByRole('button', { name: 'Reply' })))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    await frames()
+    expect(hasCaret(box('Reply…'))).toBe(true)
+  })
+
+  /*
+    The cursor check (K3). A click in commented words is often to edit them: CommentHighlights says which thread, and it
+    opens, but the caret stays in the text. The kit's layout gives the box the caret on every open (`caretOnOpen`);
+    the column gives it only for Reply.
+  */
+  it('opening a thread from its words in the text leaves the caret in the text, to go on editing them', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    const editor = page().editor
+    let inWords = 0
+    editor.state.doc.descendants((node, pos) => {
+      if (!inWords && node.isText && node.text?.includes('wrote')) inWords = pos + node.text.indexOf('wrote') + 2
+      return !inWords
+    })
+    // The click: the caret lands in the words, and the highlight under it chooses its thread.
+    act(() => void editor.commands.focus(inWords))
+    act(() => void editor.emit('commentSelect', { id: onParagraph.id }))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    await frames()
+    expect(hasCaret(page())).toBe(true)
+    expect(hasCaret(box('Reply…'))).toBe(false)
+    expect(editor.state.selection.from).toBe(inWords)
+  })
+
+  it('says who resolved a thread and their note, on its card under Resolved', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    const resolution: SignedEvent = { id: 'e'.repeat(64), pubkey: QA2, created_at: 1_760_000_200, kind: 9101, tags: [['h', FOLDER], ['e', onParagraph.id], ['t', 'resolution'], ['action', 'resolved']], content: 'Cut to one line.', sig: '' }
+    await open([roster, profile(QA2, 'QA-2'), onParagraph, resolution])
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
+    const card = entry(onParagraph.id)!
+    await waitFor(() => expect(within(card).getByText('Cut to one line.')).toBeTruthy())
+    expect(within(card).getByText('QA-2')).toBeTruthy()
+    // The kit's check by the time.
+    expect(within(card).getByText('Resolved')).toBeTruthy()
+  })
+
+  /** Point at a comment, press Resolve on its strip, and write `note` in the kit's dialog. */
+  const resolveWith = async (id: string, note: string) => {
+    pointAt(entry(id)!)
+    act(() => void fireEvent.click(within(entry(id)!).getByRole('button', { name: 'Resolve' })))
+    const dialog = await screen.findByRole('dialog')
+    act(() => void fireEvent.change(within(dialog).getByRole('textbox', { name: 'Resolution message (optional)' }), { target: { value: note } }))
+    act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' })))
+    return dialog
+  }
+
+  it("resolves with the note written in the kit's dialog, which closes once the relay accepts it", async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    await resolveWith(onParagraph.id, 'Cut to one line.')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect([publish.mock.calls[0][0].kind, publish.mock.calls[0][0].content]).toEqual([9101, 'Cut to one line.'])
+  })
+
+  it('keeps the Resolve dialog open, the note in it, and says why when the relay refuses the resolve', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    const dialog = await resolveWith(onParagraph.id, 'Cut to one line.')
+    expect(await within(dialog).findByText('Could not resolve it. Try again.')).toBeTruthy()
+    expect(dialog.isConnected).toBe(true)
+    expect((within(dialog).getByRole('textbox', { name: 'Resolution message (optional)' }) as HTMLTextAreaElement).value).toBe('Cut to one line.')
+    expect(publish).toHaveBeenCalledTimes(1)
+  })
+
+  it('says when a comment was edited, under the pointer on its "(edited)"', async () => {
+    const theirs = comment([], 'Too long?')
+    const edit: SignedEvent = { id: '6'.repeat(64), pubkey: AUTHOR, created_at: Math.floor(Date.now() / 1000) - 120, kind: 40003, tags: [['h', FOLDER], ['e', theirs.id]], content: 'Far too long?', sig: '' }
+    await open([theirs, edit])
+    const marker = await within(await found(() => entry(theirs.id))).findByText('(edited)')
+    fireEvent.pointerEnter(marker)
+    fireEvent.focus(marker)
+    expect(await screen.findByText('Edited 2 minutes ago')).toBeTruthy()
+  })
+})
