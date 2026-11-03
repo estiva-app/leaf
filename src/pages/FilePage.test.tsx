@@ -635,6 +635,31 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([[1852, STEER, 'move', FOLDER]])
   })
 
+  it('Cancel waits while the move is written: nothing can stop it then, so the dialog stays to say how it went', async () => {
+    folderEvents = [
+      { kind: 30890, pubkey: ME, tags: [['d', FOLDER], ['a', ADDRESS]] },
+      { kind: 39000, pubkey: ME, tags: [['d', FOLDER]] },
+    ] as unknown as SignedEvent[]
+    onTestFinished(() => void (folderEvents = []))
+    let answer: (result: PublishResult) => void = () => {}
+    answers = [new Promise<PublishResult>((resolve) => (answer = resolve)) as unknown as PublishResult]
+    render(
+      <ToastProvider>
+        <FilePage file={doc()} loading={false} folders={folders} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    await pick('Folder', 'Steer')
+    await pick('Put it under', 'The top of Steer')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(published).toHaveLength(1))
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Moving…' }) as HTMLButtonElement).disabled).toBe(true)
+    answer({ ok: true })
+    expect(await screen.findByText('Moved to Steer')).toBeTruthy()
+  })
+
   const OPS = '33333333-3333-4333-8333-333333333333'
   const withOps = [...folders, { id: OPS, name: 'Ops', hasState: true, addresses: [ADDRESS] }] as unknown as FolderSummary[]
   const stateOf = (folder: string) => [

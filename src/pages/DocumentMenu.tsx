@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { IconDots } from '@tabler/icons-react'
-import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, ToolbarButton, useToast } from '@estiva-app/ui'
+import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, MoveDialog, ToolbarButton, useToast, type MovePlace } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
 import {
   archiveDocument,
@@ -22,7 +22,6 @@ import { titleOf } from '../folders/tree'
 import { readFolder, takesNewDocuments } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
 import { archiveWordsOf } from './archive'
-import { MoveDialog } from './MoveDialog'
 
 /** The Folder that lists a page, by the sidebar's read, else its `h`. */
 export function listedInOf(file: ForeignObject, folders: readonly FolderSummary[] | undefined): string | undefined {
@@ -84,6 +83,8 @@ export function DocumentMenu({
   const reading = useRef(false)
   // The open Move's Folders changed since they were read: the next Move reads them again.
   const stale = useRef(false)
+  // The places the open Move offered, by Folder: what the kit's choice names, with the path the toast says.
+  const placesRead = useRef<Record<string, MoveTarget[]>>({})
   const title = titleOf(file)
   const refuse = (label: string) => showToast({ label, type: 'error' })
   // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
@@ -128,15 +129,34 @@ export function DocumentMenu({
     read(
       readMovePlace(file, folders),
       ({ from, files, beneath }) => {
+        const targets = moveTargetsIn(files, file, { sameFolder: true })
+        placesRead.current = { [from[0].id]: targets }
         setDialog({
           kind: 'move',
           from,
-          targets: moveTargetsIn(files, file, { sameFolder: true }),
+          targets,
           under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
         })
       },
       'The Folder it is in could not be read, so nothing was moved. Try again.',
     )
+  }
+
+  /** Where Move may put it in another Folder, read when that Folder is picked; kept for the choice's path. */
+  async function placesIn(moving: Moving, id: string): Promise<MovePlace[]> {
+    const targets = moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === moving.from[0].id })
+    placesRead.current[id] = targets
+    return targets.map(placeOf)
+  }
+
+  /**
+   * The Folders Move offers, from the sidebar's read; undefined until it has read them. None when no other Folder
+   * takes it and in its own it is already at the only place there is, so the dialog says there is no other folder.
+   */
+  function moveDestinations(moving: Moving): MoveFolder[] | undefined {
+    if (!sidebarFolders) return undefined
+    const offered = moveFoldersFor(file, moving.from[0], sidebarFolders)
+    return offered.every((folder) => folder.id === moving.from[0].id) && moving.targets.length === 0 ? [] : offered
   }
 
   async function relocate(moving: Moving, to: MoveFolder, parent: MoveTarget): Promise<boolean> {
@@ -217,12 +237,16 @@ export function DocumentMenu({
       {dialog?.kind === 'move' && (
         <MoveDialog
           title={title}
-          under={dialog.under}
+          description={dialog.under ? `Everyone who can read it now still can. ${dialog.under}` : 'Everyone who can read it now still can.'}
           from={dialog.from[0].id}
-          folders={sidebarFolders && moveFoldersFor(file, dialog.from[0], sidebarFolders)}
-          targets={dialog.targets}
-          targetsIn={async (id) => moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === dialog.from[0].id })}
-          onMove={(to, parent) => relocate(dialog, to, parent)}
+          folders={moveDestinations(dialog)}
+          places={dialog.targets.map(placeOf)}
+          placesIn={(id) => placesIn(dialog, id)}
+          onMove={({ folder, parent = '' }) => {
+            const to = moveDestinations(dialog)?.find((one) => one.id === folder)
+            const place = placesRead.current[folder]?.find((one) => one.address === parent)
+            return to && place ? relocate(dialog, to, place) : false
+          }}
           onClose={() => setDialog(null)}
         />
       )}
@@ -276,6 +300,9 @@ export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced }: Extr
   if (!first) return unplaced ? `Moved to ${to}, but not all of it: ${unplaced}. Try moving it again.` : ''
   return [`Moved to ${to}, but ${first}`, unplaced && `${unplaced[0].toUpperCase()}${unplaced.slice(1)}.`, retry && 'Try moving it again.'].filter(Boolean).join(' ')
 }
+
+/** A place Move offers, as the kit's dialog takes it: what it goes under by address, `''` for the Folder's top. */
+const placeOf = (target: MoveTarget): MovePlace => ({ id: target.address, path: target.path })
 
 /** What moves with a page, in words: "2 pages", or "3 files" when they are of more than one kind. */
 function moveCount(beneath: readonly ForeignObject[]): string {
