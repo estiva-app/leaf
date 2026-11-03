@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -16,7 +16,7 @@ import { knownName } from '../comments/people'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
-import { FileKey, OwnerRow, openerOf, TitleWithOpen } from './OwnerRow'
+import { FileKey, OpenIn, OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
 import { useFold, useNarrow } from '../frame/folds'
@@ -240,10 +240,11 @@ function DocumentView({
     setDraft(anchor)
     if (anchor && !comments.open) comments.onOpenChange(true)
   }
-  // Who is in it and its last edit, left of the buttons, 12px clear of them as Peek's header (LED-6). In a narrow
-  // window the last edit heads the ⋯ menu; a file with no menu keeps it in the bar.
+  // Who is in it and its last edit (LED-6), in Leaf's words, the exact time in its tooltip. In a narrow window the last
+  // edit heads the ⋯ menu; a file with no menu keeps it in the bar.
   const edited = facts.lastEdit === undefined ? undefined : lastEditLine(facts.lastEdit, me, (pubkey) => directory[pubkey]?.displayName, now)
   const editedInMenu = narrow && own
+  const time = edited && !editedInMenu ? { label: edited, exact: facts.lastEdit ? exactly(facts.lastEdit.at) : edited } : undefined
   async function addMembers(people: string[]): Promise<boolean> {
     const answers = await Promise.all(people.map((person) => setMember(file, person, true)))
     facts.reread()
@@ -257,42 +258,42 @@ function DocumentView({
     if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error' })
     return ok
   }
-  // Top right of the header, as the prototype draws it, with a Leaf page's ⋯ menu beside it (LED-4).
-  const actions = (
-    <>
-      <div className="flex items-center gap-3 pr-2">
-        {edited && !editedInMenu && (
-          <WithTooltip inline label={facts.lastEdit ? exactly(facts.lastEdit.at) : edited}>
-            {/* Quieter than the bar's title: 12px and italic, as every "time ago" line is (Katerina, 30 Oct; the kit's "Updated …"). */}
-            <span className="whitespace-nowrap text-caption italic text-text-secondary">{edited}</span>
-          </WithTooltip>
-        )}
-        <Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />
-      </div>
-      <Toolbar aria-label="Page actions" surface={false}>
-        <ToolbarButton
-          tooltip={comments.open ? 'Hide comments' : 'Show comments'}
-          aria-label={comments.open ? 'Hide comments' : 'Show comments'}
-          onClick={() => comments.onOpenChange(!comments.open)}
-        >
-          {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
-        </ToolbarButton>
-        {own && (
-          <DocumentMenu
-            file={file}
-            folders={folders}
-            onChanged={onChanged}
-            onNewInside={onNewInside && ((listedIn) => onNewInside(file, listedIn))}
-            heading={editedInMenu ? edited : undefined}
-          />
-        )}
-      </Toolbar>
-    </>
+  // The page's bar is the kit's PageHeader (ONE-5, step 5), in the panel's own bar's place, so the bar and the
+  // scrolling text are one panel as before: the name, cut to one line; another app's file with "Open" right after it;
+  // then its last edit, who is in it, and the page's own buttons, each where the kit puts it (Katerina, 3 November).
+  // A Leaf page's ⋯ menu is last (LED-4).
+  const header = (
+    <PageHeader
+      title={title}
+      after={opener && file.appName ? <OpenIn opener={opener} appName={file.appName} /> : undefined}
+      time={time}
+      members={<Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />}
+      actions={
+        <Toolbar aria-label="Page actions" surface={false}>
+          <ToolbarButton
+            tooltip={comments.open ? 'Hide comments' : 'Show comments'}
+            aria-label={comments.open ? 'Hide comments' : 'Show comments'}
+            onClick={() => comments.onOpenChange(!comments.open)}
+          >
+            {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
+          </ToolbarButton>
+          {own && (
+            <DocumentMenu
+              file={file}
+              folders={folders}
+              onChanged={onChanged}
+              onNewInside={onNewInside && ((listedIn) => onNewInside(file, listedIn))}
+              heading={editedInMenu ? edited : undefined}
+            />
+          )}
+        </Toolbar>
+      }
+    />
   )
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={opener && file.appName ? <TitleWithOpen title={title} opener={opener} appName={file.appName} /> : title} actions={actions} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
+        <Panel title={title} header={header} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {missing && (
               <Banner tone="info" onDismiss={dismissMissing}>

@@ -5,7 +5,7 @@ import type { Editor } from '@tiptap/react'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
 import { archivedLine } from '@estiva-app/conversation'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { AppShell, Chip, Divider, FieldLine, KindIcon, NavItem, NavTree, Panel, Sidebar, ToastProvider, type NavTreeGroup, type NavTreeNode, type ThingKind } from '@estiva-app/ui'
+import { AppShell, Chip, Divider, FieldLine, KindIcon, NavItem, NavTree, PageHeader, Panel, Sidebar, ToastProvider, type NavTreeGroup, type NavTreeNode, type ThingKind } from '@estiva-app/ui'
 import { InlineText } from '@estiva-app/ui/editor'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
@@ -17,7 +17,7 @@ import { titleOf } from '../folders/tree'
 import { query, viewerPubkey } from '../relay/bridge'
 import { FilePage } from './FilePage'
 import { HomePage } from './HomePage'
-import { FileKey, OwnerRow, openerOf, TitleWithOpen } from './OwnerRow'
+import { FileKey, OpenIn, OwnerRow, openerOf } from './OwnerRow'
 import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, threadsOn } from './fixtures/shipFiles'
 
 /*
@@ -44,7 +44,13 @@ function SharedTextView({ file, value, changedBy = null, onCommit = async () => 
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={opener && file.appName ? <TitleWithOpen title={titleOf(file)} opener={opener} appName={file.appName} /> : titleOf(file)} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
+        {/* The page's bar as FilePage draws it, the kit's PageHeader (ONE-5, step 5): its name and "Open" after it. */}
+        <Panel
+          title={titleOf(file)}
+          header={<PageHeader title={titleOf(file)} after={opener && file.appName ? <OpenIn opener={opener} appName={file.appName} /> : undefined} />}
+          bodyRef={docBody}
+          bodyClassName="px-12 pt-10 pb-24"
+        >
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             <div className="flex flex-col gap-2">
               <FileKey file={file} />
