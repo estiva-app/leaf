@@ -532,6 +532,14 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
 
   it('to the top of another Folder: one move from here to there, then both Folders read again so the sidebar shows it there', async () => {
     const reread: string[] = []
+    folderEvents = [
+      { kind: 30890, pubkey: ME, tags: [['d', FOLDER], ['a', ADDRESS]] },
+      { kind: 39000, pubkey: ME, tags: [['d', FOLDER]] },
+    ] as unknown as SignedEvent[]
+    onTestFinished(() => void (folderEvents = []))
+    // Leaf's manifest, as the relay holds it: the manifests read is kept for the tests after this one.
+    const { buildManifest } = await import('../manifest')
+    manifests = [manifestEvent(buildManifest('b'.repeat(64), 1_700_000_000_000))]
     render(
       <ToastProvider>
         <FilePage file={doc()} loading={false} folders={folders} onChanged={(id) => void reread.push(id)} />
@@ -598,5 +606,61 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
     expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([[1852, STEER, 'move', FOLDER]])
+  })
+
+  const OPS = '33333333-3333-4333-8333-333333333333'
+  const withOps = [...folders, { id: OPS, name: 'Ops', hasState: true, addresses: [ADDRESS] }] as unknown as FolderSummary[]
+  const stateOf = (folder: string) => [
+    { kind: 30890, pubkey: ME, tags: [['d', folder], ['a', ADDRESS]] },
+    { kind: 39000, pubkey: ME, tags: [['d', folder]] },
+  ]
+  /** A refusal as the relay answers it (`parsePublishResponse`). */
+  const refused = (reason: string): PublishResult => ({ ok: false, duplicate: false, eventId: 'e'.repeat(64), reason, httpStatus: 200 })
+
+  it('listed in two Folders, the second refusing and its new place refused too: says both, in one toast', async () => {
+    folderEvents = [...stateOf(FOLDER), ...stateOf(OPS)] as unknown as SignedEvent[]
+    onTestFinished(() => void (folderEvents = []))
+    answers = [{ ok: true }, refused('invalid: rate-limited'), refused('invalid: rate-limited')]
+    render(
+      <ToastProvider>
+        <FilePage file={{ ...doc(), parentRef: `30842:${ME}:page-0` }} loading={false} folders={withOps} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    await pick('Folder', 'Steer')
+    await pick('Put it under', 'The top of Steer')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect((await screen.findAllByText('Moved to Steer, but Ops still lists it too. It is not in its new place yet. Try moving it again.')).length).toBeGreaterThan(0)
+    expect(published.map((e) => [e.kind, tag(e, 'from')])).toEqual([
+      [1852, FOLDER],
+      [1852, OPS],
+      [1851, undefined],
+    ])
+  })
+
+  it('refused because the Folders changed, Move again reads where it is now, and moves it from there', async () => {
+    folderEvents = stateOf(FOLDER) as unknown as SignedEvent[]
+    onTestFinished(() => void (folderEvents = []))
+    answers = [refused(`invalid: the team a move leaves does not list ${ADDRESS}`)]
+    render(
+      <ToastProvider>
+        <FilePage file={doc()} loading={false} folders={withOps} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    await pick('Folder', 'Steer')
+    await pick('Put it under', 'The top of Steer')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect((await screen.findAllByText('Nothing was moved: the Folders changed since you opened this. Try again.')).length).toBeGreaterThan(0)
+    // Meanwhile someone moved it to Ops; the dialog is still open on the same choice.
+    folderEvents = stateOf(OPS) as unknown as SignedEvent[]
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect(await screen.findByText('Moved to Steer')).toBeTruthy()
+    expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([
+      [1852, STEER, 'move', FOLDER],
+      [1852, STEER, 'move', OPS],
+    ])
   })
 })

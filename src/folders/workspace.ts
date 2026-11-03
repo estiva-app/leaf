@@ -125,11 +125,19 @@ export async function listDocument(args: { folder: string; address: string }): P
 
 /**
  * What a refused write says to a person. The relay's reason names kinds and
- * rules, so it goes to the console; one with no HTTP status is Leaf's own
- * sentence (`bridge.publish`: signing, or the workspace out of reach), already plain.
+ * rules, so it goes to the console; Leaf's own failure is said as it is ({@link ownFailure}).
  */
 function plainly(result: PublishResult, otherwise: string): string {
-  if (result.httpStatus === undefined && result.reason) return result.reason
+  const own = ownFailure(result)
+  if (own) return own
   console.warn('[relay] refused', result.reason ?? result.message)
   return otherwise
+}
+
+/**
+ * Leaf's own sentence for a write that never reached the relay — one with no HTTP status (`bridge.publish`: signing,
+ * or the workspace out of reach), already plain; undefined for the relay's refusal.
+ */
+export function ownFailure(result: PublishResult): string | undefined {
+  return result.httpStatus === undefined && result.reason ? result.reason : undefined
 }

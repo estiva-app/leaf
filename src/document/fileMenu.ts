@@ -18,6 +18,7 @@ import {
 } from '@estiva-app/interop'
 import { addressToPointer, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { isListed, titleOf } from '../folders/tree'
+import { ownFailure } from '../folders/workspace'
 import { manifestContent } from '../manifest'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
@@ -210,8 +211,10 @@ const moveFolderOf = (folder: FolderSummary): MoveFolder => ({
 export function moveSourcesOf(file: Pick<ForeignObject, 'address' | 'folder'>, listedIn: readonly string[], folders: readonly FolderSummary[]): MoveFolder[] {
   const named = (id: string) => folders.find((folder) => folder.id === id)
   if (listedIn.length === 0) {
+    // The relay's read just said no state names it, so this Folder lists none of it whatever the sidebar's summary
+    // said: the planner places it in the target rather than moving it from a Folder that would refuse (TEA-3).
     const own = file.folder ? named(file.folder) : undefined
-    return own ? [moveFolderOf(own)] : []
+    return own ? [{ ...moveFolderOf(own), addresses: [] }] : []
   }
   return listedIn.map((id) => {
     const folder = named(id)
@@ -286,12 +289,16 @@ export function moveTargetsIn(files: readonly ForeignObject[], file: ForeignObje
 
 /** How a move ended: refused before anything changed, or done, with the part that did not follow. */
 export type MoveOutcome =
-  | { ok: false; reason: string }
+  /** `changed`: the Folders changed since they were read, so a retry reads them again first. */
+  | { ok: false; reason: string; changed?: true }
   | {
       ok: true
-      /** The Folders that still list it too: a move from an earlier one landed, and theirs was refused. */
+      /** The Folders that still list it too: a move from an earlier one landed, and theirs was refused or never sent. */
       stillIn: MoveFolder[]
-      /** Why those Folders still list it, in Peek's words; absent when there is nothing to say but try again. */
+      /**
+       * Why the move stopped, in Peek's words or as Leaf's own failure; absent when there is nothing to say but try
+       * again. Set with no `stillIn` when the Folder that refused no longer lists it as it did: the Folders changed.
+       */
       stillWhy?: string
       /** Why it did not take its new place, when the Folder change landed and that did not. */
       unplaced?: string
@@ -317,39 +324,47 @@ export async function moveDocument(
   if (!pubkey) return { ok: false, reason: 'Sign in to move it.' }
   if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be moved from here.' }
   const sources = move.from.filter((folder) => folder.id !== move.to.id)
-  let moved = false
-  const stillIn: MoveFolder[] = []
-  let stillWhy: string | undefined
-  if (sources.length > 0) {
-    let listings
-    try {
-      listings = new Map(await Promise.all(sources.map(async (folder) => [folder.id, await read(folder.id)] as const)))
-    } catch {
-      return { ok: false, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
-    }
-    const plan = planMoveFromFolders(pubkey, Date.now(), { file, from: sources, to: move.to, listings })
-    if (!plan.ok) return { ok: false, reason: refusalWords[plan.reason] }
-    // One move per source, each changing both lists or neither, in order; the first refusal stops the rest.
-    for (const [index, event] of plan.events.entries()) {
-      const result = await publish(event)
-      if (result.ok) {
-        moved = true
-        continue
-      }
-      console.warn('[relay] move refused', result)
-      // Leaf's own words when it never reached the relay (a lapsed sign-in is not something to retry), else Leaf's
-      // words for the relay's reason (`readMoveRefusal`), never the relay's text (TEA-3).
-      if (!moved && result.reason && result.httpStatus === undefined) return { ok: false, reason: result.reason }
-      const refusal = readMoveRefusal(plan.events, index, result.reason ?? result.message)
-      const why = refusalWhy[refusal.why]
-      if (refusal.nothingMoved) return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.' }
-      // The earlier moves did arrive, so each Folder not yet moved from is named with why, and the move goes on to its place.
-      for (const folder of refusal.notMovedFrom) stillIn.push(sources.find((source) => source.id === folder) ?? { id: folder, name: 'another Folder', hasState: true })
-      stillWhy = why
-      break
-    }
+  let listings
+  try {
+    listings = new Map(await Promise.all(sources.map(async (folder) => [folder.id, await read(folder.id)] as const)))
+  } catch {
+    return { ok: false, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
   }
-  if (move.parent === undefined || move.parent === (file.parentRef ?? '')) return { ok: true, stillIn, stillWhy }
+  // Always the planner, even from no Folder: one that lists none of it is placed in the target, never moved from a
+  // Folder that does not list it.
+  const plan = planMoveFromFolders(pubkey, Date.now(), { file, from: move.from, to: move.to, listings })
+  if (!plan.ok) return { ok: false, reason: refusalWords[plan.reason] }
+  const { parent } = move
+  const placing = parent !== undefined && parent !== (file.parentRef ?? '')
+  let moved = false
+  let stillIn: MoveFolder[] = []
+  let stillWhy: string | undefined
+  // One move per source, each changing both lists or neither, in order; the first refusal stops the rest.
+  for (const [index, event] of plan.events.entries()) {
+    const result = await publish(event)
+    if (result.ok) {
+      moved = true
+      continue
+    }
+    // Leaf's own words when it never reached the relay (a lapsed sign-in), on any command; else Leaf's words for the
+    // relay's reason (`readMoveRefusal`), never the relay's text (TEA-3).
+    const own = ownFailure(result)
+    if (!own) console.warn('[relay] move refused', result)
+    const refusal = readMoveRefusal(plan.events, index, own ? undefined : result.reason)
+    const why = own ?? refusalWhy[refusal.why]
+    const changed = !own && refusal.why === 'changed-meanwhile'
+    if (refusal.nothingMoved)
+      return { ok: false, reason: own ?? (why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.'), ...(changed ? { changed } : {}) }
+    // The earlier moves did arrive. The Folders after the refused one were never asked, so they still list it; the
+    // refused one does too, unless the Folders changed — then it no longer lists it as read, and is not named.
+    const refused = tagOf(event, 'from')
+    stillIn = refusal.notMovedFrom.filter((id) => !(changed && id === refused)).flatMap((id) => sources.filter((source) => source.id === id))
+    stillWhy = why
+    // Nothing more after Leaf's own failure: the next write would fail the same way.
+    if (own) return { ok: true, stillIn, stillWhy, ...(placing ? { unplaced: 'it is not in its new place yet' } : {}) }
+    break
+  }
+  if (!placing) return { ok: true, stillIn, stillWhy }
   const built = buildActionEvent({
     manifest: OWN_MANIFEST,
     kind: file.kind,
@@ -357,15 +372,16 @@ export async function moveDocument(
     objectAuthor: addressToPointer(file.address).pubkey,
     folder: file.folder,
     actionId: 'move',
-    value: move.parent,
+    value: parent,
     pubkey,
     createdAtMs: Date.now(),
   })
   if (typeof built === 'string') console.warn('[leaf] move under not built', built)
   const placed = typeof built === 'string' ? null : await publish(built as UnsignedEvent)
   if (placed?.ok) return { ok: true, stillIn, stillWhy }
-  if (placed) console.warn('[relay] move under refused', placed)
-  return moved ? { ok: true, stillIn, stillWhy, unplaced: 'it is not in its new place yet' } : { ok: false, reason: placed?.reason ?? 'Nothing was moved. Try again.' }
+  if (placed && !ownFailure(placed)) console.warn('[relay] move under refused', placed)
+  if (moved) return { ok: true, stillIn, stillWhy, unplaced: 'it is not in its new place yet' }
+  return { ok: false, reason: (placed && ownFailure(placed)) ?? 'Nothing was moved. Try again.' }
 }
 
 /** The planner's refusals in Peek's words (`moveFileAsViewer`). */
@@ -401,5 +417,9 @@ async function relayStates(filter: Record<string, unknown>): Promise<SignedEvent
 }
 
 function dOf(event: { tags: string[][] }): string | undefined {
-  return event.tags.find((tag) => tag[0] === 'd')?.[1]
+  return tagOf(event, 'd')
+}
+
+function tagOf(event: { tags: string[][] }, name: string): string | undefined {
+  return event.tags.find((tag) => tag[0] === name)?.[1]
 }
