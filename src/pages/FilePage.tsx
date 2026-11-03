@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -63,7 +63,8 @@ export function FilePage({
   const reread = useFileByAddress(recheck)
   const file = reread.file && !reread.file.unreachable ? reread.file : listed
   if (!file || file.unreachable) {
-    return loading ? <SkeletonList rows={3} /> : <EmptyState scope="page" message="This could not be found, or you cannot read it." />
+    // Gone, not yours to read, or never there: the link says nothing about which, and no title (the kit's notice).
+    return loading ? <SkeletonList rows={3} /> : <NoAccessNotice what="page" />
   }
   if (!sharesText(file)) {
     if (reread.loading) return <SkeletonList rows={3} />

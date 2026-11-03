@@ -131,7 +131,8 @@ describe("a document's link", () => {
     listed[HQ] = [page('b'.repeat(64), 'naddr1theirs', 'Planted by someone else.')]
     window.history.replaceState(null, '', `/document/plan-${D}`)
     render(<App />)
-    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
     expect(screen.queryByText('Planted by someone else.')).toBeNull()
   })
 
@@ -191,9 +192,10 @@ describe("a document's link", () => {
     window.history.replaceState(null, '', `/document/plan-${missing}`)
     render(<App />)
     await waitFor(() => expect(relay.askedD).toContain(missing))
-    expect(screen.queryByText('This could not be found, or you cannot read it.')).toBeNull()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(screen.queryByText("You can't open this page")).toBeNull()
     release()
-    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
   })
 
   it('opens nothing when two authors hold the d of a page no Folder lists', async () => {
@@ -206,7 +208,8 @@ describe("a document's link", () => {
     for (const author of ['a', 'b']) relay.read[naddrOf(`30842:${author.repeat(64)}:${other}`)] = page(author.repeat(64), `naddr1${author}`, 'Planted by someone else.')
     window.history.replaceState(null, '', `/document/plan-${other}`)
     render(<App />)
-    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
     expect(screen.queryByText('Planted by someone else.')).toBeNull()
   })
 })
