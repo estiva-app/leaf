@@ -456,6 +456,48 @@ describe('the comments column hides and comes back (LED-3)', () => {
   })
 })
 
+/*
+  The header's side-panel button, shown to everyone wherever the comments button is (Katerina, 3 November; ONE-5,
+  step 5), as Ship's (ONE-6, step 4d): the Overview in the comments' place, empty for now. Which of the two the column
+  holds is `useSideColumn`'s, tested in sideColumn.test.tsx.
+*/
+describe('the Overview, in the comments’ place (ONE-5, step 5)', () => {
+  afterEach(() => window.localStorage.clear())
+  /* Leaf loaded afresh: the comments' fold starts over. */
+  async function reload(file: ForeignObject) {
+    vi.resetModules()
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    return render(<ToastProvider><FilePage file={file} loading={false} /></ToastProvider>)
+  }
+  const shownComments = () => {
+    const empty = screen.queryByText(/No comments yet/)
+    return !!empty && !empty.closest('[hidden]')
+  }
+
+  it('the header’s side-panel button shows it, empty for now, pressed while it is shown; hiding it brings the comments back', async () => {
+    await reload(doc())
+    await waitFor(() => expect(shownComments()).toBe(true))
+    expect(screen.queryByText('Overview')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show side panel' }))
+    // The kit's empty line for one part of a page, under the panel's name.
+    expect(screen.getByText('Overview')).toBeTruthy()
+    expect(screen.getByText('Nothing here yet.')).toBeTruthy()
+    expect(shownComments()).toBe(false)
+    expect(screen.getByRole('button', { name: 'Hide side panel' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Show comments' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide side panel' }))
+    expect(screen.queryByText('Overview')).toBeNull()
+    expect(shownComments()).toBe(true)
+    expect(screen.getByRole('button', { name: 'Show side panel' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('is in the header of another app’s file too, beside its comments button', async () => {
+    await reload(shipIssue())
+    const strip = await screen.findByRole('toolbar', { name: 'Page actions' })
+    expect([...strip.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Hide comments', 'Show side panel'])
+  })
+})
+
 describe('Delete from a page’s ⋯ menu (LED-4)', () => {
   afterEach(() => window.history.replaceState(null, '', '/'))
 
