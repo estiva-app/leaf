@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -22,7 +22,7 @@ import { useOwnerBlockLinker } from './usePathAddress'
 import { useFold, useNarrow } from '../frame/folds'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
 import { FileTopicsOf } from './FileTopics'
-import { ArchivedNotice } from './ArchivedNotice'
+import { archivedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
 import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
@@ -126,16 +126,13 @@ function DocumentView({
   const locked = isArchived(file)
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
   const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
-  // A Leaf page shows Peek's and Ship's notice in the line's place (a3257366); another app's file keeps the line,
-  // which names the app it is unarchived in.
+  // A Leaf page shows the kit's notice, Peek's and Ship's, in the line's place (a3257366); another app's file keeps
+  // the line, which names the app it is unarchived in.
   const archive = own ? file.archived : undefined
   const aboveHref = above?.href
   const notice = archive && (!archive.with || above) && (
     <ArchivedNotice
-      archive={archive}
-      by={(archive.by && directory[archive.by]?.displayName) || `${(archive.by ?? '').slice(0, 8)}…`}
-      withWhat={above?.noun}
-      withTitle={above?.title}
+      {...archivedNoticeOf(archive, (pubkey) => directory[pubkey]?.displayName, above)}
       onUnarchive={archive.with ? undefined : () => setArchived(false)}
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
