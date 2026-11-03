@@ -12,16 +12,24 @@ import { query, viewerPubkey } from '../relay/bridge'
  * maps them.
  */
 
+/** One of the workspace's people as Leaf draws them: a name, a picture when they have one, and `bot` for an agent, whose face is the robot. */
+export interface DirectoryPerson {
+  displayName: string
+  picture?: string
+  /** NIP-24's `bot`: an agent's profile. */
+  bot?: true
+}
+
 /**
  * Whom a card's owner picker offers (a lead, an assignee), as Peek's and
  * Ship's cards have their workspace's people: the named profiles on the
  * roster, the viewer included, since taking it yourself is a choice.
  */
-export function directoryOf(profiles: ReadonlyMap<string, NamedProfile>, members: ReadonlySet<string> | null): Record<string, { displayName: string; picture?: string }> {
+export function directoryOf(profiles: ReadonlyMap<string, NamedProfile>, members: ReadonlySet<string> | null): Record<string, DirectoryPerson> {
   return Object.fromEntries(
     [...profiles.values()]
       .filter((p) => !members || members.has(p.pubkey))
-      .map((p) => [p.pubkey, { displayName: p.name, ...(p.picture ? { picture: p.picture } : {}) }]),
+      .map((p) => [p.pubkey, { displayName: p.name, ...(p.picture ? { picture: p.picture } : {}), ...(p.bot ? { bot: true as const } : {}) }]),
   )
 }
 
@@ -66,7 +74,7 @@ export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: 
   const found = usePeople()
   return useMemo(
     () => ({
-      people: found.offered.map((p) => ({ id: p.pubkey, name: p.name, pubkey: p.pubkey, avatar: <Avatar size={32} src={p.picture} name={p.name} /> })),
+      people: found.offered.map((p) => ({ id: p.pubkey, name: p.name, pubkey: p.pubkey, avatar: <Avatar size={32} src={p.picture} bot={p.bot} name={p.name} /> })),
       nameOf: (pubkey: string) => found.profiles.get(pubkey)?.name,
     }),
     [found],
@@ -74,7 +82,7 @@ export function useMentionPeople(): { people: MentionPerson[]; nameOf: (pubkey: 
 }
 
 /** The workspace's people for a card's owner picker, read as `@` reads them. */
-export function useDirectory(): Record<string, { displayName: string; picture?: string }> {
+export function useDirectory(): Record<string, DirectoryPerson> {
   const found = usePeople()
   return useMemo(() => directoryOf(found.profiles, found.members), [found])
 }

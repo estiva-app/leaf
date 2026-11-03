@@ -45,7 +45,10 @@ export function OwnerRow({ file: read }: { file: ForeignObject }) {
           key={slot.field ?? slot.label}
           readOnly
           ownerLabel={slot.label}
-          owner={{ value: slot.value || undefined, options: slot.value ? [{ value: slot.value, label: file.people?.[slot.value]?.displayName ?? '—', picture: file.people?.[slot.value]?.picture }] : [] }}
+          owner={{
+            value: slot.value || undefined,
+            options: slot.value ? [{ value: slot.value, label: file.people?.[slot.value]?.displayName ?? '—', picture: file.people?.[slot.value]?.picture, bot: file.people?.[slot.value]?.bot }] : [],
+          }}
         />
       ))}
     </div>

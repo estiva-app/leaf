@@ -129,9 +129,12 @@ function wholeBlocksLine(editor: Editor | null, place: CommentPlace): string {
   return `On ${types.length} ${types.every((t) => t === types[0]) ? blockNoun(types[0], true) : 'blocks'}`
 }
 
-/** The names and pictures of the people in the column, from their profiles: each one as it comes, kept once found. */
-function useNames(pubkeys: readonly string[]): { names: Record<string, string>; pictures: Record<string, string> } {
-  const [faces, setFaces] = useState<{ names: Record<string, string>; pictures: Record<string, string> }>({ names: {}, pictures: {} })
+/** The keys whose profile is an agent's (NIP-24's `bot`): their face is the robot. */
+type Bots = Record<string, true>
+
+/** The names and pictures of the people in the column, and which are agents, from their profiles: each one as it comes, kept once found. */
+function useNames(pubkeys: readonly string[]): { names: Record<string, string>; pictures: Record<string, string>; bots: Bots } {
+  const [faces, setFaces] = useState<{ names: Record<string, string>; pictures: Record<string, string>; bots: Bots }>({ names: {}, pictures: {}, bots: {} })
   const asked = useRef(new Set<string>())
   const key = [...new Set(pubkeys)].sort().join(',')
   useEffect(() => {
@@ -141,11 +144,12 @@ function useNames(pubkeys: readonly string[]): { names: Record<string, string>; 
       void profileOf(pk)
         .catch(() => null)
         .then((profile) => {
-          const { displayName: name, picture } = profile ?? {}
-          if (name || picture)
+          const { displayName: name, picture, bot } = profile ?? {}
+          if (name || picture || bot)
             setFaces((was) => ({
               names: name ? { ...was.names, [pk]: name } : was.names,
               pictures: picture ? { ...was.pictures, [pk]: picture } : was.pictures,
+              bots: bot ? { ...was.bots, [pk]: true } : was.bots,
             }))
         })
     }
@@ -474,6 +478,7 @@ function CommentLine({
   now,
   nameOf,
   pictures,
+  bots,
   page,
   viewer,
   onReact,
@@ -485,6 +490,8 @@ function CommentLine({
   nameOf: (pubkey: string) => string | undefined
   /** The author's face, from their profile; initials without one. */
   pictures: Record<string, string>
+  /** The authors who are agents: their face is the robot. */
+  bots: Bots
   page: readonly CommentItem[]
   /** Who is looking: their reactions are lit. */
   viewer?: string
@@ -547,14 +554,14 @@ function CommentLine({
     const readable = new Set(readableKey.split('\n'))
     return placeComment(blocks, comment.event, { here, resolveLink, readable: (reference) => readable.has(reference), cards: comment.cards })
   }, [blocks, comment, here, resolveLink, readableKey])
-  const messageOf = (quoted: CommentItem) => messageLinkOf(quoted, named, pictures, now, here)
+  const messageOf = (quoted: CommentItem) => messageLinkOf(quoted, named, pictures, bots, now, here)
   const reference = (uri: string, opensAt?: string) => <BodyReference uri={uri} urgent={urgent} nameOf={named} page={page} messageOf={messageOf} opensAt={opensAt} />
   const row = (line: RowLine) => <BodyRow line={line} page={page} messageOf={messageOf} fallback={reference(line.reference, line.url)} />
   return (
     <div data-comment-id={comment.id} className="group/comment flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 text-body-2-strong text-text-primary">
-          <Person name={names[comment.by] ?? 'Someone'} picture={pictures[comment.by]} />
+          <Person name={names[comment.by] ?? 'Someone'} picture={pictures[comment.by]} bot={bots[comment.by]} />
         </span>
         <WithTooltip label={exactly(comment.at * 1000)}>
           <span className="whitespace-nowrap text-caption text-text-muted">{whenOf(comment.at * 1000, now)}</span>
@@ -631,9 +638,10 @@ function CommentLine({
  * no address of its own in Leaf, so it opens the page it is on with its
  * comments shown (`here`, `COMMENTS_HASH`).
  */
-function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string | undefined, pictures: Record<string, string>, now: number, here: string | undefined): LinkState {
+function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string | undefined, pictures: Record<string, string>, bots: Bots, now: number, here: string | undefined): LinkState {
   const name = nameOf(quoted.by) ?? 'Someone'
   const picture = pictures[quoted.by]
+  const bot = bots[quoted.by]
   const [kind, pubkey, ...d] = (here ?? '').split(':')
   const page = here ? `${pagePath({ kind: Number(kind), address: here, naddr: encodeNaddr({ kind: Number(kind), pubkey, identifier: d.join(':'), relays: [] }) })}${COMMENTS_HASH}` : ''
   return {
@@ -643,7 +651,7 @@ function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string |
       kind: 'message',
       title: name,
       href: page,
-      author: { name, ...(picture ? { picture } : {}) },
+      author: { name, ...(picture ? { picture } : {}), ...(bot ? { bot } : {}) },
       // An app link in it reads as what it names, never the raw URL (widget review, item 20).
       body: openingWords(quoted.body, nameOf, { resolveLink: links.known }),
       updated: whenOf(quoted.at * 1000, now),
@@ -755,6 +763,7 @@ function ThreadCard({
   editor,
   names,
   pictures,
+  bots,
   now,
   active,
   onActivate,
@@ -775,6 +784,7 @@ function ThreadCard({
   editor: Editor | null
   names: Record<string, string>
   pictures: Record<string, string>
+  bots: Bots
   now: number
   active: boolean
   onActivate: () => void
@@ -816,7 +826,7 @@ function ThreadCard({
           onTyped: edits.onTyped,
         }
       : undefined
-  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} pictures={pictures} page={page} viewer={viewer} onReact={closed ? undefined : onReact} own={actionsOn(c)} />
+  const line = (c: CommentItem) => <CommentLine key={c.id} comment={c} names={names} now={now} nameOf={people.nameOf} pictures={pictures} bots={bots} page={page} viewer={viewer} onReact={closed ? undefined : onReact} own={actionsOn(c)} />
   return (
     <Card data-thread-id={thread.id} data-active={active || undefined} data-resolved={thread.resolved || undefined} data-deleted={deleted || undefined} hover="fill" quietUntilHover selected={active} onClick={click} className="flex shrink-0 flex-col gap-3 p-3">
       <div className="flex items-start gap-2">
@@ -932,7 +942,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
 
   const all = useMemo(() => threads ?? [], [threads])
   // Authors and reactors: "who reacted" names them too.
-  const { names, pictures } = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
+  const { names, pictures, bots } = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
   const people = useMentionPeople()
   const page = useMemo(() => all.flatMap(commentsOf), [all])
   const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])
@@ -1055,6 +1065,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
       editor={editor}
       names={names}
       pictures={pictures}
+      bots={bots}
       now={readAt}
       // A handle's Comment: the draft takes over from the open card.
       active={!draft && t.id === active}

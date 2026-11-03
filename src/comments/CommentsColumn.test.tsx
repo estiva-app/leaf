@@ -162,6 +162,22 @@ describe('the comments column', () => {
     expect(card(/No picture here/)?.querySelector('img')).toBeNull()
   })
 
+  it("draws an agent's comment by the robot, as every app draws an agent, and a person's by their initials", async () => {
+    // Keys no other test reads: the profile cache keeps a person's answer across tests.
+    const AGENT = '6'.repeat(64)
+    const PERSON = '7'.repeat(64)
+    const agent: SignedEvent = { ...profile(AGENT, 'Claude'), content: JSON.stringify({ name: 'Claude', bot: true }) }
+    const byAgent: SignedEvent = { ...comment([], 'Written by an agent'), id: '6'.repeat(64), pubkey: AGENT }
+    const byPerson: SignedEvent = { ...comment([], 'Written by a person'), id: '7'.repeat(64), pubkey: PERSON }
+    await open([roster, agent, profile(PERSON, 'Ana'), byAgent, byPerson])
+    const card = (words: RegExp) => [...document.querySelectorAll<HTMLElement>('[data-comment-id]')].find((c) => words.test(c.textContent ?? ''))
+    // The kit's robot, in place of the initials.
+    const robot = (words: RegExp) => !!card(words)?.querySelector('path[d^="M13.5 2C13.5 2.44425"]')
+    await waitFor(() => expect(card(/Written by a person/)?.textContent).toContain('Ana'))
+    await waitFor(() => expect(robot(/Written by an agent/)).toBe(true))
+    expect(robot(/Written by a person/)).toBe(false)
+  })
+
   it('draws a second-level item in a comment nested under the item above it, as the box wrote it', async () => {
     await open([comment([], '- Agenda\n  - budget\n- Next')])
     await waitFor(() => expect(document.querySelector('[data-comment-id] li')).not.toBeNull())
