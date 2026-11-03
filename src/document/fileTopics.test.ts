@@ -14,6 +14,8 @@ const HQ = 'hq-folder'
 let held: SignedEvent[] = []
 /* What each topic's projection says: its title, where it opens, archived, or unreachable to this reader. */
 let projected: Record<string, { title: string; openUrl?: string; archived?: boolean; unreachable?: boolean }> = {}
+/* Who is signed in: nobody when undefined. */
+let viewer: string | undefined = ME
 
 type Filter = { ids?: string[]; kinds?: number[]; authors?: string[]; [tag: `#${string}`]: string[] | undefined }
 function relay(filters: Filter[]): SignedEvent[] {
@@ -26,23 +28,35 @@ function relay(filters: Filter[]): SignedEvent[] {
 }
 
 vi.mock('../relay/bridge', () => ({
-  viewerPubkey: () => ME,
+  viewerPubkey: () => viewer,
   query: async (filters: Filter[]) => relay(filters),
-  queryAll: async (filters: Filter[]) => relay(filters),
+  queryAll: async (filters: Filter[]) => {
+    reads += 1
+    return relay(filters)
+  },
   publish: async () => ({ ok: true }),
 }))
 vi.mock('../relay/manifests', () => ({ resolveQuery: async (filters: Filter[]) => relay(filters), projections: undefined }))
-// A topic's projection needs Peek's manifest; what it answers is stood in for here, and resolveForeignRoots is interop's to test.
-vi.mock('@estiva-app/interop', async (original) => ({
-  ...(await original<typeof import('@estiva-app/interop')>()),
-  resolveForeignRoots: async (addresses: readonly string[]) =>
-    addresses.map((address) => {
-      const p = projected[address]
-      return { address, unreachable: p?.unreachable, openUrl: p?.openUrl, archived: p?.archived ? { at: 1 } : undefined, slots: { title: { value: p?.title } } } as unknown as ForeignObject
-    }),
-}))
+// A topic's link and its unreachable stub need Peek's manifest; for a topic made with `topic` below, what it answers is
+// stood in for here. Any other address is interop's own read of the events the relay holds.
+vi.mock('@estiva-app/interop', async (original) => {
+  const interop = await original<typeof import('@estiva-app/interop')>()
+  return {
+    ...interop,
+    resolveForeignRoots: async (addresses: readonly string[], ...rest: unknown[]) =>
+      !addresses.some((address) => address in projected)
+        ? (interop.resolveForeignRoots as (...args: unknown[]) => Promise<ForeignObject[]>)(addresses, ...rest)
+        : addresses.map((address) => {
+            const p = projected[address]
+            return { address, unreachable: p?.unreachable, openUrl: p?.openUrl, archived: p?.archived ? { at: 1 } : undefined, slots: { title: { value: p?.title } } } as unknown as ForeignObject
+          }),
+  }
+})
 
-const { readFileTopics, readTopicChoices } = await import('./fileTopics')
+/* Reads that went to the relay through queryAll. */
+let reads = 0
+
+const { readFileTopics, readTopicChoices, resetTopicChoicesForTests, topicChoicesNow } = await import('./fileTopics')
 
 let n = 0
 const sign = (e: UnsignedEvent): SignedEvent => ({ ...e, id: `e${++n}`.padStart(64, '0'), sig: '' }) as SignedEvent
@@ -58,6 +72,9 @@ const unlist = (by: string, t: { address: string; folder: string }, at: number) 
 beforeEach(() => {
   held = []
   projected = {}
+  viewer = ME
+  reads = 0
+  resetTopicChoicesForTests()
 })
 
 describe('the topics a file’s row names', () => {
@@ -91,27 +108,85 @@ describe('the topics a file’s row names', () => {
     list(MIKY, old, 1_700_000_100_000)
     expect((await readFileTopics(DOC))[0]).toMatchObject({ title: 'Old launch', archived: true })
   })
+
+  it('marks a topic archived with the one it sits under, so its chip has no Remove either', async () => {
+    // What the relay holds, read by interop: the parent's archive is a change on the parent, none on the topic itself.
+    const parent = rootOf(MIKY, 'launch', 'Launch')
+    archive(parent)
+    const under = rootOf(MIKY, 'under', 'Under the launch', HQ, parent)
+    list(MIKY, { address: under, folder: HQ }, 1_700_000_100_000)
+    expect((await readFileTopics(DOC))[0]).toMatchObject({ title: 'Under the launch', archived: true })
+  })
 })
 
+/* Add to topic reads interop's one read of every topic (SHIPS-2), which resolves the topics itself: these fixtures are
+   what the relay holds, the title on the root and an archive as its change, with no stand-in projection. */
+const SUB = 'sub-folder'
+const CLOSED = 'closed-folder'
+/** A Folder the relay lists for the reader: its state, as `listFolders` reads it. */
+const folderState = (id: string) => held.push(sign({ kind: 39000, pubkey: MIKY, created_at: 1_700_000_000, tags: [['d', id], ['name', id]], content: '' }))
+function rootOf(author: string, d: string, title: string, folder = HQ, parent?: string) {
+  held.push(sign({ kind: 30840, pubkey: author, created_at: 1_700_000_000, tags: [['d', d], ['title', title], ['h', folder], ...(parent ? [['a', parent]] : [])], content: '' }))
+  return `30840:${author}:${d}`
+}
+const archive = (address: string, folder = HQ) =>
+  held.push(sign({ kind: 1851, pubkey: MIKY, created_at: 1_700_000_200, tags: [['a', address], ['O', address.split(':')[2]], ['field', 'archived'], ['value', 'true'], ['h', folder]], content: '' }))
+
 describe('what Add to topic offers', () => {
-  it('splits the readable topics into yours and the others, each A–Z, and leaves out archived ones', async () => {
-    topic(ME, 'mine', 'My notes')
-    topic(MIKY, 'zeta', 'Zeta')
-    topic(MIKY, 'alpha', 'Alpha')
-    topic(MIKY, 'old', 'Old launch', { archived: true })
-    topic(MIKY, 'hidden', 'Private plans', { unreachable: true })
+  it('splits the topics you can add to into yours and the others, each A–Z, and leaves out archived ones', async () => {
+    folderState(HQ)
+    folderState(SUB)
+    rootOf(ME, 'mine', 'My notes')
+    rootOf(MIKY, 'zeta', 'Zeta')
+    // In a second Folder the relay lists for you.
+    rootOf(MIKY, 'alpha', 'Alpha', SUB)
+    archive(rootOf(MIKY, 'old', 'Old launch'))
+    // Archived with the topic it sits under: read-only too.
+    const parent = rootOf(MIKY, 'parent', 'Parent')
+    archive(parent)
+    rootOf(MIKY, 'child', 'Child', HQ, parent)
 
     const choices = await readTopicChoices()
     expect(choices.yours.map((t) => t.title)).toEqual(['My notes'])
     expect(choices.others.map((t) => t.title)).toEqual(['Alpha', 'Zeta'])
   })
 
+  it('leaves out a topic in a Folder the relay does not list for you, which would refuse the entry', async () => {
+    folderState(HQ)
+    rootOf(MIKY, 'open', 'Open')
+    rootOf(MIKY, 'closed', 'Closed', CLOSED)
+
+    const choices = await readTopicChoices()
+    expect([...choices.yours, ...choices.others].map((t) => t.title)).toEqual(['Open'])
+  })
+
   it('counts a topic as yours once you have written in its conversation', async () => {
-    const zeta = topic(MIKY, 'zeta', 'Zeta')
-    held.push(sign({ kind: 1111, pubkey: ME, created_at: 1_700_000_300, tags: [['A', zeta.address], ['a', zeta.address], ['h', HQ]], content: 'On it.' }))
+    folderState(HQ)
+    const zeta = rootOf(MIKY, 'zeta', 'Zeta')
+    held.push(sign({ kind: 1111, pubkey: ME, created_at: 1_700_000_300, tags: [['A', zeta], ['a', zeta], ['h', HQ]], content: 'On it.' }))
 
     const choices = await readTopicChoices()
     expect(choices.yours.map((t) => t.title)).toEqual(['Zeta'])
     expect(choices.others).toEqual([])
+  })
+
+  it('opened again, gives the held choices at once, and a topic made or archived since once the fresh read lands', async () => {
+    folderState(HQ)
+    rootOf(MIKY, 'beta', 'Beta')
+    const old = rootOf(MIKY, 'old', 'Old')
+    expect(topicChoicesNow()).toBeUndefined()
+    await readTopicChoices()
+    rootOf(MIKY, 'gamma', 'Gamma')
+    archive(old)
+    expect(topicChoicesNow()?.others.map((t) => t.title)).toEqual(['Beta', 'Old'])
+    expect((await readTopicChoices()).others.map((t) => t.title)).toEqual(['Beta', 'Gamma'])
+  })
+
+  it('asks the relay nothing when nobody is signed in, and says why', async () => {
+    folderState(HQ)
+    rootOf(MIKY, 'beta', 'Beta')
+    viewer = undefined
+    await expect(readTopicChoices()).rejects.toThrow('Sign in to add it to a topic.')
+    expect(reads).toBe(0)
   })
 })

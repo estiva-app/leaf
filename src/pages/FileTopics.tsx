@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { IconPlus, IconX } from '@tabler/icons-react'
 import { Button, Chip, CommandPalette, EmptyState, CommandPaletteSearch, IconButton, KindIcon, SkeletonBar, useToast, type CommandPaletteRow } from '@estiva-app/ui'
-import { readTopicChoices, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
+import { readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
 import { useFileTopics, type FileTopicsState } from '../document/useFileTopics'
 
 /** A topic's address kind: a topic lists no other topic (Miky, TOP-3 kickoff), so a topic has no Topics row. */
@@ -21,7 +21,7 @@ export function FileTopicsOf({ address }: { address: string | undefined }) {
     const result = await setListed(topic, listed)
     if (!result.ok) showToast({ label: refusal(topic, listed, result.reason ?? ''), type: 'error' })
   }
-  return <FileTopics topics={state} busy={busy} onChange={(topic, listed) => void change(topic, listed)} readChoices={readTopicChoices} />
+  return <FileTopics topics={state} busy={busy} onChange={(topic, listed) => void change(topic, listed)} readChoices={readTopicChoices} choicesNow={topicChoicesNow} />
 }
 
 /**
@@ -46,13 +46,16 @@ export function refusal(topic: Pick<TopicOfFile, 'title'>, listed: boolean, reas
  * in a topic, and an archived topic keeps its chip with no ✕.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-archived-file-is-read-only-in-every-app.md
  */
-export function FileTopics({ topics, busy, onChange, readChoices }: {
+export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: {
   topics: FileTopicsState
   /** Topic addresses with a write on the way: their chip waits, with no ✕. */
   busy: ReadonlySet<string>
   /** Put the file on the topic's list, or take it off. */
   onChange: (topic: TopicOfFile, listed: boolean) => void
+  /** The choices, read afresh on each open of Add to topic. */
   readChoices: () => Promise<TopicChoices>
+  /** The choices already in hand, drawn while {@link readChoices} reads. */
+  choicesNow?: () => TopicChoices | undefined
 }) {
   const [picking, setPicking] = useState(false)
   return (
@@ -82,6 +85,7 @@ export function FileTopics({ topics, busy, onChange, readChoices }: {
             <AddToTopic
               listed={topics.map((topic) => topic.address)}
               readChoices={readChoices}
+              choicesNow={choicesNow}
               onPick={(topic) => {
                 setPicking(false)
                 onChange(topic, true)
@@ -116,20 +120,23 @@ function openBeside(event: { preventDefault: () => void }, url: string | undefin
  * other topic you can read, each A–Z; archived ones and the ones already listing this file left out. Typing narrows
  * both by title.
  */
-function AddToTopic({ listed, readChoices, onPick, onClose }: {
+function AddToTopic({ listed, readChoices, choicesNow, onPick, onClose }: {
   /** The addresses of the topics that list the file already. */
   listed: readonly string[]
   readChoices: () => Promise<TopicChoices>
+  choicesNow?: () => TopicChoices | undefined
   onPick: (topic: TopicOfFile) => void
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
-  const [choices, setChoices] = useState<TopicChoices | 'failed' | undefined>(undefined)
+  // Choices already in hand draw with the palette, so it never says "Reading topics…" for them.
+  const [choices, setChoices] = useState<TopicChoices | 'failed' | undefined>(() => choicesNow?.())
   useEffect(() => {
     let live = true
     readChoices()
       .then((next) => live && setChoices(next))
-      .catch(() => live && setChoices('failed'))
+      // A failed re-read keeps the choices already drawn.
+      .catch(() => live && setChoices((drawn) => (typeof drawn === 'object' ? drawn : 'failed')))
     return () => {
       live = false
     }

@@ -30,7 +30,8 @@ vi.mock('../relay/bridge', () => ({
 // The reads are interop's topicsOfFile and resolveForeignRoots, covered in estiva-foundation; the writes stay real, so each
 // click is checked on the event that would reach the relay.
 // 'pending': the read after a write has not answered yet, so what shows is the row's own rollback, not a fresh read.
-const reads = vi.hoisted(() => ({ topics: [] as TopicOfFile[] | Error | 'pending', choices: { yours: [], others: [] } as TopicChoices }))
+// `held`: the choices this tab already holds, drawn while `choices` is read again.
+const reads = vi.hoisted(() => ({ topics: [] as TopicOfFile[] | Error | 'pending', choices: { yours: [], others: [] } as TopicChoices | Error, held: undefined as TopicChoices | undefined }))
 vi.mock('../document/fileTopics', async (original) => ({
   ...(await original<typeof import('../document/fileTopics')>()),
   readFileTopics: vi.fn(async () => {
@@ -38,7 +39,11 @@ vi.mock('../document/fileTopics', async (original) => ({
     if (reads.topics instanceof Error) throw reads.topics
     return reads.topics
   }),
-  readTopicChoices: vi.fn(async () => reads.choices),
+  readTopicChoices: vi.fn(async () => {
+    if (reads.choices instanceof Error) throw reads.choices
+    return reads.choices
+  }),
+  topicChoicesNow: vi.fn(() => reads.held),
 }))
 
 const { FileTopicsOf } = await import('./FileTopics')
@@ -59,6 +64,7 @@ beforeEach(() => {
   answers = []
   reads.topics = [WIDGETS]
   reads.choices = { yours: [DESIGN, WIDGETS], others: [] }
+  reads.held = undefined
 })
 afterEach(cleanup)
 
@@ -129,6 +135,19 @@ describe('Add to topic and Remove', () => {
     const palette = await screen.findByRole('dialog')
     await within(palette).findByText('Design review')
     expect(within(palette).queryByText('Widgets')).toBeNull()
+  })
+
+  it('Add to topic draws the choices this tab holds at once, never “Reading topics…”, and keeps them when reading again fails', async () => {
+    const user = userEvent.setup()
+    reads.held = { yours: [DESIGN], others: [] }
+    reads.choices = new Error('relay down')
+    show()
+    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    const palette = await screen.findByRole('dialog')
+    expect(within(palette).getByText('Design review')).toBeTruthy()
+    expect(within(palette).queryByText('Reading topics…')).toBeNull()
+    await waitFor(() => expect(within(palette).queryByText('Topics could not be read.')).toBeNull())
+    expect(within(palette).getByText('Design review')).toBeTruthy()
   })
 
   it('finds a topic by the start of any word of its title', async () => {
