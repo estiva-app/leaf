@@ -6,6 +6,10 @@ import '../src/index.css'
 // spied, so a story that hands nothing keeps the real one. Without them those stories threw before drawing.
 sb.mock(import('../src/relay/bridge.ts'), { spy: true })
 sb.mock(import('../src/comments/useThreads.ts'), { spy: true })
+// The tab's live connection and a file's read again, for a save someone else makes while the page is open (Pages/Ship
+// file in Leaf / Newer Save, drawn by FilePage itself). A story that sets them puts them back when it is left.
+sb.mock(import('../src/relay/client.ts'), { spy: true })
+sb.mock(import('../src/document/save.ts'), { spy: true })
 
 // The app's one theme, selected the way the app selects it: on <html>.
 document.documentElement.dataset.theme = "leaf"
