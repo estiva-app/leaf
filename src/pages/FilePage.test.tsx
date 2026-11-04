@@ -17,6 +17,8 @@ let manifests: SignedEvent[] = []
 let folderEvents: SignedEvent[] = []
 /* The roots of Ship projects (kind 30850) and of Leaf pages (kind 30842) the relay holds, answered by kind. */
 let roots: SignedEvent[] = []
+/* The profiles (kind 0) the relay holds: the names a page's people are drawn with. */
+let profiles: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
@@ -25,6 +27,8 @@ vi.mock('../relay/bridge', () => ({
     // An app's manifest the relay never answers for: its author is HANGS.
     filters[0]?.authors?.includes('e'.repeat(64))
       ? new Promise<never>(() => {})
+      : filters[0]?.kinds?.[0] === 0
+      ? profiles
       : filters[0]?.kinds?.[0] === 30890 || filters[0]?.kinds?.[0] === 39000
       ? folderEvents.filter((e) => e.kind === filters[0].kinds![0])
       : filters[0]?.kinds?.[0] === 30850 || (filters[0]?.kinds?.[0] === 30842 && !filters[0]['#a'])
@@ -41,7 +45,7 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 const { FilePage } = await import('./FilePage')
-const { shipIssue, shipProject } = await import('./fixtures/shipFiles')
+const { PROFILES, shipIssue, shipProject } = await import('./fixtures/shipFiles')
 const ADDRESS = `30842:${ME}:page-1`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 const archived = (file: ForeignObject, withAddress?: string): ForeignObject => ({ ...file, archived: { by: ME, at: 1_760_000_000, ...(withAddress ? { with: withAddress } : {}) } })
@@ -102,6 +106,7 @@ afterEach(() => {
   changes = []
   manifests = []
   roots = []
+  profiles = []
 })
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
@@ -167,13 +172,14 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     expect(tag(published[1], 'value')).toContain('Written in Leaf.')
   })
 
-  it('is read-only when archived: its title, summary and text take nothing, and it says where to unarchive it', async () => {
+  it('is read-only when archived: its title, summary and text take nothing, and it shows the kit’s archived card', async () => {
     render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
     const box = await documentBox()
     expect(box.editor.isEditable).toBe(false)
     expect((await titleBox()).editor.isEditable).toBe(false)
     expect((await summaryBox()).editor.isEditable).toBe(false)
-    expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
+    // Changed on purpose (Katerina, 4 November): the kit's card in the line's place, which said where to unarchive it.
+    expect(screen.getByText(/^Archived by .* · /)).toBeTruthy()
     write(box, 'Typed into an archived issue.')
     leave(box)
     await act(async () => {})
@@ -265,19 +271,30 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(change.tags).toContainEqual(['h', doc().folder])
   })
 
-  it('a Ship issue archived itself: the comment line is the one every app shows', async () => {
+  // Changed on purpose (Katerina, 4 November): another app's file shows the kit's card, as every app does, in place of
+  // the line that said where to unarchive it; with nothing to press, since Leaf cannot unarchive another app's file.
+  it('a Ship issue archived itself: the kit’s card says who and when, with no Unarchive, no Open and no line over its text; the comment line is the one every app shows', async () => {
+    profiles = PROFILES
     render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Archived. Unarchive it to comment.')).toBeTruthy()
-    expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
+    expect(await screen.findByText(/^Archived by Miky · /)).toBeTruthy()
+    expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
+    expect(screen.queryByText('Archived. Unarchive it in Ship to edit.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Open / })).toBeNull()
     await locked()
   })
 
-  it('a Ship issue archived with its project: names the project, and Estiva Ship from its manifest', async () => {
+  // Changed on purpose (Katerina, 4 November), as above.
+  it('a Ship issue archived with its project: the kit’s card names the project, from its manifest, with no Open and no line over its text', async () => {
+    profiles = PROFILES
     const shipManifest = (await import('./fixtures/ship-manifest.json')).default
     manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']], content: JSON.stringify(shipManifest) })]
     render(<ToastProvider><FilePage file={archived(shipIssue(), shipProject().address)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Unarchive the project in Estiva Ship to edit.')).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its project by Miky · /)).toBeTruthy()
     expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
+    expect(screen.queryByText('Unarchive the project in Estiva Ship to edit.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open project' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
     await locked()
   })
 

@@ -132,14 +132,16 @@ function DocumentView({
   const locked = isArchived(file)
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
   const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
-  // A Leaf page shows the kit's notice, Peek's and Ship's, in the line's place (a3257366); another app's file keeps
-  // the line, which names the app it is unarchived in.
-  const archive = own ? file.archived : undefined
-  const aboveHref = above?.href
+  // Every archived file shows the kit's notice, Peek's and Ship's, in the line's place (a3257366), once the file above
+  // it is read. Another app's file too, with no Unarchive and no Open (Katerina, 4 November): the same card in every
+  // app, and Leaf cannot unarchive another app's file. A Leaf page's offers Unarchive, or opens the page above it is
+  // archived with.
+  const archive = file.archived
+  const aboveHref = own ? above?.href : undefined
   const notice = archive && (!archive.with || above) && (
     <ArchivedNotice
       {...archivedNoticeOf(archive, (pubkey) => directory[pubkey]?.displayName, above)}
-      onUnarchive={archive.with ? undefined : () => setArchived(false)}
+      onUnarchive={own && !archive.with ? () => setArchived(false) : undefined}
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
   )
@@ -344,9 +346,9 @@ function DocumentView({
               </div>
             </div>
             {!own && <OwnerRow file={file} />}
-            {own && notice}
-            {/* Another app's file keeps its line; so does a page whose file above has no address to open, so the way back is still named. */}
-            {(!own || (archive?.with && !aboveHref)) && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
+            {notice}
+            {/* A page whose file above has no address to open keeps its line, so the way back is still named. */}
+            {own && archive?.with && !aboveHref && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
             {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6); an archived
                 page's notice stays first, straight under its title. */}
             <FileTopicsOf address={file.address} />
@@ -400,8 +402,10 @@ function DocumentView({
 /**
  * The two lines on an archived file (PEEKM-8). In the comment box's place, the words every app shows ("Archived.
  * Unarchive it to comment.", "Unarchive the project to comment."), with no "in Peek" on a Leaf page now that its menu
- * has Unarchive (LED-4). Over its locked text, the file to unarchive and where: "Unarchive the project in Estiva Ship
- * to edit." The closest archived file above is named once its manifest is read; until then no line, never "the parent".
+ * has Unarchive (LED-4). The file to unarchive and where, "Unarchive the project in Estiva Ship to edit.": what a
+ * refused rename or summary says, and the line over the locked text of a page whose file above has no address to open
+ * (the kit's card is everywhere else, Katerina, 4 November). The closest archived file above is named once its
+ * manifest is read; until then no line, never "the parent".
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */

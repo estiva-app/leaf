@@ -118,7 +118,11 @@ export const Project: Story = { args: { file: shipProject() } }
  */
 export const EmptyText: Story = { args: { file: shipIssue({ description: false }) } }
 
-/** Archived in Ship: title, summary and text read-only; the comments only show, with the line every app shows in the box's place. */
+/**
+ * Archived in Ship: the kit's card under Ship's row, who and when, with no Unarchive and no Open, since Leaf cannot
+ * unarchive it (Katerina, 4 November); title, summary and text read-only; the comments only show, with the line every
+ * app shows in the box's place.
+ */
 export const Archived: Story = { args: { file: shipIssue({ archived: true }) } }
 
 /** A save refused when you leave the text — the relay said no, or the sign-in ended: your text stays, and the line says so. */
