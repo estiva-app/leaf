@@ -172,7 +172,7 @@ function Frame() {
     if (!refused || toldRefused.current) return
     toldRefused.current = true
     // A Folder this person cannot read, or one that takes no document: nothing is written.
-    showToast({ label: 'You can’t add a document to that Folder.', type: 'error' })
+    showToast({ label: 'You can’t add a document to that team.', type: 'error' })
     replace('/')
   }, [refused, showToast])
 
@@ -193,7 +193,7 @@ function Frame() {
       return false
     }
     if (!result.ok) {
-      const folderName = takers.find((f) => f.id === folder)?.name ?? 'its Folder'
+      const folderName = takers.find((f) => f.id === folder)?.name ?? 'its team'
       setUnlisted({ address: result.address, folder, folderName })
       go(documentPath(dOf(result.address), title))
       return true
@@ -258,14 +258,14 @@ function Frame() {
             <NavItem href="/" label="Home" icon={<IconHome size={16} stroke={1.5} />} active={route.page === 'home'} />
             {signedIn && <TopicsSection topics={topics} current={current} fileNow={(file) => (file.address && inTree(file.address)) || file} />}
             <NavTree
-              title="Folders"
+              title="Teams"
               titleActions={
                 takers.length ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => setMaking(true) }] : undefined
               }
               groups={workspace.failed ? [] : groups}
               selected={current}
               selectedParent={under ? fileKey(under.file) : undefined}
-              emptyMessage={workspace.failed ? 'Your Folders could not be read. Reload to try again.' : 'No Folders yet.'}
+              emptyMessage={workspace.failed ? 'Your teams could not be read. Reload to try again.' : 'No teams yet.'}
             />
           </Sidebar>
         }

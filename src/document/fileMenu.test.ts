@@ -216,9 +216,9 @@ describe('moving a Leaf page', () => {
   })
 
   it.each([
-    ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the Folders is archived.'],
-    ['invalid: channel is archived', 'Nothing was moved: one of the Folders is archived.'],
-    ["invalid: only the team's members mark or unmark its spaces", 'Nothing was moved: you need to be a member of both Folders to move this.'],
+    ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the teams is archived.'],
+    ['invalid: channel is archived', 'Nothing was moved: one of the teams is archived.'],
+    ["invalid: only the team's members mark or unmark its spaces", 'Nothing was moved: you need to be a member of both teams to move this.'],
   ])('a refused move says why in Leaf’s words, never the relay’s: %s', async (relaySaid, leafSays) => {
     answers = [refused(relaySaid)]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
@@ -230,7 +230,7 @@ describe('moving a Leaf page', () => {
     async (relaySaid) => {
       answers = [refused(relaySaid)]
       const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
-      expect(result).toEqual({ ok: false, reason: 'Nothing was moved: the Folders changed since you opened this. Try again.', changed: true })
+      expect(result).toEqual({ ok: false, reason: 'Nothing was moved: the teams changed since you opened this. Try again.', changed: true })
     },
   )
 
@@ -255,8 +255,8 @@ describe('moving a Leaf page', () => {
   it('listed in two Folders: the second refused because its team is archived says so beside the Folder still listing it', async () => {
     answers = [{ ok: true }, refused('invalid: team 33333333 is archived; its list does not change')]
     const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: true, stillIn: [ALSO], stillWhy: 'one of the Folders is archived.' })
-    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Ops still lists it too: one of the Folders is archived.')
+    expect(result).toEqual({ ok: true, stillIn: [ALSO], stillWhy: 'one of the teams is archived.' })
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Ops still lists it too: one of the teams is archived.')
   })
 
   it('listed in two Folders: a sign-in that ends at the second says what moved and why the rest did not, and sends nothing more', async () => {
@@ -277,16 +277,16 @@ describe('moving a Leaf page', () => {
     const THIRD = { id: '44444444-4444-4444-8444-444444444444', name: 'Board', hasState: true, addresses: [`30842:${ME}:a`] }
     answers = [{ ok: true }, refused('invalid: the team a move leaves lists none of its files')]
     const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO, THIRD], to: THERE }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: true, stillIn: [THIRD], stillWhy: 'the Folders changed since you opened this. Try again.' })
+    expect(result).toEqual({ ok: true, stillIn: [THIRD], stillWhy: 'the teams changed since you opened this. Try again.' })
     expect(published.map((e) => tag(e, 'from'))).toEqual([FOLDER, ALSO.id])
-    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Board still lists it too: the Folders changed since you opened this. Try again.')
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Board still lists it too: the teams changed since you opened this. Try again.')
   })
 
   it('listed in two Folders: the second refused because it no longer lists it says only that the Folders changed', async () => {
     answers = [{ ok: true }, refused(`invalid: the team a move leaves does not list 30842:${ME}:a`)]
     const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE }, async () => [page('a', 'p')])
-    expect(result).toEqual({ ok: true, stillIn: [], stillWhy: 'the Folders changed since you opened this. Try again.' })
-    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but the Folders changed since you opened this. Try again.')
+    expect(result).toEqual({ ok: true, stillIn: [], stillWhy: 'the teams changed since you opened this. Try again.' })
+    expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but the teams changed since you opened this. Try again.')
   })
 
   it('under another page in the same Folder, refused: says nothing was moved in Leaf’s words, never the relay’s', async () => {
@@ -316,7 +316,7 @@ describe('moving a Leaf page', () => {
   it('refuses a private Folder for a page filed elsewhere, before anything is sent', async () => {
     const filed = page('a', undefined, { scopedTo: FOLDER })
     const result = await moveDocument(filed, { from: [HERE], to: { ...THERE, private: true }, parent: '' }, async () => [filed])
-    expect(result).toEqual({ ok: false, reason: 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.' })
+    expect(result).toEqual({ ok: false, reason: 'Can’t move this into a private team: it would stay readable by everyone who can read it now.' })
     expect(published).toHaveLength(0)
   })
 

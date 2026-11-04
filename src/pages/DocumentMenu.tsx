@@ -116,8 +116,8 @@ export function DocumentMenu({
     navigate(plan.to ? pagePath({ ...plan.to, title: titleOf(plan.to) }) : '/')
     changed()
     const after = [
-      result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the Folder’s top.`,
-      result.stillListed && 'It is still listed in a Folder; reload and try again.',
+      result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the team’s top.`,
+      result.stillListed && 'It is still listed in a team; reload and try again.',
     ].filter(Boolean)
     showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success' })
     return true
@@ -138,7 +138,7 @@ export function DocumentMenu({
           under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
         })
       },
-      'The Folder it is in could not be read, so nothing was moved. Try again.',
+      'The team it is in could not be read, so nothing was moved. Try again.',
     )
   }
 
@@ -166,7 +166,7 @@ export function DocumentMenu({
       try {
         from = (await readMovePlace(file, folders)).from
       } catch {
-        refuse('The Folder it is in could not be read, so nothing was moved. Try again.')
+        refuse('The team it is in could not be read, so nothing was moved. Try again.')
         return false
       }
       stale.current = false
@@ -227,7 +227,7 @@ export function DocumentMenu({
         <MenuItem
           label="Delete"
           destructive
-          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan, words: deleteWords(file, plan) }), 'The Folder could not be read, so nothing was deleted. Try again.')}
+          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan, words: deleteWords(file, plan) }), 'The team could not be read, so nothing was deleted. Try again.')}
         />
       </Menu>
       {dialog?.kind === 'move' && (
@@ -287,7 +287,7 @@ export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeleteP
   // On an archived page, only the pages archived with it come back; one archived itself moves up and stays archived.
   const children = back ? plan.children.filter((child) => !child.archived || child.archived.with) : plan.children
   if (children.length === 0) return ''
-  const place = plan.to ? titleOf(plan.to) : (plan.folderName ?? 'its Folder')
+  const place = plan.to ? titleOf(plan.to) : (plan.folderName ?? 'its team')
   const kinds = new Set(children.map((child) => child.kind))
   const what = kinds.size === 1 ? countOf(children[0].kind, children.length) : `${children.length} files`
   const one = children.length === 1

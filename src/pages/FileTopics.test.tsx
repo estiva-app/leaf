@@ -183,7 +183,7 @@ describe('Add to topic and Remove', () => {
     const remove = await screen.findByRole('button', { name: 'Remove from Widgets' })
     reads.topics = 'pending'
     await user.click(remove)
-    expect((await screen.findAllByText('Only people in “Widgets”’s Folder can change what it lists.')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Only people in “Widgets”’s team can change what it lists.')).length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: /Widgets/ })).toBeTruthy()
   })
 
@@ -195,7 +195,7 @@ describe('Add to topic and Remove', () => {
     const pick = await within(await screen.findByRole('dialog')).findByText('Design review')
     reads.topics = 'pending'
     await user.click(pick)
-    expect((await screen.findAllByText('Only people in “Design review”’s Folder can change what it lists.')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Only people in “Design review”’s team can change what it lists.')).length).toBeGreaterThan(0)
     expect(screen.queryByRole('link', { name: /Design review/ })).toBeNull()
     expect(screen.getByRole('link', { name: /Widgets/ })).toBeTruthy()
   })

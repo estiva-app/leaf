@@ -1069,7 +1069,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const commented = useMemo(() => (address && folder ? { address, folder } : null), [address, folder])
   const send = useCallback(
     async (written: Written): Promise<WriteResult> => {
-      if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
+      if (!commented) return { ok: false, reason: 'this page is not in a team yet' }
       const result = await postComment(commented, written, draft ?? undefined)
       if (result.ok) reread()
       return result
@@ -1077,7 +1077,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     [commented, draft, reread],
   )
   const reply = async (thread: Thread, written: Written): Promise<WriteResult> => {
-    if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
+    if (!commented) return { ok: false, reason: 'this page is not in a team yet' }
     const result = await postReply(commented, thread, written)
     if (result.ok) reread()
     return result

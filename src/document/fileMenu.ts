@@ -137,7 +137,7 @@ export async function deleteDocument(file: Document, plan: DeletePlan): Promise<
     const states = await relayStates({ kinds: [KIND_FOLDER_STATE], '#a': [file.address], limit: 500 })
     listedIn = states.map((state) => ({ id: dOf(state)!, hasState: true }))
   } catch {
-    return { ok: false, reason: 'The Folder could not be read, so nothing was deleted. Try again.' }
+    return { ok: false, reason: 'The team could not be read, so nothing was deleted. Try again.' }
   }
   const now = Date.now()
   const built = buildActionEvents({
@@ -195,7 +195,7 @@ export type MoveFolder = FolderRef & { name: string }
 
 const moveFolderOf = (folder: FolderSummary): MoveFolder => ({
   id: folder.id,
-  name: folder.name ?? 'Untitled Folder',
+  name: folder.name ?? 'Untitled team',
   hasState: folder.hasState,
   ...(folder.private ? { private: true } : {}),
   ...(folder.company ? { company: true } : {}),
@@ -220,7 +220,7 @@ export function moveSourcesOf(file: Pick<ForeignObject, 'address' | 'folder'>, l
     const folder = named(id)
     return {
       id,
-      name: folder?.name ?? 'Untitled Folder',
+      name: folder?.name ?? 'Untitled team',
       hasState: true,
       ...(folder?.private ? { private: true } : {}),
       ...(folder?.company ? { company: true } : {}),
@@ -243,7 +243,7 @@ export interface MovePlace {
 export async function readMovePlace(file: Pick<ForeignObject, 'address' | 'folder' | 'ref'>, folders: readonly FolderSummary[]): Promise<MovePlace> {
   const states = file.address ? await relayStates({ kinds: [KIND_FOLDER_STATE], '#a': [file.address], limit: 500 }) : []
   const from = moveSourcesOf(file, states.map(dOf).filter((id): id is string => !!id), folders)
-  if (from.length === 0) throw new Error('The Folder it is in is not one this page can see.')
+  if (from.length === 0) throw new Error('The team it is in is not one this page can see.')
   const all = await readMoveListing(from[0].id)
   const beneath = listedBeneath(all, all.find((one) => one.ref === file.ref) ?? (file as ForeignObject))
   return { from, files: all.filter((one) => !one.archived), beneath }
@@ -328,7 +328,7 @@ export async function moveDocument(
   try {
     listings = new Map(await Promise.all(sources.map(async (folder) => [folder.id, await read(folder.id)] as const)))
   } catch {
-    return { ok: false, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
+    return { ok: false, reason: 'The team it is in could not be read, so nothing was moved. Try again.' }
   }
   // Always the planner, even from no Folder: one that lists none of it is placed in the target, never moved from a
   // Folder that does not list it.
@@ -386,17 +386,17 @@ export async function moveDocument(
 
 /** The planner's refusals in Peek's words (`moveFileAsViewer`). */
 const refusalWords: Record<MoveRefusal, string> = {
-  'source-has-no-state': 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.',
-  'target-has-no-state': 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
-  'target-is-private': 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.',
-  'target-is-not-home': 'This is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.',
+  'source-has-no-state': 'Files can’t be moved out of this team yet: it has no list of its own, so moving one would hide the rest.',
+  'target-has-no-state': 'That team has no list of its own yet, so moving a file into it would hide what is already there.',
+  'target-is-private': 'Can’t move this into a private team: it would stay readable by everyone who can read it now.',
+  'target-is-not-home': 'This is in no team yet, so it can go only to the one it was started in or to the Company team.',
 }
 
 /** Why the relay refused a move, in Peek's words (`moveFileAsViewer`), never the relay's text. */
 const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string | undefined> = {
-  'team-archived': 'one of the Folders is archived.',
-  'not-a-member': 'you need to be a member of both Folders to move this.',
-  'changed-meanwhile': 'the Folders changed since you opened this. Try again.',
+  'team-archived': 'one of the teams is archived.',
+  'not-a-member': 'you need to be a member of both teams to move this.',
+  'changed-meanwhile': 'the teams changed since you opened this. Try again.',
   refused: undefined,
 }
 

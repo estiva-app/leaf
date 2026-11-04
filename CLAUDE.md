@@ -14,6 +14,12 @@ only with its reason on the line above, `// @estiva-escape(<rule>): <reason>`, n
 
 **Tokens only.** Colours, type, corners and shadows come from the package's preset.
 
+**Say team to people; tool names and flags still say folder.** Every word a
+person reads (a label, a toast, a refusal, the manifest's `about` and action
+descriptions) says team: "Teams" as a heading, "team" in a sentence. Code
+identifiers, URLs such as `/new?folder=`, tags and the wire keep `folder`
+(why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-team-is-the-folder-and-is-called-a-team.md).
+
 **One relay connection per tab.** `relayClient()` in `src/relay/client.ts` is the
 connection. Never open a socket and never make a second holder: the relay signs a
 connection in once, and caps subscriptions per connection.

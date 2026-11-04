@@ -43,7 +43,7 @@ export async function archivedAbove(address: string, opens = false): Promise<{ n
   } catch {
     return {}
   }
-  if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'folder', app: 'Peek' }
+  if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'team', app: 'Peek' }
   const read = () => (opens ? resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null) : null)
   const titled = (file: ForeignObject | null) => file?.slots.title?.value?.trim() || undefined
   // Leaf calls its own documents pages, as the LED-1 prototype's lines do, and opens them here.
