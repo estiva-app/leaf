@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ARCHIVED_FIELD, type ForeignObject } from '@estiva-app/interop'
 import { relayClient } from '../relay/client'
 import { viewerPubkey } from '../relay/bridge'
+import { byFields } from '../relay/projectFields'
 import { CHANGE, archiveFolderOf, nameOf, readDocument } from './save'
 
 /** Who saved the document's text last, when it was not you: the name in "<name> saved a newer version". */
@@ -13,11 +14,22 @@ export type ChangedBy = { pubkey: string; name: string | null }
  * document is read again on its own, so their text is on the page without a
  * reload. Your own save arrives the same way; the editor tells the two apart.
  */
-export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; changedBy: ChangedBy | null } {
+export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; changedBy: ChangedBy | null; merges: boolean } {
   const [read, setRead] = useState<{ file: ForeignObject } | null>(null)
   const [changedBy, setChangedBy] = useState<ChangedBy | null>(null)
   const seen = useRef(new Set<string>())
   const { address, folder, naddr } = opened
+  // A project read by its fields merges a save onto a newer one and asks for a block both changed (ALO-6).
+  const [merges, setMerges] = useState(false)
+  useEffect(() => {
+    let live = true
+    void byFields(address).then((on) => {
+      if (live) setMerges(on)
+    })
+    return () => {
+      live = false
+    }
+  }, [address])
 
   useEffect(() => {
     const client = relayClient()
@@ -110,5 +122,5 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
   }, [watched, above, folder, naddr])
 
   // The page is keyed by the document's address, so a read here is always this document's.
-  return { file, changedBy }
+  return { file, changedBy, merges }
 }

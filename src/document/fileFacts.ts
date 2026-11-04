@@ -4,6 +4,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { isEdit, timeOf, whenOf } from '../home/recent'
 import { publish, query, viewerPubkey } from '../relay/bridge'
+import { byFields } from '../relay/projectFields'
 import { CHANGE } from './save'
 
 /** The newest edit to a file's text, title or summary: who made it, and when in ms. */
@@ -18,8 +19,11 @@ export interface LastEdit {
  * people its words name are members too. Its own event by the id it was read with, never by its `d` again (APP-3).
  * `since` reads only what is newer than what is held.
  */
-export function factsFilters({ address, eventId }: { address: string; eventId: string }, since?: number): Record<string, unknown>[] {
+export function factsFilters({ address, eventId }: { address: string; eventId: string }, since?: number, current?: readonly string[]): Record<string, unknown>[] {
   const newer = since === undefined ? {} : { since }
+  // A project read by its fields, read afresh: each field's current change — its members' and its words' newest —
+  // not its every change (ALO-6).
+  if (current && since === undefined) return [{ ids: [eventId, ...current] }, { kinds: [KIND.COMMENT], '#A': [address] }]
   return [
     { ids: [eventId] },
     { kinds: [CHANGE], '#a': [address], ...newer },
@@ -112,7 +116,10 @@ export function useFileFacts(file: ForeignObject): FileFacts & { reread: () => v
     const events = held.current.events
     // A second back, so a change signed in the same second as the newest held is not missed.
     const newest = Math.max(0, ...[...events.values()].map((e) => e.created_at))
-    query(factsFilters({ address, eventId }, events.size > 0 ? newest - 1 : undefined)).then(
+    const current = file.prevs && Object.values(file.prevs).filter((id) => !!id)
+    byFields(address)
+      .then((on) => query(factsFilters({ address, eventId }, events.size > 0 ? newest - 1 : undefined, on ? current : undefined)))
+      .then(
       (read) => {
         if (!live) return
         for (const event of read) events.set(event.id, event)

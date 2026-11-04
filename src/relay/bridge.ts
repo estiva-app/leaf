@@ -61,6 +61,41 @@ export async function queryAll(filters: Record<string, unknown>[]): Promise<Sign
   return b.relay.queryAll(filters)
 }
 
+/** {@link query} answered with what each event matched: the relay's search by a file's current fields (§6.13). */
+export async function queryWithMatches(filters: Record<string, unknown>[]): Promise<Awaited<ReturnType<Relay['queryWithMatches']>>> {
+  const b = bridge()
+  if (!b) throw new Error('Not signed in to a relay.')
+  return b.relay.queryWithMatches(filters)
+}
+
+/**
+ * Sign and publish apart, for interop's `writeChange`, which signs each attempt and reads the relay's words (§6.2).
+ * Signing throws with what to tell the person; publishing answers `ok: false` with the relay's reason.
+ */
+export const changeWriter = {
+  async sign(unsigned: UnsignedEvent): Promise<SignedEvent> {
+    const b = bridge()
+    if (!b) throw new Error('Not signed in to a relay.')
+    try {
+      return await b.signer.sign(unsigned)
+    } catch (error) {
+      console.warn('[relay] could not sign', error)
+      throw new Error(signingFailure(error), { cause: error })
+    }
+  },
+  async publish(event: SignedEvent): Promise<{ ok: boolean; reason?: string; eventId: string }> {
+    const b = bridge()
+    if (!b) return { ok: false, reason: 'Not signed in to a relay.', eventId: event.id }
+    try {
+      const result = await b.relay.publish(event)
+      return { ok: result.ok, reason: result.reason, eventId: event.id }
+    } catch (error) {
+      console.warn('[relay] could not publish', error)
+      return { ok: false, reason: 'Leaf could not reach the workspace. Try again.', eventId: event.id }
+    }
+  },
+}
+
 /**
  * Sign through Estiva ID and publish. Read `ok`, never a status code: the relay
  * refuses as 200 with `accepted: false`.

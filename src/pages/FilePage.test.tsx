@@ -128,6 +128,22 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     expect(screen.queryByText(/Archived/)).toBeNull()
   })
 
+  it('a deleted project opens on the kit’s notice of who deleted it, read-only, with Restore where Ship lets it be restored (ALO-6)', async () => {
+    const project = shipProject()
+    const restorable = { ...project, deleted: { by: ME, at: Math.floor(Date.now() / 1000) }, actions: [...project.actions, { id: 'restore-project', label: 'Restore', field: 'deleted', control: 'text' }] } as ForeignObject
+    render(<ToastProvider><FilePage file={restorable} loading={false} /></ToastProvider>)
+    const box = await documentBox()
+    expect(screen.getByText('Deleted by You · Today')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy()
+    expect(box.editor.isEditable).toBe(false)
+    cleanup()
+    // Another app's file Ship declares no Restore for: the notice, and nothing to press.
+    render(<ToastProvider><FilePage file={{ ...project, deleted: { by: ME, at: Math.floor(Date.now() / 1000) } }} loading={false} /></ToastProvider>)
+    await documentBox()
+    expect(screen.getByText('Deleted by You · Today')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull()
+  })
+
   it("draws the owner on Ship's row by their profile picture, as Ship does (LFB-1)", async () => {
     const issue = shipIssue()
     const PICTURE = 'https://id.estiva.app/avatar/owner.jpg'

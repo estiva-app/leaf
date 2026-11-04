@@ -23,7 +23,8 @@ import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/edit
 import { projections as manifests } from '../relay/manifests'
 import { links } from '../comments/links'
 import { linkedKindOf } from './linked'
-import { query } from '../relay/bridge'
+import { query, queryWithMatches } from '../relay/bridge'
+import { PROJECT_KIND, projectFields } from '../relay/projectFields'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
 
@@ -48,7 +49,15 @@ let openFile: string | null = null
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((listener) => listener())
 
-const search = referenceSearch({ search: (text) => searchFileReferences(text, query, { cache: manifests }) })
+// Projects, once switched, are found by a word in their current fields, as Ship's `[` finds them (ALO-6); a deleted
+// one is in no search.
+const search = referenceSearch({
+  search: async (text) => {
+    const fields = await projectFields()
+    const byFields = fields?.search ? { kinds: [PROJECT_KIND], query: queryWithMatches } : undefined
+    return searchFileReferences(text, query, { cache: manifests, ...(fields ? { listRead: true } : {}), ...(byFields ? { byFields } : {}) })
+  },
+})
 
 /**
  * Called while `[`'s list is open; told when the Folder's files or a search answer changes, or what an app link

@@ -3,14 +3,14 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, DeletedNotice, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
-import { archivedAbove, readSummary, saveField, saveText } from '../document/save'
+import { archivedAbove, readSummary, saveField, saveText, setDeleted } from '../document/save'
 import { archivedLine, type FileText } from '@estiva-app/conversation'
 import { knownName } from '../comments/people'
 import { useLiveDocument } from '../document/useLiveDocument'
@@ -25,7 +25,7 @@ import { PageSkeleton } from './PageSkeleton'
 import { useSideColumn, type Shown } from './sideColumn'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
 import { FileTopicsOf } from './FileTopics'
-import { archivedNoticeOf } from './archive'
+import { archivedNoticeOf, deletedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
 import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
@@ -118,7 +118,7 @@ function DocumentView({
   onChanged?: (folder: string) => void | Promise<void>
   onNewInside?: (page: ForeignObject, listedIn: string) => void
 }) {
-  const { file, changedBy } = useLiveDocument(opened)
+  const { file, changedBy, merges } = useLiveDocument(opened)
   const { showToast } = useToast()
   const facts = useFileFacts(file)
   const directory = useDirectory()
@@ -129,7 +129,8 @@ function DocumentView({
   const writes = writableFields(file)
   // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
   // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), from the ⋯ menu (LED-4).
-  const locked = isArchived(file)
+  // A deleted project (SPEC §6.5) is read-only too: its link still opens, on the kit's notice of who deleted it (ALO-6).
+  const locked = isArchived(file) || !!file.deleted
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
   const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
   // Every archived file shows the kit's notice, Peek's and Ship's, in the line's place (a3257366), once the file above
@@ -145,6 +146,21 @@ function DocumentView({
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
   )
+  // Restore for anyone its own app lets delete it: Ship's declared Delete and Restore write the `deleted` field.
+  const restorable = !!file.deleted && file.actions.some((action) => !action.declaredBy && action.field === 'deleted')
+  const deletedNotice = file.deleted && (
+    <DeletedNotice
+      {...deletedNoticeOf(file.deleted, (pubkey) => directory[pubkey]?.displayName, me)}
+      onRestore={
+        restorable
+          ? async () => {
+              const result = await setDeleted(target.current, false)
+              if (!result.ok) showToast({ label: 'Could not restore it. Try again.', type: 'error' })
+            }
+          : undefined
+      }
+    />
+  )
   const title = titleOf(file)
   // Another app's file: "Open" into that app, after the title in the bar.
   const opener = own ? undefined : openerOf(file)
@@ -157,7 +173,7 @@ function DocumentView({
   const commitText = useCallback(
     async (saved: FileText & { content: string }, editedFrom: FileText) => {
       const result = await saveText(target.current, saved, editedFrom, unadded.current)
-      if (!result.ok) return false
+      if (!result.ok) return result.asks ?? false
       unadded.current = result.refused
       if (result.refused.length > 0) {
         const names = result.refused.map((pubkey) => knownName(pubkey) ?? 'someone').join(', ')
@@ -346,7 +362,7 @@ function DocumentView({
               </div>
             </div>
             {!own && <OwnerRow file={file} />}
-            {notice}
+            {deletedNotice || notice}
             {/* A page whose file above has no address to open keeps its line, so the way back is still named. */}
             {own && archive?.with && !aboveHref && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
             {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6); an archived
@@ -358,6 +374,7 @@ function DocumentView({
               holdKey={opened.address ? `document:${opened.address}` : undefined}
               format={body?.format ?? 'marker'}
               changedBy={changedBy}
+              merges={merges}
               onCommit={commitText}
               onLeftUnsaved={leftUnsaved}
               onEditor={setEditor}

@@ -25,6 +25,11 @@ export interface Page {
   folderId: string
   /** Another app's file: its type, "Issue", as the tree labels it. A page has none. */
   type?: string
+  /**
+   * A project read by its fields (ALO-6): its title's, summary's and text's current changes, which Home reads by id
+   * instead of every save of it. Absent: every save is read by its `a`.
+   */
+  changes?: string[]
 }
 
 /**
@@ -51,9 +56,11 @@ export interface RecentRow extends Page {
  */
 export function recentFilters(pages: Page[]): Record<string, unknown>[] {
   const addresses = pages.map((p) => p.address)
+  // A project read by its fields names its current changes: those, not its every save (ALO-6).
+  const whole = pages.filter((p) => !p.changes).map((p) => p.address)
   return [
-    { ids: pages.map((p) => p.eventId) },
-    { kinds: [CHANGE], '#a': addresses },
+    { ids: [...pages.map((p) => p.eventId), ...pages.flatMap((p) => p.changes ?? [])] },
+    ...(whole.length > 0 ? [{ kinds: [CHANGE], '#a': whole }] : []),
     { kinds: [KIND.COMMENT], '#A': addresses },
   ]
 }
