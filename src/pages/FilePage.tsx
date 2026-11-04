@@ -416,13 +416,15 @@ function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; 
   useEffect(() => {
     if (!withAddress) return
     let live = true
-    void archivedAbove(withAddress, own).then((found) => {
+    // The file above read too, on every file: the card names it by its title, as Ship's own card does (Katerina,
+    // 4 November). Where it opens is read with it; only a Leaf page's card opens it.
+    void archivedAbove(withAddress, true).then((found) => {
       if (live) setAbove({ of: withAddress, ...found })
     })
     return () => {
       live = false
     }
-  }, [withAddress, own])
+  }, [withAddress])
   if (!archive) return {}
   if (!withAddress) {
     const where = own ? undefined : (file.appName ?? 'its app')

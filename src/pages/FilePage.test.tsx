@@ -284,13 +284,14 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     await locked()
   })
 
-  // Changed on purpose (Katerina, 4 November), as above.
-  it('a Ship issue archived with its project: the kit’s card names the project, from its manifest, with no Open and no line over its text', async () => {
+  // Changed on purpose (Katerina, 4 November), as above; and the project named by its title, as Ship's own card names it.
+  it('a Ship issue archived with its project: the kit’s card names the project and its title, from its manifest and its read, with no Open and no line over its text', async () => {
     profiles = PROFILES
     const shipManifest = (await import('./fixtures/ship-manifest.json')).default
     manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']], content: JSON.stringify(shipManifest) })]
+    roots = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
     render(<ToastProvider><FilePage file={archived(shipIssue(), shipProject().address)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived with its project by Miky · /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by Miky · /)).toBeTruthy()
     expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
     expect(screen.queryByText('Unarchive the project in Estiva Ship to edit.')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open project' })).toBeNull()
