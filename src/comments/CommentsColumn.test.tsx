@@ -1632,6 +1632,13 @@ describe("an archived page's comments only show (PEEKM-8)", () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
+  // Nothing can be written: no hint how to (Katerina, 4 November), the kit's empty line as Peek's says nobody has.
+  it('with no comments, says there are none, and no hint to select words or write below', async () => {
+    await openArchived([])
+    expect(await screen.findByText('No comments yet.')).toBeTruthy()
+    expect(screen.queryByText(/Select words and press Comment/)).toBeNull()
+  })
+
   it('draws a comment card’s status as words, not its picker, though the card’s own file is not archived', async () => {
     const address = `30851:${QA2}:open-issue`
     const uri = `nostr:${encodeNaddr({ kind: 30851, pubkey: QA2, identifier: 'open-issue', relays: [] })}`

@@ -1185,7 +1185,17 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
             }}
             bodyRef={setColumnBody}
             loading={threads === null && !failed}
-            empty={failed ? <EmptyState scope="section" message="Could not read the comments. Try again in a moment." /> : 'No comments yet. Select words and press Comment, or write below.'}
+            // Where nothing can be written (an archived page), no hint how to: the kit's own empty line, as Peek's says
+            // only that nobody has commented (Katerina, 4 November).
+            empty={
+              failed ? (
+                <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+              ) : closed === undefined ? (
+                'No comments yet. Select words and press Comment, or write below.'
+              ) : (
+                'No comments yet.'
+              )
+            }
             // The reaction horizon said out loud (SPEC §6.6): past it, a comment with reactions looks like one nobody reacted to.
             below={(reactionsOmitted > 0 || reactionsCut) && <ReactionHorizon limit={REACTION_HORIZON} omitted={reactionsOmitted} cut={reactionsCut} />}
             box={
