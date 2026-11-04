@@ -46,7 +46,7 @@ type Document = Pick<ForeignObject, 'address' | 'folder' | 'kind'>
  */
 export async function archiveDocument(file: Document, archived: boolean, resolution?: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const pubkey = viewerPubkey()
-  if (!pubkey) return { ok: false, reason: 'Sign in to archive it.' }
+  if (!pubkey) return { ok: false, reason: archived ? 'Sign in to archive it.' : 'Sign in to unarchive it.' }
   if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be archived from here.' }
   const built = buildActionEvent({
     manifest: OWN_MANIFEST,

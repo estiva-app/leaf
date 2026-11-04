@@ -1,6 +1,6 @@
 import type { FolderSummary } from '@estiva-app/interop'
-import { Button, DialogShell, EmptyState, Field, Form, Select, Textarea, TextInput } from '@estiva-app/ui'
-import { useId, useState } from 'react'
+import { EmptyState, Field, FormDialog, Select, Textarea, TextInput } from '@estiva-app/ui'
+import { useState } from 'react'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { SummaryCount } from '../document/SummaryCount'
 import { SUMMARY_LIMIT, summaryLength, summaryText } from '../document/summary'
@@ -28,7 +28,7 @@ export function heldUnder(key: string): NewDocumentUnder | undefined {
  * Only Folders that take a new document are offered (`takesNewDocuments`).
  * Everyone in the chosen Folder can read it. Opened from a page's "New document inside" (`under`), it goes under
  * that page, in the Folder listing it, with no Folder to pick, and the page's readers read it — as Peek's
- * "Start a topic under …" (Miky, LFB-8 kickoff).
+ * "Start a topic under …" (Miky, LFB-8 kickoff). The kit's `FormDialog` asks it and waits while it is made.
  */
 export function NewDocumentDialog({
   folders,
@@ -62,43 +62,28 @@ export function NewDocumentDialog({
     return first && folders.some((f) => f.id === first) ? first : (folders[0]?.id ?? '')
   })
   useHeldTyping(holdKey, () => (title.trim() || summary.trim() ? JSON.stringify({ title, summary, folder, under }) : undefined))
+  // Every way out lets go of what was held: Cancel, Escape, the ✕, and a create that went through.
   const close = () => {
     if (holdKey) releaseHeld(holdKey)
     onClose()
   }
-  const [creating, setCreating] = useState(false)
-  const formId = useId()
   const trimmed = title.trim()
   const ready = !!trimmed && !!folder
   const where = folders.find((f) => f.id === folder)
 
-  async function create() {
-    if (!ready || creating) return
-    setCreating(true)
-    const done = await onCreate(trimmed, folder, summaryText(summary))
-    setCreating(false)
-    if (done) close()
-  }
-
   return (
-    <DialogShell
+    <FormDialog
       title={under ? `New document under ${under.title}` : 'New document'}
+      submitLabel="Create"
+      busyLabel="Creating…"
+      ready={ready}
+      onSubmit={() => onCreate(trimmed, folder, summaryText(summary))}
       onClose={close}
-      footer={
-        <>
-          <Button variant="muted" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" type="submit" form={formId} disabled={!ready || creating}>
-            {creating ? 'Creating…' : 'Create'}
-          </Button>
-        </>
-      }
     >
       {folders.length === 0 ? (
         <EmptyState scope="section" message="There is no Folder to put a document in yet." />
       ) : (
-        <Form id={formId} busy={creating} onSubmit={create}>
+        <>
           <p className="text-body-2 text-text-secondary">
             {under ? `Everyone who can read ${under.title} can read it.` : `Everyone in ${where?.name ?? 'the Folder'} can read it.`}
           </p>
@@ -120,8 +105,8 @@ export function NewDocumentDialog({
               />
             </Field>
           )}
-        </Form>
+        </>
       )}
-    </DialogShell>
+    </FormDialog>
   )
 }

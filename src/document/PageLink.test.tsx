@@ -99,7 +99,8 @@ describe('a Ship project linked in a Leaf page', () => {
 
   it('that cannot be read says so, by what its address says it is', () => {
     render(<Link place="row" read={null} />)
-    expect(screen.getByText(/not available/i)).toBeTruthy()
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this file", not "File not available".
+    expect(screen.getByText("You can't open this file")).toBeTruthy()
   })
 })
 

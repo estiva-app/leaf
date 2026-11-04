@@ -48,12 +48,14 @@ export interface Commented {
 export interface CommentItem {
   id: string
   by: string
-  /** Unix seconds. */
+  /** When it was written, in ms: the moment the card says exactly under the pointer. */
   at: number
   /** What it says now: its latest edit's body, else its own (SPEC §6.8). */
   body: string
   /** An edit changed the body. */
   edited: boolean
+  /** When an edit last changed the body, in ms: what the card says on its "(edited)" ("Edited 2 minutes ago"). */
+  editedAt?: number
   /** Its files now: its own `imeta`, replaced by the latest edit's, an edit with none taking them all off (SPEC §6.8). */
   files: Imeta[]
   /** Its cards now (`embed`, §13.6.2): its own, replaced by the latest edit carrying any, as Peek and Ship fold them. */
@@ -78,6 +80,15 @@ export interface Thread {
   replies: CommentItem[]
   /** The last resolution says resolved. */
   resolved: boolean
+  /** While it stands resolved: who resolved it, the note they wrote with it, and when, in ms — what the card says. */
+  resolution?: Resolved
+}
+
+/** A thread's resolution, as the card says it: who, the note when there is one, and when (ms). */
+export interface Resolved {
+  by: string
+  note?: string
+  at: number
 }
 
 /** What a write tells the person: `ok`, or the plain words for a refusal. */
@@ -134,9 +145,10 @@ export async function readThreads(doc: Commented): Promise<Threads> {
     return {
       id: event.id,
       by: event.pubkey,
-      at: event.created_at,
+      at: event.created_at * 1000,
       body: edit?.body ?? event.content,
       edited: edit?.edited ?? false,
+      ...(edit?.editedAt !== undefined ? { editedAt: edit.editedAt } : {}),
       files: edit?.attachments ?? imetaOf(event),
       cards: editedCards[event.id] ?? embedsOf(event),
       event,
@@ -151,13 +163,16 @@ export async function readThreads(doc: Commented): Promise<Threads> {
     const quote = placed && blocks ? quoteOf(placed) : undefined
     // A resolved thread stays resolved when its comment is deleted.
     const last = decorations?.byId[id]?.resolutions.at(-1)
+    const resolved = last?.action === 'resolved'
     return {
       id,
       ...(blocks ? { blocks } : {}),
       ...(quote ? { quote } : {}),
       root: root ? item(root) : null,
       replies: answers.map(item),
-      resolved: last?.action === 'resolved',
+      resolved,
+      // Whoever wrote it, in Leaf, Peek or Ship: the relay's seconds as ms, as every moment a card takes.
+      ...(resolved ? { resolution: { by: last.by, ...(last.message ? { note: last.message } : {}), at: last.at * 1000 } } : {}),
     }
   }
   const threads = [...on.map((root) => thread(root.id, root)), ...deleted.map((id) => thread(id, null))]
@@ -326,13 +341,15 @@ export function deleteComment(comment: CommentItem): Promise<WriteResult> {
 
 /**
  * Resolve or reopen a thread: the same `kind:9101` Peek writes, so both apps read the same state (Miky, LEAF-5 kickoff).
- * It goes in the Folder its comment was filed in, which may not be the document's.
+ * It goes in the Folder its comment was filed in, which may not be the document's. A resolve carries the note written
+ * in the kit's Resolve dialog, as its content, as Peek's does; a reopen carries none.
  */
-export function setResolved(doc: Commented, thread: Thread, resolved: boolean): Promise<WriteResult> {
+export function setResolved(doc: Commented, thread: Thread, resolved: boolean, note = ''): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const folder = thread.root?.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
+  const rationale = resolved && note ? { rationale: note } : {}
   return send(
-    pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened' }) : null,
+    pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened', ...rationale }) : null,
     resolved ? 'Could not resolve it. Try again.' : 'Could not reopen it. Try again.',
   )
 }

@@ -86,6 +86,17 @@ describe('a comment from the column', () => {
     expect(e.tags).toEqual(expect.arrayContaining([['h', FOLDER], ['e', root.id], ['action', 'resolved']]))
   })
 
+  it("resolves with the note written in the kit's Resolve dialog, as Peek writes it; an empty note and a reopen carry none", async () => {
+    const root = comment([], 'x')
+    const thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
+    await setResolved(DOC, thread, true, 'Merged into the plan.')
+    expect([sent().kind, sent().content, sent().tags]).toEqual([9101, 'Merged into the plan.', expect.arrayContaining([['e', root.id], ['action', 'resolved']])])
+    await setResolved(DOC, thread, true, '')
+    expect(sent().content).toBe('')
+    await setResolved(DOC, { ...thread, resolved: true }, false)
+    expect([sent().content, sent().tags]).toEqual(['', expect.arrayContaining([['action', 'reopened']])])
+  })
+
   it("edits your comment with the 40003 Peek writes, in the comment's own Folder, carrying no place of its own", async () => {
     const root = comment([['block', 'b1'], ['quote', 'words']], 'Too long?', 'another-folder')
     expect(await editComment(itemOf(root), { text: 'Far too long?' })).toEqual({ ok: true })
@@ -316,6 +327,38 @@ describe("a document's threads", () => {
     ])
   })
 
+  it('carries the resolution that stands, for the card to say: who, the note and when (ms); none once reopened', async () => {
+    const QA2 = 'c'.repeat(64)
+    const merged = comment([], 'Merge these?')
+    const bare = comment([], 'Ship it?')
+    const reopened = comment([], 'Split it?')
+    const withNote = event(9101, [['h', FOLDER], ['e', merged.id], ['t', 'resolution'], ['action', 'resolved']], 'Merged into the plan.', QA2)
+    const noNote = event(9101, [['h', FOLDER], ['e', bare.id], ['t', 'resolution'], ['action', 'resolved']])
+    relay.events = [
+      merged,
+      bare,
+      reopened,
+      withNote,
+      noNote,
+      event(9101, [['h', FOLDER], ['e', reopened.id], ['t', 'resolution'], ['action', 'resolved']], 'Done.'),
+      event(9101, [['h', FOLDER], ['e', reopened.id], ['t', 'resolution'], ['action', 'reopened']]),
+    ]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.body, t.resolved, t.resolution])).toEqual([
+      ['Merge these?', true, { by: QA2, note: 'Merged into the plan.', at: withNote.created_at * 1000 }],
+      ['Ship it?', true, { by: AUTHOR, at: noNote.created_at * 1000 }],
+      ['Split it?', false, undefined],
+    ])
+  })
+
+  it('carries when each comment and reply was written in ms, the moment the card says exactly under the pointer', async () => {
+    const root = comment([], 'Too long?')
+    const answer = reply(root, [], 'Cut it')
+    relay.events = [root, answer]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.at, t.replies.map((r) => r.at)])).toEqual([[root.created_at * 1000, [answer.created_at * 1000]]])
+  })
+
   it('reads reactions on replies as on comments, and says how many of the oldest were past the horizon of 100', async () => {
     const root = comment([], 'Plan?')
     const replies = Array.from({ length: 100 }, (_, i) => event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['h', FOLDER]], `reply ${i}`))
@@ -367,6 +410,22 @@ describe("a document's threads", () => {
     const { threads } = await readThreads(DOC)
     expect(threads.map((t) => [t.id, t.root, t.blocks, t.quote, t.replies.map((r) => r.body), t.resolved])).toEqual([
       [root.id, null, ['b1', 'b2'], { start: 'the plan' }, ['Cut it', 'Agreed'], false],
+    ])
+  })
+
+  it('carries when an edited comment or reply was last edited, in ms, for "Edited 2 minutes ago"; none on one never edited', async () => {
+    const root = comment([], 'Too long?')
+    const answer = reply(root, [], 'Cut it')
+    const same = comment([], 'Fine as it is')
+    // Its `ts`, when the relay's seconds agree with it (SPEC §6.2), else those seconds.
+    const timed = event(40003, [['h', FOLDER], ['e', root.id]], 'Far too long?')
+    timed.tags.push(['ts', String(timed.created_at * 1000 + 250)])
+    const untimed = event(40003, [['h', FOLDER], ['e', answer.id]], 'Cut it in half', ME)
+    relay.events = [root, answer, same, timed, untimed, event(40003, [['h', FOLDER], ['e', same.id]], 'Fine as it is')]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.root?.body, t.root?.editedAt, t.replies.map((r) => r.editedAt)])).toEqual([
+      ['Far too long?', timed.created_at * 1000 + 250, [untimed.created_at * 1000]],
+      ['Fine as it is', undefined, []],
     ])
   })
 

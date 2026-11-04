@@ -25,7 +25,7 @@ import { useReferencePage } from './document/referencePicker'
 import { profileOf } from './document/save'
 import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
-import { useFold } from './frame/folds'
+import { useSidebarFold } from './frame/folds'
 import { useFileByAddress } from './pages/useFileByAddress'
 import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
 import { HomePage } from './pages/HomePage'
@@ -64,7 +64,7 @@ function Frame() {
   // New document open: `true` from the sidebar or Home; a page's "New document inside", under it (LFB-8).
   const [making, setMaking] = useState<boolean | NewDocumentUnder>(false)
   const inside = typeof making === 'object' ? making : undefined
-  const [sidebarOpen, setSidebarOpen] = useFold('sidebar')
+  const [sidebarOpen, setSidebarOpen] = useSidebarFold()
   const [unlisted, setUnlisted] = useState<Unlisted | null>(null)
   /*
     New document on one Folder, from a link another app offered it by

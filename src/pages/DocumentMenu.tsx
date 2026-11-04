@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { IconDots } from '@tabler/icons-react'
-import { Button, ConfirmDialog, DialogShell, Field, Form, Menu, MenuItem, MenuSeparator, Textarea, ToolbarButton, useToast } from '@estiva-app/ui'
+import { IconDotsVertical } from '@tabler/icons-react'
+import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, MoveDialog, ToolbarButton, useToast, type MovePlace } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
 import {
   archiveDocument,
@@ -21,7 +21,7 @@ import {
 import { titleOf } from '../folders/tree'
 import { readFolder, takesNewDocuments } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
-import { MoveDialog } from './MoveDialog'
+import { archiveWordsOf } from './archive'
 
 /** The Folder that lists a page, by the sidebar's read, else its `h`. */
 export function listedInOf(file: ForeignObject, folders: readonly FolderSummary[] | undefined): string | undefined {
@@ -83,6 +83,8 @@ export function DocumentMenu({
   const reading = useRef(false)
   // The open Move's Folders changed since they were read: the next Move reads them again.
   const stale = useRef(false)
+  // The places the open Move offered, by Folder: what the kit's choice names, with the path the toast says.
+  const placesRead = useRef<Record<string, MoveTarget[]>>({})
   const title = titleOf(file)
   const refuse = (label: string) => showToast({ label, type: 'error' })
   // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
@@ -127,15 +129,34 @@ export function DocumentMenu({
     read(
       readMovePlace(file, folders),
       ({ from, files, beneath }) => {
+        const targets = moveTargetsIn(files, file, { sameFolder: true })
+        placesRead.current = { [from[0].id]: targets }
         setDialog({
           kind: 'move',
           from,
-          targets: moveTargetsIn(files, file, { sameFolder: true }),
+          targets,
           under: beneath.length ? `The ${moveCount(beneath)} under it ${beneath.length === 1 ? 'moves' : 'move'} with it.` : '',
         })
       },
       'The Folder it is in could not be read, so nothing was moved. Try again.',
     )
+  }
+
+  /** Where Move may put it in another Folder, read when that Folder is picked; kept for the choice's path. */
+  async function placesIn(moving: Moving, id: string): Promise<MovePlace[]> {
+    const targets = moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === moving.from[0].id })
+    placesRead.current[id] = targets
+    return targets.map(placeOf)
+  }
+
+  /**
+   * The Folders Move offers, from the sidebar's read; undefined until it has read them. None when no other Folder
+   * takes it and in its own it is already at the only place there is, so the dialog says there is no other folder.
+   */
+  function moveDestinations(moving: Moving): MoveFolder[] | undefined {
+    if (!sidebarFolders) return undefined
+    const offered = moveFoldersFor(file, moving.from[0], sidebarFolders)
+    return offered.every((folder) => folder.id === moving.from[0].id) && moving.targets.length === 0 ? [] : offered
   }
 
   async function relocate(moving: Moving, to: MoveFolder, parent: MoveTarget): Promise<boolean> {
@@ -166,12 +187,16 @@ export function DocumentMenu({
   }
 
   const archivedSelf = !!file.archived && !file.archived.with
+  // Archive's question, once what it would hide is read: from the menu, and from the delete question's Archive instead.
+  const openArchive = () =>
+    file.address &&
+    read(archiveHides(file.address), (hides) => setDialog({ kind: 'archive', hides }), 'What archiving would hide could not be read, so nothing was archived. Try again.')
   return (
     <>
       <Menu
         trigger={
           <ToolbarButton tooltip="More" aria-label="More">
-            <IconDots size={16} stroke={1.5} />
+            <IconDotsVertical size={16} stroke={1.5} />
           </ToolbarButton>
         }
         align="right"
@@ -197,15 +222,7 @@ export function DocumentMenu({
         {archivedSelf ? (
           <MenuItem label="Unarchive" onClick={() => void setArchived(false)} />
         ) : (
-          !file.archived && (
-            <MenuItem
-              label="Archive…"
-              onClick={() =>
-                file.address &&
-                read(archiveHides(file.address), (hides) => setDialog({ kind: 'archive', hides }), 'What archiving would hide could not be read, so nothing was archived. Try again.')
-              }
-            />
-          )
+          !file.archived && <MenuItem label="Archive…" onClick={() => void openArchive()} />
         )}
         <MenuItem
           label="Delete"
@@ -216,23 +233,44 @@ export function DocumentMenu({
       {dialog?.kind === 'move' && (
         <MoveDialog
           title={title}
-          under={dialog.under}
+          description={dialog.under ? `Everyone who can read it now still can. ${dialog.under}` : 'Everyone who can read it now still can.'}
           from={dialog.from[0].id}
-          folders={sidebarFolders && moveFoldersFor(file, dialog.from[0], sidebarFolders)}
-          targets={dialog.targets}
-          targetsIn={async (id) => moveTargetsIn((await readFolder(id)).files, file, { sameFolder: id === dialog.from[0].id })}
-          onMove={(to, parent) => relocate(dialog, to, parent)}
+          folders={moveDestinations(dialog)}
+          places={dialog.targets.map(placeOf)}
+          placesIn={(id) => placesIn(dialog, id)}
+          onMove={({ folder, parent = '' }) => {
+            const to = moveDestinations(dialog)?.find((one) => one.id === folder)
+            const place = placesRead.current[folder]?.find((one) => one.address === parent)
+            return to && place ? relocate(dialog, to, place) : false
+          }}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog?.kind === 'archive' && (
-        <ArchiveDialog title={title} hides={dialog.hides} onArchive={(resolution) => setArchived(true, resolution || undefined)} onClose={() => setDialog(null)} />
+        <ArchiveDialog
+          {...archiveWordsOf(dialog.hides)}
+          title={title}
+          onArchive={(resolution) => setArchived(true, resolution || undefined)}
+          onClose={() => setDialog(null)}
+        />
       )}
       {dialog?.kind === 'delete' && (
-        <ConfirmDialog title={`Delete “${title}”?`} confirmLabel="Delete page" destructive onConfirm={() => remove(dialog.plan)} onClose={() => setDialog(null)}>
+        <ConfirmDialog
+          title={`Delete “${title}”?`}
+          confirmLabel="Delete page"
+          destructive
+          onConfirm={() => remove(dialog.plan)}
+          onClose={() => setDialog(null)}
+          // The kit's safer answer, in its and Peek's words, where the menu offers Archive (Katerina, 4 November): it
+          // opens Archive's question, which takes this one's place.
+          alternative={
+            !file.archived
+              ? { label: 'Archive instead', sentence: 'To take it out of every list and keep it readable, archive it instead.', onClick: () => void openArchive() }
+              : undefined
+          }
+        >
           <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
           {dialog.words && <p>{dialog.words}</p>}
-          {!file.archived && <p className="text-text-secondary">Archiving is reversible and usually what you want.</p>}
         </ConfirmDialog>
       )}
     </>
@@ -271,42 +309,11 @@ export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced }: Extr
   return [`Moved to ${to}, but ${first}`, unplaced && `${unplaced[0].toUpperCase()}${unplaced.slice(1)}.`, retry && 'Try moving it again.'].filter(Boolean).join(' ')
 }
 
+/** A place Move offers, as the kit's dialog takes it: what it goes under by address, `''` for the Folder's top. */
+const placeOf = (target: MoveTarget): MovePlace => ({ id: target.address, path: target.path })
+
 /** What moves with a page, in words: "2 pages", or "3 files" when they are of more than one kind. */
 function moveCount(beneath: readonly ForeignObject[]): string {
   const kinds = new Set(beneath.map((one) => one.kind))
   return kinds.size === 1 ? countOf(beneath[0].kind, beneath.length) : `${beneath.length} files`
-}
-
-/** "Archive …?" for a Leaf page: what it hides with it, that nothing is deleted, and an optional resolution (the prototype's words). */
-function ArchiveDialog({ title, hides, onArchive, onClose }: { title: string; hides: string; onArchive: (resolution: string) => Promise<boolean>; onClose: () => void }) {
-  const [resolution, setResolution] = useState('')
-  const archive = async () => {
-    if (await onArchive(resolution.trim())) onClose()
-  }
-  return (
-    <DialogShell
-      title={`Archive “${title}”?`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="muted" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" type="submit" form="archive-form">
-            Archive page
-          </Button>
-        </>
-      }
-    >
-      <Form id="archive-form" onSubmit={archive}>
-        <div className="flex flex-col gap-2 text-body-2 text-text-primary">
-          <p>{hides ? `This hides the page and the ${hides} under it from every list, in Leaf, Peek and Ship.` : 'This hides the page from every list, in Leaf, Peek and Ship.'}</p>
-          <p className="text-text-secondary">Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.</p>
-        </div>
-        <Field label="Resolution (optional)">
-          <Textarea value={resolution} rows={3} placeholder="What happened with this page?" onChange={(event) => setResolution(event.target.value)} />
-        </Field>
-      </Form>
-    </DialogShell>
-  )
 }

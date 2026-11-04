@@ -3,27 +3,11 @@ import { AttachmentCard } from '@estiva-app/ui'
 import { blobObjectUrl } from '../relay/blobs'
 
 /**
- * A comment's files under its words, in the order they were attached: the
- * package's AttachmentCard, as Ship's `Attachments` and Peek draw them. A
- * picture is its thumbnail and opens full screen; anything else is a row that
- * downloads. The bytes are fetched as the reader (`blobObjectUrl`), so a file
- * they cannot read draws as the card that says so. What is here is a mapping,
- * not a shape.
- */
-export function CommentFiles({ files }: { files: readonly Imeta[] }) {
-  if (files.length === 0) return null
-  return (
-    <div data-comment-files="" className="flex flex-wrap items-start gap-1.5 pt-1">
-      {files.map((file, i) => (
-        // Content addressed, so the hash keys it; one file attached twice is the same blob, hence the index.
-        <FileCard key={`${file.x}_${i}`} file={file} />
-      ))}
-    </div>
-  )
-}
-
-/**
- * One file as the package's card, in a comment or in a page's text (115c8229).
+ * One file as the package's card, in a comment (the kit card's `files`, which lays them out under the words, in the
+ * order they were attached, as Ship's and Peek's) or in a page's text (115c8229). A picture is its thumbnail and opens
+ * full screen; anything else is a row that downloads. The bytes are fetched as the reader (`blobObjectUrl`), so a file
+ * they cannot read draws as the card that says so.
+ *
  * `download` is off in a page's text, as in Ship's description editor: that
  * editor saves when it loses focus and the Download button takes it. A picture
  * still opens full size there.

@@ -43,7 +43,19 @@ const row = (n: number, title: string, folder: string, byName: string, ago: numb
   byName,
 })
 
-/** The pages you touched last, newest change first, naming who made it (Katerina's Home story); a summary is the row's second line. */
+/** A Ship issue or project whose text, title or summary you changed in Leaf (LTX-2), labelled by its type as the tree labels it. */
+const shipRow = (kind: 30850 | 30851, ...args: Parameters<typeof row>) => ({
+  ...row(...args),
+  address: `${kind}:${'a'.repeat(64)}:s${args[0]}`,
+  kind,
+  naddr: `naddr1s${args[0]}`,
+  type: kind === 30851 ? 'Issue' : 'Project',
+})
+
+/**
+ * The pages you touched last, newest change first, naming who made it (Katerina's Home story); a summary is the row's
+ * second line. A Ship issue or project whose text you changed says what it is.
+ */
 export const Recent: Story = {
   args: {
     relay: 'http://localhost:3000',
@@ -51,7 +63,11 @@ export const Recent: Story = {
     now: NOW,
     recent: [
       row(1, 'Launch plan', 'Launch', 'Ana Duarte', 2 * 60_000, 'What ships on launch day, who does what, and the order we do it in.'),
+      shipRow(30851, 5, 'Press notes go out with the launch post', 'Launch', 'Ana Duarte', 5 * 3_600_000, 'The notes and the post go out together, at nine on launch day.'),
+      // A title too long for the row ends in "…" before its type, and the tooltip says it whole.
+      shipRow(30851, 7, 'The launch post links every press note to the page it came from, and each note names who checked it last', 'Launch', 'Ravi Mehta', 8 * 3_600_000, 'Readers who open a note from the post land on the page it came from, with the person who checked it named.'),
       row(2, 'Checklist', 'Launch', 'Ravi Mehta', 26 * 3_600_000, 'Every check before we switch the domain over, ticked by whoever ran it.'),
+      shipRow(30850, 6, 'Beta for the first ten teams', 'Launch', 'Ravi Mehta', 2 * 86_400_000),
       row(3, 'Type scale notes', 'Design', 'Mia Chen', 3 * 86_400_000),
       row(4, 'Interview guide', 'Design', 'Sam Porter', 8 * 86_400_000),
     ],

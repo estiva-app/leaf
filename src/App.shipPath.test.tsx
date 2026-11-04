@@ -115,14 +115,16 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     // A path of its own: a path that named a file once names it for the rest of the tab.
     window.history.replaceState(null, '', `/issue/copied-${D}`)
     render(<App />)
-    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Document' })).toBeNull()
   })
 
   it('says it cannot be found when the address names nothing', async () => {
     window.history.replaceState(null, '', '/issue/00000000-0000-4000-8000-000000000000')
     render(<App />)
-    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
   })
 
   it('gives Copy link on a block of the issue as Ship’s block address with Leaf’s host (LTX-6)', async () => {

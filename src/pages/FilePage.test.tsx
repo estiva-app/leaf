@@ -17,6 +17,8 @@ let manifests: SignedEvent[] = []
 let folderEvents: SignedEvent[] = []
 /* The roots of Ship projects (kind 30850) and of Leaf pages (kind 30842) the relay holds, answered by kind. */
 let roots: SignedEvent[] = []
+/* The profiles (kind 0) the relay holds: the names a page's people are drawn with. */
+let profiles: SignedEvent[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
@@ -25,6 +27,8 @@ vi.mock('../relay/bridge', () => ({
     // An app's manifest the relay never answers for: its author is HANGS.
     filters[0]?.authors?.includes('e'.repeat(64))
       ? new Promise<never>(() => {})
+      : filters[0]?.kinds?.[0] === 0
+      ? profiles
       : filters[0]?.kinds?.[0] === 30890 || filters[0]?.kinds?.[0] === 39000
       ? folderEvents.filter((e) => e.kind === filters[0].kinds![0])
       : filters[0]?.kinds?.[0] === 30850 || (filters[0]?.kinds?.[0] === 30842 && !filters[0]['#a'])
@@ -41,7 +45,7 @@ vi.mock('../relay/bridge', () => ({
 }))
 
 const { FilePage } = await import('./FilePage')
-const { shipIssue, shipProject } = await import('./fixtures/shipFiles')
+const { PROFILES, shipIssue, shipProject } = await import('./fixtures/shipFiles')
 const ADDRESS = `30842:${ME}:page-1`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 const archived = (file: ForeignObject, withAddress?: string): ForeignObject => ({ ...file, archived: { by: ME, at: 1_760_000_000, ...(withAddress ? { with: withAddress } : {}) } })
@@ -102,6 +106,7 @@ afterEach(() => {
   changes = []
   manifests = []
   roots = []
+  profiles = []
 })
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
@@ -167,13 +172,14 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
     expect(tag(published[1], 'value')).toContain('Written in Leaf.')
   })
 
-  it('is read-only when archived: its title, summary and text take nothing, and it says where to unarchive it', async () => {
+  it('is read-only when archived: its title, summary and text take nothing, and it shows the kit’s archived card', async () => {
     render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
     const box = await documentBox()
     expect(box.editor.isEditable).toBe(false)
     expect((await titleBox()).editor.isEditable).toBe(false)
     expect((await summaryBox()).editor.isEditable).toBe(false)
-    expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
+    // Changed on purpose (Katerina, 4 November): the kit's card in the line's place, which said where to unarchive it.
+    expect(screen.getByText(/^Archived by .* · /)).toBeTruthy()
     write(box, 'Typed into an archived issue.')
     leave(box)
     await act(async () => {})
@@ -265,19 +271,31 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     expect(change.tags).toContainEqual(['h', doc().folder])
   })
 
-  it('a Ship issue archived itself: the comment line is the one every app shows', async () => {
+  // Changed on purpose (Katerina, 4 November): another app's file shows the kit's card, as every app does, in place of
+  // the line that said where to unarchive it; with nothing to press, since Leaf cannot unarchive another app's file.
+  it('a Ship issue archived itself: the kit’s card says who and when, with no Unarchive, no Open and no line over its text; the comment line is the one every app shows', async () => {
+    profiles = PROFILES
     render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Archived. Unarchive it to comment.')).toBeTruthy()
-    expect(screen.getByText('Archived. Unarchive it in Ship to edit.')).toBeTruthy()
+    expect(await screen.findByText(/^Archived by Miky · /)).toBeTruthy()
+    expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
+    expect(screen.queryByText('Archived. Unarchive it in Ship to edit.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Open / })).toBeNull()
     await locked()
   })
 
-  it('a Ship issue archived with its project: names the project, and Estiva Ship from its manifest', async () => {
+  // Changed on purpose (Katerina, 4 November), as above; and the project named by its title, as Ship's own card names it.
+  it('a Ship issue archived with its project: the kit’s card names the project and its title, from its manifest and its read, with no Open and no line over its text', async () => {
+    profiles = PROFILES
     const shipManifest = (await import('./fixtures/ship-manifest.json')).default
     manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']], content: JSON.stringify(shipManifest) })]
+    roots = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
     render(<ToastProvider><FilePage file={archived(shipIssue(), shipProject().address)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText('Unarchive the project in Estiva Ship to edit.')).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by Miky · /)).toBeTruthy()
     expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
+    expect(screen.queryByText('Unarchive the project in Estiva Ship to edit.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open project' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
     await locked()
   })
 
@@ -456,6 +474,96 @@ describe('the comments column hides and comes back (LED-3)', () => {
   })
 })
 
+/*
+  While a page is read it is drawn in the shape it arrives in (ONE-5, step 5), as Ship's PageSkeleton draws an issue:
+  the kit's bar, the title, summary, Topics and text bars, and beside it what the column will hold. It was three list
+  rows (SkeletonList).
+*/
+describe('a page while it is read (ONE-5, step 5)', () => {
+  afterEach(() => window.localStorage.clear())
+  async function reload(file: ForeignObject | null, loading = true) {
+    vi.resetModules()
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    return render(<ToastProvider><FilePage file={file} loading={loading} /></ToastProvider>)
+  }
+  const placeholder = () => document.querySelector<HTMLElement>('[data-loading="page"]')
+
+  it('is the page’s shape: the kit’s bar over the text, and the comments column beside it with the kit’s placeholders for comments', async () => {
+    await reload(null)
+    const shape = placeholder()
+    expect(shape).not.toBeNull()
+    expect(shape!.getAttribute('aria-hidden')).toBe('true')
+    // The kit's 48px bar twice: the page's, and the column's under "Comments".
+    expect([...shape!.querySelectorAll('.h-12')].map((bar) => bar.textContent)).toEqual(['', 'Comments'])
+    expect(shape!.querySelectorAll('.animate-pulse').length).toBeGreaterThan(10)
+  })
+
+  it('has no column when the comments are hidden, as the page will have none', async () => {
+    window.localStorage.setItem('leaf.folded', JSON.stringify({ comments: true }))
+    await reload(null)
+    expect(placeholder()).not.toBeNull()
+    expect(placeholder()!.textContent).not.toContain('Comments')
+  })
+
+  it('is drawn the same while a file is read again before Leaf knows whether it writes its text', async () => {
+    const topic = { ...shipIssue(), kind: 30840, noun: 'topic', naddr: 'naddr1topic', actions: [], slots: { title: { value: 'Standup' } } } as unknown as ForeignObject
+    await reload(topic, false)
+    expect(placeholder()).not.toBeNull()
+  })
+})
+
+/*
+  The header's side-panel button, shown to everyone wherever the comments button is (Katerina, 3 November; ONE-5,
+  step 5), as Ship's (ONE-6, step 4d): the Overview in the comments' place, empty for now. Which of the two the column
+  holds is `useSideColumn`'s, tested in sideColumn.test.tsx.
+*/
+describe('the Overview, in the comments’ place (ONE-5, step 5)', () => {
+  afterEach(() => window.localStorage.clear())
+  /* Leaf loaded afresh: the comments' fold starts over. */
+  async function reload(file: ForeignObject) {
+    vi.resetModules()
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    return render(<ToastProvider><FilePage file={file} loading={false} /></ToastProvider>)
+  }
+  const shownComments = () => {
+    const empty = screen.queryByText(/No comments yet/)
+    return !!empty && !empty.closest('[hidden]')
+  }
+
+  it('the header’s side-panel button shows it, empty for now, pressed while it is shown; hiding it brings the comments back', async () => {
+    await reload(doc())
+    await waitFor(() => expect(shownComments()).toBe(true))
+    expect(screen.queryByText('Overview')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show side panel' }))
+    // The kit's empty line for one part of a page, under the panel's name.
+    expect(screen.getByText('Overview')).toBeTruthy()
+    expect(screen.getByText('Nothing here yet.')).toBeTruthy()
+    expect(shownComments()).toBe(false)
+    expect(screen.getByRole('button', { name: 'Hide side panel' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Show comments' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide side panel' }))
+    expect(screen.queryByText('Overview')).toBeNull()
+    expect(shownComments()).toBe(true)
+    expect(screen.getByRole('button', { name: 'Show side panel' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('while a page is read, its placeholder holds the Overview where it is shown, not the comments’', async () => {
+    const { rerender } = await reload(doc())
+    fireEvent.click(await screen.findByRole('button', { name: 'Show side panel' }))
+    const [{ FilePage }, { ToastProvider }] = await Promise.all([import('./FilePage'), import('@estiva-app/ui')])
+    rerender(<ToastProvider><FilePage file={null} loading /></ToastProvider>)
+    const placeholder = document.querySelector('[data-loading="page"]') as HTMLElement
+    expect(placeholder.textContent).toContain('Overview')
+    expect(placeholder.textContent).not.toContain('Comments')
+  })
+
+  it('is in the header of another app’s file too, beside its comments button', async () => {
+    await reload(shipIssue())
+    const strip = await screen.findByRole('toolbar', { name: 'Page actions' })
+    expect([...strip.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Hide comments', 'Show side panel'])
+  })
+})
+
 describe('Delete from a page’s ⋯ menu (LED-4)', () => {
   afterEach(() => window.history.replaceState(null, '', '/'))
 
@@ -476,6 +584,27 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     expect(window.location.pathname).toBe('/')
   })
 
+  // The kit's third answer, in its and Peek's words (Katerina, 4 November): Leaf's sentence with no button goes.
+  it('offers Archive instead, which opens the archive question in the delete question’s place and writes nothing', async () => {
+    render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByText('To take it out of every list and keep it readable, archive it instead.')).toBeTruthy()
+    expect(screen.queryByText('Archiving is reversible and usually what you want.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Archive instead' }))
+    expect(await screen.findByText('Archive “Friday notes”?')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Delete page' })).toBeNull()
+    expect(published).toHaveLength(0)
+  })
+
+  it('offers no Archive instead on an archived page, whose menu offers no Archive', async () => {
+    render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByText('It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Archive instead' })).toBeNull()
+  })
+
   it('a refused delete stays on the page, with the dialog open and the refusal said, and writes nothing more', async () => {
     answers = [{ ok: false, reason: 'blocked' }]
     await confirmDelete()
@@ -483,6 +612,34 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     expect(published.map((e) => e.kind)).toEqual([5])
     expect(screen.getByRole('button', { name: 'Delete page' })).toBeTruthy()
     expect(window.location.pathname).toBe('/document/friday-notes-page-1')
+  })
+})
+
+describe('Archive from a page’s ⋯ menu (LED-4)', () => {
+  it('asks in Leaf’s words, and Archive page waits while the archive is written, so a second press writes one archive', async () => {
+    let answer: (result: PublishResult) => void = () => {}
+    answers = [new Promise<PublishResult>((resolve) => (answer = resolve)) as unknown as PublishResult]
+    render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Archive…' }))
+    expect(await screen.findByText('Archive “Friday notes”?')).toBeTruthy()
+    // Changed on purpose: the kit's words, as Peek and Ship say them (Katerina, 3 November).
+    expect(screen.getByText('This hides the page from every list, in Leaf, in Peek and in Ship.')).toBeTruthy()
+    expect(screen.getByText('Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.')).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Resolution (optional)' }), { target: { value: 'Superseded by the Q4 plan.' } })
+    const archive = screen.getByRole('button', { name: 'Archive page' })
+    fireEvent.click(archive)
+    // Whatever settles at once has settled: a dialog that did not wait would take the second press as a second archive.
+    await act(async () => {})
+    fireEvent.click(archive)
+    await act(async () => {})
+    const archives = published.filter((e) => tag(e, 'field') === 'archived')
+    expect(archives).toHaveLength(1)
+    expect(tag(archives[0], 'value')).toBe('true')
+    expect(JSON.stringify(archives[0])).toContain('Superseded by the Q4 plan.')
+    answer({ ok: true })
+    expect(await screen.findByText('Archived “Friday notes”')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText('Archive “Friday notes”?')).toBeNull())
   })
 })
 
@@ -606,6 +763,31 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
     expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([[1852, STEER, 'move', FOLDER]])
+  })
+
+  it('Cancel waits while the move is written: nothing can stop it then, so the dialog stays to say how it went', async () => {
+    folderEvents = [
+      { kind: 30890, pubkey: ME, tags: [['d', FOLDER], ['a', ADDRESS]] },
+      { kind: 39000, pubkey: ME, tags: [['d', FOLDER]] },
+    ] as unknown as SignedEvent[]
+    onTestFinished(() => void (folderEvents = []))
+    let answer: (result: PublishResult) => void = () => {}
+    answers = [new Promise<PublishResult>((resolve) => (answer = resolve)) as unknown as PublishResult]
+    render(
+      <ToastProvider>
+        <FilePage file={doc()} loading={false} folders={folders} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
+    await pick('Folder', 'Steer')
+    await pick('Put it under', 'The top of Steer')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(published).toHaveLength(1))
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Moving…' }) as HTMLButtonElement).disabled).toBe(true)
+    answer({ ok: true })
+    expect(await screen.findByText('Moved to Steer')).toBeTruthy()
   })
 
   const OPS = '33333333-3333-4333-8333-333333333333'

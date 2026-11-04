@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Membership } from '@estiva-app/conversation'
 import { MembersDialog, MembersPill, type MembersDialogCandidate, type MembersDialogMember } from '@estiva-app/ui'
+import type { DirectoryPerson } from '../comments/people'
 
 /** How many faces the pill draws; the count says the rest. */
 const PILL_FACES = 3
@@ -23,8 +24,8 @@ export function Members({
   members: ReadonlyMap<string, Membership> | undefined
   /** The viewer's key. */
   me: string | null
-  /** The workspace's people: names and faces, and whom "Add members" offers. */
-  directory: Record<string, { displayName: string; picture?: string }>
+  /** The workspace's people: names and faces (an agent's is the robot), and whom "Add members" offers. */
+  directory: Record<string, DirectoryPerson>
   /** No Join, Leave or Add: the file is archived. */
   readOnly?: boolean
   /** Join (`true`) or leave (`false`). Resolves `true` once the relay took it. */
@@ -43,11 +44,13 @@ export function Members({
     id: pubkey,
     name: named(pubkey),
     picture: directory[pubkey]?.picture,
+    bot: directory[pubkey]?.bot,
   }))
   const candidates: MembersDialogCandidate[] = Object.entries(directory).map(([pubkey, person]) => ({
     id: pubkey,
     label: pubkey === me ? 'You' : person.displayName,
     picture: person.picture,
+    bot: person.bot,
   }))
   const isMember = !!me && members.has(me)
   const canChange = !readOnly && !!me
@@ -58,6 +61,7 @@ export function Members({
         members={keys.slice(0, PILL_FACES).map((pubkey) => ({
           name: named(pubkey),
           picture: directory[pubkey]?.picture,
+          bot: directory[pubkey]?.bot,
         }))}
         count={members.size}
         onClick={() => setOpen(true)}

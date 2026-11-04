@@ -55,7 +55,8 @@ describe("a Ship issue's address in Leaf", () => {
     render(<App />)
     expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Open in Ship' })).toBeTruthy()
-    expect(screen.queryByText('This could not be found, or you cannot read it.')).toBeNull()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(screen.queryByText("You can't open this page")).toBeNull()
   })
 
   it("opens an issue from its project's row as a page, though that read carries none of its actions", async () => {
@@ -67,6 +68,7 @@ describe("a Ship issue's address in Leaf", () => {
   it('says it cannot be found when the address reads nothing', async () => {
     window.history.replaceState(null, '', '/f/naddr1nothing')
     render(<App />)
-    expect(await screen.findByText('This could not be found, or you cannot read it.')).toBeTruthy()
+    // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
   })
 })

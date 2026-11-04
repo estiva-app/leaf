@@ -104,7 +104,7 @@ function rankedFiles(typed: string, messages: readonly ReferenceCandidate[]) {
 export interface ReferableComment {
   id: string
   by: string
-  /** Unix seconds. */
+  /** When it was written, in ms. */
   at: number
   body: string
 }
@@ -115,7 +115,8 @@ export interface ReferableComment {
  * what it names, and found by their own words, not a link's raw text.
  */
 const messageRows = (comments: readonly ReferableComment[], tier: number, nameOf: (pubkey: string) => string | undefined): ReferenceCandidate[] =>
-  comments.map((c) => messageCandidate({ id: c.id, kind: KIND_COMMENT, author: nameOf(c.by) ?? 'Someone', body: c.body, at: c.at }, tier, nameOf, { resolveLink: links.known }))
+  // The rows take seconds, as every app's do.
+  comments.map((c) => messageCandidate({ id: c.id, kind: KIND_COMMENT, author: nameOf(c.by) ?? 'Someone', body: c.body, at: Math.floor(c.at / 1000) }, tier, nameOf, { resolveLink: links.known }))
 
 /**
  * What `[` offers in a comment box: Files, then Messages (Katerina, 30 Oct),

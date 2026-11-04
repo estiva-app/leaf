@@ -99,8 +99,8 @@ export async function nameOf(pubkey: string): Promise<string | null> {
   return (await profileOf(pubkey))?.displayName ?? null
 }
 
-/** A person's name and picture, from their profile, as Peek and Ship draw them; `null` when they have none. */
-export async function profileOf(pubkey: string): Promise<{ displayName?: string; picture?: string } | null> {
+/** A person's name and picture, and `bot` for an agent, from their profile, as Peek and Ship draw them; `null` when they have none. */
+export async function profileOf(pubkey: string): Promise<{ displayName?: string; picture?: string; bot?: true } | null> {
   const lookup = await people.viaRelay(query)([pubkey])
   return lookup[pubkey] ?? null
 }

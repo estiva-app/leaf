@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
-import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { Banner, Divider, EmptyState, FieldLine, KindIcon, Panel, SkeletonList, thingKindOf, Toolbar, ToolbarButton, useToast, WithTooltip } from '@estiva-app/ui'
+import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/icons-react'
+import { ArchivedNotice, Banner, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -16,13 +16,16 @@ import { knownName } from '../comments/people'
 import { useLiveDocument } from '../document/useLiveDocument'
 import { writableFields, sharesText } from '../document/writable'
 import { isDocument, titleOf, typeOf } from '../folders/tree'
-import { FileKey, OwnerRow, openerOf, TitleWithOpen } from './OwnerRow'
+import { FileKey, OpenIn, OwnerRow, openerOf } from './OwnerRow'
 import { useFileByAddress } from './useFileByAddress'
 import { useOwnerBlockLinker } from './usePathAddress'
-import { useFold, useNarrow } from '../frame/folds'
+import { useNarrow } from '../frame/folds'
+import { OverviewPanel } from './OverviewPanel'
+import { PageSkeleton } from './PageSkeleton'
+import { useSideColumn, type Shown } from './sideColumn'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
 import { FileTopicsOf } from './FileTopics'
-import { ArchivedNotice } from './ArchivedNotice'
+import { archivedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
 import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
@@ -33,7 +36,7 @@ import { viewerPubkey } from '../relay/bridge'
 /**
  * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
  * app shares its text — a Ship project or issue — with that app's row under its title. Any other file, such as a
- * Peek topic, says what it is and offers "Open in <its app>", the only place that app's name appears (PRO-24), with
+ * Peek topic, says what it is and offers `"Open in <its app>"`, the only place that app's name appears (PRO-24), with
  * no editor.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
@@ -54,19 +57,21 @@ export function FilePage({
   /** Its menu's "New document inside": a new page under this one, listed in `listedIn` (LFB-8). */
   onNewInside?: (page: ForeignObject, listedIn: string) => void
 }) {
-  // Above the document, so it holds from one document to the next (LED-3).
-  const [commentsOpen, setCommentsOpen] = useFold('comments')
-  const comments = { open: commentsOpen, onOpenChange: setCommentsOpen }
+  // Above the document, so it holds from one document to the next (LED-3): the comments, or the Overview in their place.
+  const side = useSideColumn()
   // A project's issues come from its row's read, which carries no actions: such a file is read on its own before it
   // is taken for one Leaf cannot write.
   const recheck = listed && !listed.unreachable && listed.naddr && !sharesText(listed) ? listed.naddr : null
   const reread = useFileByAddress(recheck)
   const file = reread.file && !reread.file.unreachable ? reread.file : listed
+  // While it is read: the page in the shape it arrives in, with what the column beside it will hold (ONE-5, step 5).
+  const skeleton = <PageSkeleton comments={side.comments.open} overview={side.overview.open} />
   if (!file || file.unreachable) {
-    return loading ? <SkeletonList rows={3} /> : <EmptyState scope="page" message="This could not be found, or you cannot read it." />
+    // Gone, not yours to read, or never there: the link says nothing about which, and no title (the kit's notice).
+    return loading ? skeleton : <NoAccessNotice what="page" />
   }
   if (!sharesText(file)) {
-    if (reread.loading) return <SkeletonList rows={3} />
+    if (reread.loading) return skeleton
     const opener = openerOf(file)
     return (
       <EmptyState
@@ -77,7 +82,7 @@ export function FilePage({
       />
     )
   }
-  return <DocumentView key={file.address ?? file.ref} opened={file} comments={comments} folders={folders} onChanged={onChanged} onNewInside={onNewInside} />
+  return <DocumentView key={file.address ?? file.ref} opened={file} comments={side.comments} overview={side.overview} folders={folders} onChanged={onChanged} onNewInside={onNewInside} />
 }
 
 /** Now, in ms, moved on each minute: what "Edited 2 minutes ago" counts from. */
@@ -90,9 +95,6 @@ function useMinute(): number {
   return now
 }
 
-/** Whether the comments column is shown, and its toggle. */
-type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
-
 /**
  * A document, written in place: its title at the top and its text below,
  * each saved when you leave it, and someone else's save drawn as it arrives
@@ -102,12 +104,16 @@ type CommentsFold = { open: boolean; onOpenChange: (open: boolean) => void }
 function DocumentView({
   opened,
   comments,
+  overview,
   folders,
   onChanged,
   onNewInside,
 }: {
   opened: ForeignObject
-  comments: CommentsFold
+  /** Whether the comments column is shown, and its button. */
+  comments: Shown
+  /** Whether the Overview is shown in the comments' place, and its button. */
+  overview: Shown
   folders?: readonly FolderSummary[]
   onChanged?: (folder: string) => void | Promise<void>
   onNewInside?: (page: ForeignObject, listedIn: string) => void
@@ -126,17 +132,16 @@ function DocumentView({
   const locked = isArchived(file)
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
   const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
-  // A Leaf page shows Peek's and Ship's notice in the line's place (a3257366); another app's file keeps the line,
-  // which names the app it is unarchived in.
-  const archive = own ? file.archived : undefined
-  const aboveHref = above?.href
+  // Every archived file shows the kit's notice, Peek's and Ship's, in the line's place (a3257366), once the file above
+  // it is read. Another app's file too, with no Unarchive and no Open (Katerina, 4 November): the same card in every
+  // app, and Leaf cannot unarchive another app's file. A Leaf page's offers Unarchive, or opens the page above it is
+  // archived with.
+  const archive = file.archived
+  const aboveHref = own ? above?.href : undefined
   const notice = archive && (!archive.with || above) && (
     <ArchivedNotice
-      archive={archive}
-      by={(archive.by && directory[archive.by]?.displayName) || `${(archive.by ?? '').slice(0, 8)}…`}
-      withWhat={above?.noun}
-      withTitle={above?.title}
-      onUnarchive={archive.with ? undefined : () => setArchived(false)}
+      {...archivedNoticeOf(archive, (pubkey) => directory[pubkey]?.displayName, above)}
+      onUnarchive={own && !archive.with ? () => setArchived(false) : undefined}
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
   )
@@ -237,15 +242,16 @@ function DocumentView({
   }
   // Opened at `#block-<id>`: scrolled to it, or told it is gone (Ship's issue page says the same).
   const [missing, dismissMissing] = useLinkedBlock(body?.value ?? '', body?.format ?? 'marker')
-  // Commenting on a block brings a hidden comments column back, where the comment is written.
+  // Commenting on a block brings a hidden comments column back, where the comment is written, the Overview put away.
   function commentOn(anchor: Anchor | null) {
     setDraft(anchor)
     if (anchor && !comments.open) comments.onOpenChange(true)
   }
-  // Who is in it and its last edit, left of the buttons, 12px clear of them as Peek's header (LED-6). In a narrow
-  // window the last edit heads the ⋯ menu; a file with no menu keeps it in the bar.
+  // Who is in it and its last edit (LED-6), in Leaf's words, the exact time in its tooltip. In a narrow window the last
+  // edit heads the ⋯ menu; a file with no menu keeps it in the bar.
   const edited = facts.lastEdit === undefined ? undefined : lastEditLine(facts.lastEdit, me, (pubkey) => directory[pubkey]?.displayName, now)
   const editedInMenu = narrow && own
+  const time = edited && !editedInMenu ? { label: edited, exact: facts.lastEdit ? exactly(facts.lastEdit.at) : edited } : undefined
   async function addMembers(people: string[]): Promise<boolean> {
     const answers = await Promise.all(people.map((person) => setMember(file, person, true)))
     facts.reread()
@@ -259,42 +265,52 @@ function DocumentView({
     if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error' })
     return ok
   }
-  // Top right of the header, as the prototype draws it, with a Leaf page's ⋯ menu beside it (LED-4).
-  const actions = (
-    <>
-      <div className="flex items-center gap-3 pr-2">
-        {edited && !editedInMenu && (
-          <WithTooltip inline label={facts.lastEdit ? exactly(facts.lastEdit.at) : edited}>
-            {/* Quieter than the bar's title: 12px and italic, as every "time ago" line is (Katerina, 30 Oct; the kit's "Updated …"). */}
-            <span className="whitespace-nowrap text-caption italic text-text-secondary">{edited}</span>
-          </WithTooltip>
-        )}
-        <Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />
-      </div>
-      <Toolbar aria-label="Page actions" surface={false}>
-        <ToolbarButton
-          tooltip={comments.open ? 'Hide comments' : 'Show comments'}
-          aria-label={comments.open ? 'Hide comments' : 'Show comments'}
-          onClick={() => comments.onOpenChange(!comments.open)}
-        >
-          {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
-        </ToolbarButton>
-        {own && (
-          <DocumentMenu
-            file={file}
-            folders={folders}
-            onChanged={onChanged}
-            onNewInside={onNewInside && ((listedIn) => onNewInside(file, listedIn))}
-            heading={editedInMenu ? edited : undefined}
-          />
-        )}
-      </Toolbar>
-    </>
+  // The page's bar is the kit's PageHeader (ONE-5, step 5), in the panel's own bar's place, so the bar and the
+  // scrolling text are one panel as before: the name, cut to one line; another app's file with "Open" right after it;
+  // then its last edit, who is in it, and the page's own buttons, each where the kit puts it (Katerina, 3 November).
+  // A Leaf page's ⋯ menu is last (LED-4).
+  const header = (
+    <PageHeader
+      title={title}
+      after={opener && file.appName ? <OpenIn opener={opener} appName={file.appName} /> : undefined}
+      time={time}
+      members={<Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />}
+      actions={
+        <Toolbar aria-label="Page actions" surface={false}>
+          <ToolbarButton
+            tooltip={comments.open ? 'Hide comments' : 'Show comments'}
+            aria-label={comments.open ? 'Hide comments' : 'Show comments'}
+            onClick={() => comments.onOpenChange(!comments.open)}
+          >
+            {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
+          </ToolbarButton>
+          {/* Ship's side-panel button, its icon and its words, pressed while the Overview is shown, to everyone, on every
+              file (Katerina, 3 November). */}
+          <ToolbarButton
+            tooltip={overview.open ? 'Hide side panel' : 'Show side panel'}
+            aria-label={overview.open ? 'Hide side panel' : 'Show side panel'}
+            pressed={overview.open}
+            onClick={() => overview.onOpenChange(!overview.open)}
+          >
+            <IconLayoutSidebarRight size={16} stroke={1.5} />
+          </ToolbarButton>
+          {own && (
+            <DocumentMenu
+              file={file}
+              folders={folders}
+              onChanged={onChanged}
+              onNewInside={onNewInside && ((listedIn) => onNewInside(file, listedIn))}
+              heading={editedInMenu ? edited : undefined}
+            />
+          )}
+        </Toolbar>
+      }
+    />
   )
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title={opener && file.appName ? <TitleWithOpen title={title} opener={opener} appName={file.appName} /> : title} actions={actions} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
+        <Panel title={title} header={header} bodyRef={docBody} bodyClassName="px-12 pt-10 pb-24">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {missing && (
               <Banner tone="info" onDismiss={dismissMissing}>
@@ -330,9 +346,9 @@ function DocumentView({
               </div>
             </div>
             {!own && <OwnerRow file={file} />}
-            {own && notice}
-            {/* Another app's file keeps its line; so does a page whose file above has no address to open, so the way back is still named. */}
-            {(!own || (archive?.with && !aboveHref)) && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
+            {notice}
+            {/* A page whose file above has no address to open keeps its line, so the way back is still named. */}
+            {own && archive?.with && !aboveHref && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
             {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6); an archived
                 page's notice stays first, straight under its title. */}
             <FileTopicsOf address={file.address} />
@@ -355,7 +371,8 @@ function DocumentView({
           `[hidden]` loses to `.contents`, and the column stayed drawn (LED-3, found on production). */}
       <div className={comments.open ? 'contents' : 'hidden'} hidden={!comments.open}>
         <Divider orientation="vertical" />
-        <div className="flex w-96 flex-none flex-col">
+        {/* The kit's one column, 384px (ONE-5, step 4), the page's full height: placed as Ship places it. */}
+        <div className="flex flex-none flex-col">
           <CommentsColumn
             doc={{ address: file.address, folder: file.folder }}
             addressable={addressable}
@@ -368,6 +385,16 @@ function DocumentView({
           />
         </div>
       </div>
+      {/* Its Overview, in the comments' place (ONE-5, step 5), as Ship's: drawn only while it is shown; the comments
+          stay as they were behind it. */}
+      {overview.open && (
+        <>
+          <Divider orientation="vertical" />
+          <div className="flex flex-none flex-col" data-overview-column>
+            <OverviewPanel />
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -375,8 +402,10 @@ function DocumentView({
 /**
  * The two lines on an archived file (PEEKM-8). In the comment box's place, the words every app shows ("Archived.
  * Unarchive it to comment.", "Unarchive the project to comment."), with no "in Peek" on a Leaf page now that its menu
- * has Unarchive (LED-4). Over its locked text, the file to unarchive and where: "Unarchive the project in Estiva Ship
- * to edit." The closest archived file above is named once its manifest is read; until then no line, never "the parent".
+ * has Unarchive (LED-4). The file to unarchive and where, "Unarchive the project in Estiva Ship to edit.": what a
+ * refused rename or summary says, and the line over the locked text of a page whose file above has no address to open
+ * (the kit's card is everywhere else, Katerina, 4 November). The closest archived file above is named once its
+ * manifest is read; until then no line, never "the parent".
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
@@ -387,13 +416,15 @@ function useArchivedLines(file: ForeignObject, own: boolean): { field?: string; 
   useEffect(() => {
     if (!withAddress) return
     let live = true
-    void archivedAbove(withAddress, own).then((found) => {
+    // The file above read too, on every file: the card names it by its title, as Ship's own card does (Katerina,
+    // 4 November). Where it opens is read with it; only a Leaf page's card opens it.
+    void archivedAbove(withAddress, true).then((found) => {
       if (live) setAbove({ of: withAddress, ...found })
     })
     return () => {
       live = false
     }
-  }, [withAddress, own])
+  }, [withAddress])
   if (!archive) return {}
   if (!withAddress) {
     const where = own ? undefined : (file.appName ?? 'its app')

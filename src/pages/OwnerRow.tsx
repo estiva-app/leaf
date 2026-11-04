@@ -17,7 +17,7 @@ function ownerFieldOf(file: ForeignObject): string | undefined {
 /**
  * The owning app's row under another app's file's title: its status, then its people, in that order on every file
  * (Katerina, 30 Oct: Ship's manifest lists a project's lead before its key and an issue's key before its assignee, so
- * the key moved about). The key is above the title (`FileKey`), "Open" in the bar (`TitleWithOpen`). Its status and
+ * the key moved about). The key is above the title (`FileKey`), "Open" in the bar (`OpenIn`). Its status and
  * owner take the same pickers its card has anywhere in Leaf, each change written as the card writes it
  * (`useFileChoices`); words where the reader may not change them (archived, signed out). Read from the projection's
  * slots and actions, never from the kind.
@@ -45,7 +45,10 @@ export function OwnerRow({ file: read }: { file: ForeignObject }) {
           key={slot.field ?? slot.label}
           readOnly
           ownerLabel={slot.label}
-          owner={{ value: slot.value || undefined, options: slot.value ? [{ value: slot.value, label: file.people?.[slot.value]?.displayName ?? '—', picture: file.people?.[slot.value]?.picture }] : [] }}
+          owner={{
+            value: slot.value || undefined,
+            options: slot.value ? [{ value: slot.value, label: file.people?.[slot.value]?.displayName ?? '—', picture: file.people?.[slot.value]?.picture, bot: file.people?.[slot.value]?.bot }] : [],
+          }}
         />
       ))}
     </div>
@@ -73,21 +76,18 @@ export function FileKey({ file }: { file: ForeignObject }) {
 }
 
 /**
- * The page's name in its bar, and for another app's file "Open" into that app after it, as Peek's file page has it:
- * the kit's Button, quiet, with a real icon, a link to a new tab (Katerina, 30 Oct). "Open" alone (Miky, 14 Oct: "Less
- * words is better"); which app is in its name and its tooltip. Only where there is somewhere to open: elsewhere the
- * bar keeps its plain title, which the bar cuts to one line itself.
+ * "Open" into another app's file's own app, right after the page's name in its bar (the kit's PageHeader `after`; ONE-5,
+ * step 5), as Peek's file page has it: the kit's Button, quiet, with a real icon, a link to a new tab (Katerina,
+ * 30 Oct). "Open" alone (Miky, 14 Oct: "Less words is better"); which app is in its name and its tooltip. Only where
+ * there is somewhere to open.
  */
-export function TitleWithOpen({ title, opener, appName }: { title: string; opener: string; appName: string }) {
+export function OpenIn({ opener, appName }: { opener: string; appName: string }) {
   const where = `Open in ${appName}`
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <p className="truncate text-body-2-strong text-text-primary">{title}</p>
-      <WithTooltip label={where}>
-        <Button href={opener} external size="small" className="shrink-0" leadingIcon={<IconExternalLink size={14} stroke={1.5} />} aria-label={where}>
-          Open
-        </Button>
-      </WithTooltip>
-    </div>
+    <WithTooltip label={where}>
+      <Button href={opener} external size="small" leadingIcon={<IconExternalLink size={14} stroke={1.5} />} aria-label={where}>
+        Open
+      </Button>
+    </WithTooltip>
   )
 }

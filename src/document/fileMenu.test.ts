@@ -156,6 +156,13 @@ describe('archiving a Leaf page', () => {
     await archiveDocument(page('a'), false, 'ignored')
     expect([tag(published[0], 'value'), published[0].content]).toEqual(['', ''])
   })
+
+  it('signed out, says to sign in to archive it, or to unarchive it, and writes nothing', async () => {
+    viewer = ''
+    expect(await archiveDocument(page('a'), true)).toEqual({ ok: false, reason: 'Sign in to archive it.' })
+    expect(await archiveDocument(page('a'), false)).toEqual({ ok: false, reason: 'Sign in to unarchive it.' })
+    expect(published).toHaveLength(0)
+  })
 })
 
 const tags = (event: UnsignedEvent, name: string) => event.tags.filter((t) => t[0] === name).map((t) => t[1])
