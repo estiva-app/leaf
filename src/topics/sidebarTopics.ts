@@ -27,8 +27,9 @@ const byKindThenTitle = (a: ForeignObject, b: ForeignObject) => rank(a) - rank(b
  * one file Leaf opens that is not archived. Ordered by your newest save or comment on one of their listed files,
  * newest first; topics with none of yours follow, A–Z. Every one is returned: the sidebar shows five and a More.
  *
- * A listed file the tree holds is taken from `inTree`, which has dropped the archived ones; the rest are resolved in one
- * batched read. Your times are one request: the newest save and the newest comment of yours on each listed file.
+ * A listed file the tree has read is taken from `inTree`, archived or not; the rest are resolved in one batched read,
+ * and an archived one is left out either way. Your times are one request: the newest save and the newest comment of
+ * yours on each listed file.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-keeps-its-own-list-of-files.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-space-is-the-teams-own-mark-on-a-topic-it-lists.md
@@ -52,7 +53,10 @@ export async function readSidebarTopics(
   if (outside.length > 0)
     for (const file of await resolveForeignRoots(outside, resolveQuery, manifests, { archivedWith: true }))
       if (file.address && isListed(file) && !isArchived(file)) resolved.set(file.address, file)
-  const fileAt = (address: string) => inTree(address) ?? resolved.get(address) ?? null
+  const fileAt = (address: string) => {
+    const held = inTree(address)
+    return held ? (isArchived(held) ? null : held) : (resolved.get(address) ?? null)
+  }
 
   const topics = candidates.flatMap((topic): SidebarTopic[] => {
     const files = listedOf(topic)

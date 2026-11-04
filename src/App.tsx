@@ -18,7 +18,7 @@ import { useReopenHeld } from './auth/heldTyping'
 import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { heldUnder, NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
 import { naddrOf } from './fileAddress'
-import { fileKey, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
+import { fileKey, findArchivedAt, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { useReferencePage } from './document/referencePicker'
@@ -105,7 +105,9 @@ function Frame() {
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   // Your topics, read once the Folders are, so the page's text is not behind them (LTN-2).
   const inTree = (address: string) => findFileAt(folders, children, address)?.file ?? null
-  const topics = useSidebarTopics(signedIn && (!reading || workspace.failed), inTree)
+  // Topics also takes the files the tree read archived, so it does not read them again only to leave them out.
+  const readByTree = (address: string) => inTree(address) ?? findArchivedAt(folders, address)
+  const topics = useSidebarTopics(signedIn && (!reading || workspace.failed), readByTree)
   const listedDocument = route.page === 'document' ? findDocument(folders, children, route.d) : null
   // Another app's address for a file, with Leaf's host (`/issue/<slug>-<d>`): the manifests say which file it names.
   // A document's own link is read by its `d` at once, beside the tree, so its text shows before the tree is read

@@ -207,3 +207,14 @@ describe('a busy relay (APP-9)', () => {
     expect(groupsOf(result.current.folders, none)!.find((g) => g.id === APIARY)!.message).toBe('This could not be read. Reload to try again.')
   })
 })
+
+describe('an archived file (LTN-2)', () => {
+  it('is not in the tree, but its Folder keeps it as read, so Topics can leave it out without reading it again', async () => {
+    const { findArchivedAt } = await import('./tree')
+    relay.events = [...world(), change(south, 'archived', 'true', APIARY)]
+    const { result } = await loaded()
+    expect(apiaryOf(result.current)?.contents?.files.map((f) => f.ref)).toEqual([addressOf(north)])
+    expect(findArchivedAt(result.current.folders, addressOf(south))?.archived).toBeTruthy()
+    expect(findArchivedAt(result.current.folders, addressOf(north))).toBeNull()
+  })
+})
