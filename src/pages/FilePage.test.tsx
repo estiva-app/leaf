@@ -583,6 +583,27 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     expect(window.location.pathname).toBe('/')
   })
 
+  // The kit's third answer, in its and Peek's words (Katerina, 4 November): Leaf's sentence with no button goes.
+  it('offers Archive instead, which opens the archive question in the delete question’s place and writes nothing', async () => {
+    render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByText('To take it out of every list and keep it readable, archive it instead.')).toBeTruthy()
+    expect(screen.queryByText('Archiving is reversible and usually what you want.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Archive instead' }))
+    expect(await screen.findByText('Archive “Friday notes”?')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Delete page' })).toBeNull()
+    expect(published).toHaveLength(0)
+  })
+
+  it('offers no Archive instead on an archived page, whose menu offers no Archive', async () => {
+    render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByText('It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Archive instead' })).toBeNull()
+  })
+
   it('a refused delete stays on the page, with the dialog open and the refusal said, and writes nothing more', async () => {
     answers = [{ ok: false, reason: 'blocked' }]
     await confirmDelete()

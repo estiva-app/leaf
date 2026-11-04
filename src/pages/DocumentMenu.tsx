@@ -187,6 +187,10 @@ export function DocumentMenu({
   }
 
   const archivedSelf = !!file.archived && !file.archived.with
+  // Archive's question, once what it would hide is read: from the menu, and from the delete question's Archive instead.
+  const openArchive = () =>
+    file.address &&
+    read(archiveHides(file.address), (hides) => setDialog({ kind: 'archive', hides }), 'What archiving would hide could not be read, so nothing was archived. Try again.')
   return (
     <>
       <Menu
@@ -218,15 +222,7 @@ export function DocumentMenu({
         {archivedSelf ? (
           <MenuItem label="Unarchive" onClick={() => void setArchived(false)} />
         ) : (
-          !file.archived && (
-            <MenuItem
-              label="Archive…"
-              onClick={() =>
-                file.address &&
-                read(archiveHides(file.address), (hides) => setDialog({ kind: 'archive', hides }), 'What archiving would hide could not be read, so nothing was archived. Try again.')
-              }
-            />
-          )
+          !file.archived && <MenuItem label="Archive…" onClick={() => void openArchive()} />
         )}
         <MenuItem
           label="Delete"
@@ -259,10 +255,22 @@ export function DocumentMenu({
         />
       )}
       {dialog?.kind === 'delete' && (
-        <ConfirmDialog title={`Delete “${title}”?`} confirmLabel="Delete page" destructive onConfirm={() => remove(dialog.plan)} onClose={() => setDialog(null)}>
+        <ConfirmDialog
+          title={`Delete “${title}”?`}
+          confirmLabel="Delete page"
+          destructive
+          onConfirm={() => remove(dialog.plan)}
+          onClose={() => setDialog(null)}
+          // The kit's safer answer, in its and Peek's words, where the menu offers Archive (Katerina, 4 November): it
+          // opens Archive's question, which takes this one's place.
+          alternative={
+            !file.archived
+              ? { label: 'Archive instead', sentence: 'To take it out of every list and keep it readable, archive it instead.', onClick: () => void openArchive() }
+              : undefined
+          }
+        >
           <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
           {dialog.words && <p>{dialog.words}</p>}
-          {!file.archived && <p className="text-text-secondary">Archiving is reversible and usually what you want.</p>}
         </ConfirmDialog>
       )}
     </>
