@@ -42,9 +42,17 @@ vi.mock('../relay/bridge', () => ({
 vi.mock('../relay/manifests', () => ({ resolveQuery: async (filters: Filter[]) => relay(filters), projections: undefined }))
 // A file outside the tree is drawn through its app's manifest; what that answers is stood in for here, as `outside` says.
 let outside: Record<string, ForeignObject> = {}
+// Every address resolved outside the tree: each is a read of all of that file's changes.
+let resolvedOutside: string[] = []
 vi.mock('@estiva-app/interop', async (original) => {
   const interop = await original<typeof import('@estiva-app/interop')>()
-  return { ...interop, resolveForeignRoots: async (addresses: readonly string[]) => addresses.flatMap((a) => outside[a] ?? []) }
+  return {
+    ...interop,
+    resolveForeignRoots: async (addresses: readonly string[]) => {
+      resolvedOutside.push(...addresses)
+      return addresses.flatMap((a) => outside[a] ?? [])
+    },
+  }
 })
 
 const { readSidebarTopics } = await import('./sidebarTopics')
@@ -94,6 +102,7 @@ beforeEach(() => {
   held = []
   tree = []
   outside = {}
+  resolvedOutside = []
   sent = []
   changesRefused = false
   resetTopicChoicesForTests()
@@ -128,6 +137,19 @@ describe('which of your topics the sidebar shows', () => {
     const topics = await read()
     expect(topics.map((t) => t.title)).toEqual(['Going'])
     expect(topics[0].files.map((f) => f.slots.title?.value)).toEqual(['Live page'])
+  })
+
+  it('leaves out a file the tree read archived without reading it again, and a topic listing only such files', async () => {
+    const page = file(30842, 'Live page')
+    const finished = file(30850, 'Finished project', { archived: { at: 1 } } as Partial<ForeignObject>)
+    tree = [page, finished]
+    topic(ME, 'Done', [finished])
+    topic(ME, 'Going', [page, finished])
+
+    const topics = await read()
+    expect(topics.map((t) => t.title)).toEqual(['Going'])
+    expect(topics[0].files.map((f) => f.slots.title?.value)).toEqual(['Live page'])
+    expect(resolvedOutside).toEqual([])
   })
 
   it('folds each topic to its pages, then projects, then issues, each A–Z, a file outside the tree included', async () => {

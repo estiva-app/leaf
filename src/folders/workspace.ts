@@ -40,9 +40,12 @@ export async function readFolders(read: QueryFn = query): Promise<FolderSummary[
   return topLevelFolders(await listFolders(read))
 }
 
-/** Everything in one Folder, whichever app owns it. Throws when it could not be read. */
-export function readFolder(id: string, read: QueryFn = query): Promise<FolderContents> {
-  return resolveFolderContents(id, read, people.viaRelay(read), manifests)
+/**
+ * Everything in one Folder, whichever app owns it. Throws when it could not be read. `includeArchived` keeps the
+ * archived files, each marked, which the read finds archived anyway.
+ */
+export function readFolder(id: string, read: QueryFn = query, options: { includeArchived?: boolean } = {}): Promise<FolderContents> {
+  return resolveFolderContents(id, read, people.viaRelay(read), manifests, options)
 }
 
 /**

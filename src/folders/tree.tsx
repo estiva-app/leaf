@@ -125,6 +125,15 @@ export function findFileAt(
   return null
 }
 
+/** A file a Folder lists that the tree read archived and does not draw, by its address. */
+export function findArchivedAt(folders: WorkspaceFolder[] | null, address: string): ForeignObject | null {
+  for (const folder of folders ?? []) {
+    const file = folder.archived?.find((f) => f.address === address)
+    if (file) return file
+  }
+  return null
+}
+
 /** A Folder's files: its listing, then the rows read under them. */
 function filesIn(folder: WorkspaceFolder, children: Workspace['children']): ForeignObject[] {
   const listed = folder.contents?.files ?? []

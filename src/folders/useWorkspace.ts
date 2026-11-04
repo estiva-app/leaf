@@ -1,4 +1,4 @@
-import type { FolderContents, FolderSummary, ForeignObject, QueryFn } from '@estiva-app/interop'
+import { isArchived, type FolderContents, type FolderSummary, type ForeignObject, type QueryFn } from '@estiva-app/interop'
 import { RelayBusyError } from '@estiva-app/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isDocument } from './tree'
@@ -24,6 +24,8 @@ export interface WorkspaceFolder {
   folder: FolderSummary
   /** `null` while being read. */
   contents: FolderContents | null
+  /** The files it lists that are archived, read with its contents and not drawn: so Topics need not read them again. */
+  archived?: ForeignObject[]
   failed?: boolean
 }
 
@@ -63,7 +65,10 @@ export function useWorkspace(): Workspace {
     let next: WorkspaceFolder
     let busy = false
     try {
-      next = { folder, contents: await readFolder(folder.id, read) }
+      // The archived files are kept aside, not drawn: Topics would otherwise read each again, every change of it, only
+      // to leave it out (LTN-2: three finished projects, 6 MB of every one of Miky's opens).
+      const all = await readFolder(folder.id, read, { includeArchived: true })
+      next = { folder, contents: { ...all, files: all.files.filter((f) => !isArchived(f)) }, archived: all.files.filter(isArchived) }
     } catch (error) {
       busy = error instanceof RelayBusyError
       next = { folder, contents: null, failed: true }
