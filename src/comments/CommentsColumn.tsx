@@ -177,12 +177,9 @@ const NO_TEAM = { cause: 'unknown' } as const
 
 /**
  * A refused delete, resolve or reopen, said where the kit has no sentence of its own around it (the delete question,
- * the Resolve dialog, a toast): the shared reason (`refusalReason`) as a sentence of its own.
+ * the Resolve dialog, a toast): "Not deleted: <reason>.", as the box says "Not sent:" and Peek "Not deleted:".
  */
-const refusalSentence = (reason: unknown): string => {
-  const said = refusalReason(reason)
-  return `${said.charAt(0).toUpperCase()}${said.slice(1)}.`
-}
+const refusalSentence = (what: 'deleted' | 'resolved' | 'reopened', reason: unknown): string => `Not ${what}: ${refusalReason(reason)}.`
 
 /** The files a send names, in the order they were attached: the box sends only uploaded ones, each with the `imeta` `upload` answered. */
 const filesOf = (files: readonly BoxFile[]): Imeta[] => files.flatMap((f) => (f.value ? [f.value as Imeta] : []))
@@ -537,7 +534,7 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
       (async () => {
         setDeleteRefused(undefined)
         const result = await own.onDelete()
-        if (!result.ok) setDeleteRefused(refusalSentence(result.reason))
+        if (!result.ok) setDeleteRefused(refusalSentence('deleted', result.reason))
         return result.ok
       }),
     deleteRefused,
@@ -846,7 +843,7 @@ function ThreadComment(props: ThreadProps) {
         ? async (note) => {
             setResolveRefused(undefined)
             const result = await onResolve(note)
-            if (!result.ok) setResolveRefused(refusalSentence(result.reason))
+            if (!result.ok) setResolveRefused(refusalSentence('resolved', result.reason))
             return result.ok
           }
         : undefined,
@@ -1108,7 +1105,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   }
   const reopen = async (thread: Thread) => {
     const result = await resolve(thread, false)
-    if (!result.ok) showToast({ label: refusalSentence(result.reason), type: 'error' })
+    if (!result.ok) showToast({ label: refusalSentence('reopened', result.reason), type: 'error' })
   }
   const viewer = viewerPubkey() ?? undefined
   const toggleReaction = async (comment: CommentItem, emoji: string, mine?: string): Promise<WriteResult> => {

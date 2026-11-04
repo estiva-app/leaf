@@ -1055,7 +1055,7 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     choose(own.id, 'Delete message')
     const dialog = await screen.findByRole('alertdialog')
     act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Delete message' })))
-    expect(await within(dialog).findByText('You can no longer write here.')).toBeTruthy()
+    expect(await within(dialog).findByText('Not deleted: you can no longer write here.')).toBeTruthy()
     expect(dialog.isConnected).toBe(true)
     expect(publish).toHaveBeenCalledTimes(1)
     expect(within(entry(own.id)!).getByText('Too long?')).toBeTruthy()
@@ -1860,7 +1860,7 @@ describe("a thread on the kit's cards", () => {
     await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
     publish.mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
     const dialog = await resolveWith(onParagraph.id, 'Cut to one line.')
-    expect(await within(dialog).findByText('You can no longer write here.')).toBeTruthy()
+    expect(await within(dialog).findByText('Not resolved: you can no longer write here.')).toBeTruthy()
     expect(dialog.isConnected).toBe(true)
     expect((within(dialog).getByRole('textbox', { name: 'Resolution message (optional)' }) as HTMLTextAreaElement).value).toBe('Cut to one line.')
     expect(publish).toHaveBeenCalledTimes(1)
@@ -1874,7 +1874,7 @@ describe("a thread on the kit's cards", () => {
     await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
     publish.mockResolvedValueOnce({ ok: false, reason: 'rate-limited: slow down' })
     const dialog = await resolveWith(onParagraph.id, 'Cut to one line.')
-    expect(await within(dialog).findByText('Too many at once, try again in a moment.')).toBeTruthy()
+    expect(await within(dialog).findByText('Not resolved: too many at once, try again in a moment.')).toBeTruthy()
     // The relay keeps what it accepts, so the column's read after the write finds it.
     publish.mockImplementationOnce(async (e) => {
       relay.events = [...relay.events, { ...e, id: 'f'.repeat(64), sig: '' } as SignedEvent]
@@ -1918,7 +1918,7 @@ describe("a thread on the kit's cards", () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'error: storage unavailable' })
     reopenFrom(onParagraph.id)
     // The toast, and the line read out with it.
-    expect((await screen.findAllByText('Something went wrong, try again.')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Not reopened: something went wrong, try again.')).length).toBeGreaterThan(0)
     expect(under('Resolved', onParagraph.id)).toBe(true)
     expect(publish).toHaveBeenCalledTimes(1)
   })
