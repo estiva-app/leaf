@@ -109,6 +109,15 @@ describe('uploading a file into a page (LED-2)', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ status: 413, text: async () => 'file too large' })))
     await expect(uploadIntoText(new File(['x'], 'big.pdf', { type: 'application/pdf' }))).rejects.toThrow('big.pdf: Too large: the most is 100 MB')
   })
+
+  it('stops a GIF over the relay’s 10 MB before anything uploads (ONE-4)', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const gif = new File(['GIF89a'], 'big.gif', { type: 'image/gif' })
+    Object.defineProperty(gif, 'size', { value: 15 * 1024 * 1024 })
+    await expect(uploadIntoText(gif)).rejects.toThrow('big.gif: Too large: the most is 10 MB')
+    expect(fetch).not.toHaveBeenCalled()
+  })
 })
 
 describe("reading a comment's file", () => {

@@ -1,4 +1,4 @@
-import { uploadRefusal } from '@estiva-app/conversation'
+import { tooLarge, uploadRefusal } from '@estiva-app/conversation'
 import { fetchBlob, imetaFor, uploadBlob, type Imeta } from '@estiva-app/protocol'
 import { sessionEnded } from '../auth/estivaId'
 import { relaySigner } from './bridge'
@@ -101,6 +101,9 @@ export async function uploadFile(file: File): Promise<Uploaded> {
  * words the editor shows under the page (LED-2).
  */
 export async function uploadIntoText(file: File): Promise<Imeta> {
+  // A file over the relay's limit is stopped before it uploads, as the comment box does (ONE-4).
+  const over = tooLarge(file)
+  if (over) throw new Error(`${file.name}: ${over}`)
   const answer = await uploadFile(file)
   if (!answer.ok) throw new Error(`${file.name}: ${uploadRefusal(answer.reason, file)}`)
   return answer.file
