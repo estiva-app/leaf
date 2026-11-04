@@ -16,8 +16,9 @@ describe("a document's save", () => {
     const event = buildChange('a'.repeat(64), 1_760_000_000_123, { target: ADDRESS, field: 'description', value: 'text', folder: FOLDER, contentFormat: 'estiva-blocks-1' })
     expect(event.kind).toBe(1851)
     expect(event.created_at).toBe(1_760_000_000)
-    expect(event.tags.slice(0, 6)).toEqual([
+    expect(event.tags.slice(0, 7)).toEqual([
       ['a', ADDRESS],
+      ['O', 'd1'],
       ['field', 'description'],
       ['value', 'text'],
       ['h', FOLDER],

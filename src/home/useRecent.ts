@@ -6,6 +6,7 @@ import { naddrOf } from '../fileAddress'
 import { isDocument, isListed, titleOf, typeOf } from '../folders/tree'
 import type { WorkspaceFolder } from '../folders/useWorkspace'
 import { query, viewerPubkey } from '../relay/bridge'
+import { isProject, projectFields } from '../relay/projectFields'
 import { ownSavesFilter, rankRecent, recentFilters, textTargets, type Page, type RecentRow } from './recent'
 
 /** One of Home's rows as it draws: the row, and the name of who changed it last. */
@@ -48,12 +49,19 @@ export function pagesOf(folders: WorkspaceFolder[] | null): Page[] | null {
  * that lists it, an issue's by the Folder that lists its project. A Folder the tree has not read leaves the place
  * blank, never a Folder's id.
  */
-export function otherRowOf(file: ForeignObject | null, folders: WorkspaceFolder[]): Page | null {
-  if (!file || !isListed(file) || isArchived(file) || !file.address || !file.naddr || !file.folder) return null
+export function otherRowOf(file: ForeignObject | null, folders: WorkspaceFolder[], byFields = false): Page | null {
+  // A deleted project is gone from Home as from every list (SPEC §6.5, ALO-6).
+  if (!file || !isListed(file) || isArchived(file) || file.deleted || !file.address || !file.naddr || !file.folder) return null
   const lister = (address: string | undefined) => folders.find(({ contents }) => contents?.files.some((f) => f.address === address))?.folder
   const where = lister(file.address) ?? lister(file.parentRef)
-  return rowOf(file, where?.name ?? '', file.folder)
+  const row = rowOf(file, where?.name ?? '', file.folder)
+  if (!byFields || !isProject(file.address) || !file.prevs) return row
+  const changes = EDITS.map((field) => file.prevs![field]).filter((id): id is string => !!id)
+  return { ...row, changes }
 }
+
+/** The fields whose change raises another app's file on Home. */
+const EDITS = ['title', 'summary', 'description'] as const
 
 /**
  * The other apps' files whose title, summary or text you changed (in any app, Miky at LTX-2's kickoff), read by
@@ -63,8 +71,8 @@ async function othersOf(folders: WorkspaceFolder[], me: string | null): Promise<
   if (!me) return []
   const targets = textTargets(await query([ownSavesFilter(me)]))
   if (targets.length === 0) return []
-  const read = await readDocuments(targets.map(naddrOf))
-  return targets.map((t) => otherRowOf(read[naddrOf(t)] ?? null, folders)).filter((row): row is Page => row !== null)
+  const [read, fields] = await Promise.all([readDocuments(targets.map(naddrOf)), projectFields()])
+  return targets.map((t) => otherRowOf(read[naddrOf(t)] ?? null, folders, !!fields)).filter((row): row is Page => row !== null)
 }
 
 /**

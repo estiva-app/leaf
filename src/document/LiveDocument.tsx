@@ -16,7 +16,7 @@ import {
 import { uploadIntoText } from '../relay/blobs'
 import type { FileText } from '@estiva-app/conversation'
 import { MenuItem } from '@estiva-app/ui'
-import { DocumentEditor, type AttachmentViewProps, type DocumentCodec, type HeldTyping, type MentionPerson, type SelectionAnchor } from '@estiva-app/ui/editor'
+import { DocumentEditor, type DocumentAsks, type AttachmentViewProps, type DocumentCodec, type HeldTyping, type MentionPerson, type SelectionAnchor } from '@estiva-app/ui/editor'
 import { CardActsProvider } from './linked'
 import { PageLink, PageNamesProvider } from './PageLink'
 import { ReferencesProvider, useEditorReferences } from './references'
@@ -74,6 +74,7 @@ export function LiveDocument({
   holdKey,
   format,
   changedBy,
+  merges = false,
   onCommit,
   onLeftUnsaved,
   onEditor,
@@ -92,8 +93,10 @@ export function LiveDocument({
   format: ContentFormat
   /** Who saved the text last, when it was not you. */
   changedBy: ChangedBy | null
-  /** Save the text, given the text it was edited from, so whoever it names anew is added. */
-  onCommit: (saved: FileText & { content: string }, editedFrom: FileText) => Promise<boolean>
+  /** A save merges onto someone's newer one, and a block both changed asks (a project read by its fields, ALO-6): no "saved a newer version" line. */
+  merges?: boolean
+  /** Save the text, given the text it was edited from, so whoever it names anew is added; or what asks, nothing saved. */
+  onCommit: (saved: FileText & { content: string }, editedFrom: FileText) => Promise<boolean | DocumentAsks>
   onLeftUnsaved: () => void
   /** The editor, once it is there: the comments column draws its highlights in it and finds its blocks. */
   onEditor?: (editor: Editor | null) => void
@@ -112,7 +115,7 @@ export function LiveDocument({
           : { content: editedFrom, ...(format === 'blocks' ? { format: BLOCK_DOCUMENT_FORMAT } : {}) }
       const saved = { content: next, ...(contentFormat ? { format: contentFormat } : {}) }
       const ok = await onCommit(saved, from)
-      if (ok) lastSave.current = saved
+      if (ok === true) lastSave.current = saved
       return ok
     },
     [onCommit, format],
@@ -143,6 +146,7 @@ export function LiveDocument({
       placeholder="Type / for headings and lists."
       readOnly={readOnly}
       changedBy={changedBy ? { name: changedBy.name ?? 'Someone' } : null}
+      merges={merges}
       onLeftUnsaved={onLeftUnsaved}
       hold={HOLD}
       {...(holdKey ? { holdKey } : {})}

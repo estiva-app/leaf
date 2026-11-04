@@ -1,5 +1,5 @@
 import type { Archive } from '@estiva-app/interop'
-import type { ArchiveDialogProps, ArchivedNoticeProps } from '@estiva-app/ui'
+import type { ArchiveDialogProps, ArchivedNoticeProps, DeletedNoticeProps } from '@estiva-app/ui'
 
 /**
  * The kit's `ArchiveDialog`, in Leaf's words, as Leaf's own question said them: what it hides is "the 2 pages and
@@ -13,6 +13,28 @@ export function archiveWordsOf(hides: string): Pick<ArchiveDialogProps, 'what' |
     apps: ['Leaf', 'Peek', 'Ship'],
     getBack: 'Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.',
   }
+}
+
+/** A day as Peek's card says it: "Today", "Yesterday", else "Tue, Oct 28", with the year when it is not this one. */
+function dayOf(atSeconds: number, now: Date): string {
+  const at = new Date(atSeconds * 1000)
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(at.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) })
+}
+
+/**
+ * The kit's `DeletedNotice`, in Leaf's words (ALO-6): "You" for the viewer, else their name, else the start of their
+ * key; the day as the archived notice says it.
+ */
+export function deletedNoticeOf(
+  deleted: { by: string; at: number },
+  nameOf: (pubkey: string) => string | undefined,
+  me: string | null,
+  now: Date = new Date(),
+): Pick<DeletedNoticeProps, 'by' | 'when'> {
+  return { by: deleted.by === me ? 'You' : nameOf(deleted.by) || `${deleted.by.slice(0, 8)}…`, when: dayOf(deleted.at, now) }
 }
 
 /**
@@ -29,17 +51,9 @@ export function archivedNoticeOf(
   above?: { noun?: string; title?: string },
   now: Date = new Date(),
 ): Pick<ArchivedNoticeProps, 'by' | 'when' | 'resolution' | 'withWhat' | 'withTitle'> {
-  const at = new Date(archive.at * 1000)
-  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000)
-  const when =
-    days === 0
-      ? 'Today'
-      : days === 1
-        ? 'Yesterday'
-        : at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(at.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) })
   return {
     by: (archive.by && nameOf(archive.by)) || `${(archive.by ?? '').slice(0, 8)}…`,
-    when,
+    when: dayOf(archive.at, now),
     ...(archive.resolution ? { resolution: archive.resolution } : {}),
     ...(archive.with ? { withWhat: above?.noun ?? 'parent', ...(above?.title ? { withTitle: above.title } : {}) } : {}),
   }
