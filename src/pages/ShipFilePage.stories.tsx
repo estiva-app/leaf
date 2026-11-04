@@ -175,17 +175,6 @@ const PROPOSED: NavTreeGroup[] = [
   { id: 'leaf', title: 'Leaf', open: true, nodes: [node('p2', 'Launch plan', 'file'), node('p3', 'Type scale notes', 'file')] },
 ]
 
-/** Today's tree, for comparison: topics among the pages, each saying only "Open in Peek". */
-const TODAY: NavTreeGroup[] = [
-  {
-    id: 'hq',
-    title: 'Estiva HQ',
-    open: true,
-    nodes: [node('t1', 'Standup', 'topic'), node('ltx', 'Leaf edits any file\'s text', 'project', { hasChildren: true }), node('t2', 'Estiva Suits Updates', 'topic'), node('p1', 'Weekly notes', 'file')],
-  },
-  { id: 'leaf', title: 'Leaf', open: true, nodes: [node('t3', 'Design review', 'topic'), node('p2', 'Launch plan', 'file'), node('p3', 'Type scale notes', 'file')] },
-]
-
 /** Leaf's frame, with Home and the tree in the sidebar, as `App` draws it. */
 function Frame({ groups, home, selected, children }: { groups: NavTreeGroup[]; home?: boolean; selected?: string; children: ReactNode }) {
   return (
@@ -210,16 +199,6 @@ export const InTheTree: Story = {
   render: (args) => (
     <Frame groups={PROPOSED} selected="i2">
       <FilePage {...args} />
-    </Frame>
-  ),
-}
-
-/** Today's tree, for comparison: Peek topics fill it, and open to "Open in Peek". */
-export const TreeToday: Story = {
-  args: { file: shipIssue() },
-  render: () => (
-    <Frame groups={TODAY} selected="t1">
-      <FilePage file={{ ...shipIssue(), kind: 30840, noun: 'topic', appName: 'Peek', openUrl: 'https://peek.estiva.app/', slots: { title: { value: 'Standup', isPubkey: false } } } as ForeignObject} loading={false} />
     </Frame>
   ),
 }
