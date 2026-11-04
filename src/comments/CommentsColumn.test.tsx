@@ -357,6 +357,44 @@ describe('the comments column', () => {
     expect(box('Comment on this document…').editor.getText()).toBe('Refused words')
   })
 
+  /*
+    Guards, not red first (code review of 4 November): what the column kept from before the kit's cards, with no test
+    of its own until now. Each passes on the code as it is. The two scrolls (a card → its words in the text, a highlight
+    → its card in the column) are not here: jsdom has no layout to scroll.
+  */
+  /** The comments' read (`#A`), answered by `answer`; every other read as the relay holds it. */
+  const commentsReadAnswers = (answer: () => Promise<SignedEvent[]>) => {
+    const real = vi.mocked(query).getMockImplementation()!
+    vi.mocked(query).mockImplementation(async (filters) => (filters.some((f) => '#A' in f && (f.kinds as number[] | undefined)?.includes(1111)) ? answer() : real(filters)))
+    return () => vi.mocked(query).mockImplementation(real)
+  }
+
+  it('shows the kit’s placeholders while the comments are read, and no empty line', async () => {
+    const restore = commentsReadAnswers(() => new Promise<never>(() => {}))
+    try {
+      await open([comment([], 'About the page')])
+      await waitFor(() => expect(document.querySelectorAll('[aria-hidden="true"] .animate-pulse').length).toBeGreaterThan(0))
+      expect(screen.queryByText(/No comments yet/)).toBeNull()
+      expect(screen.queryByText('About the page')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('says the comments could not be read when their read fails, not that there are none', async () => {
+    const restore = commentsReadAnswers(async () => {
+      throw new Error('blocked: rate-limited')
+    })
+    try {
+      await open([comment([], 'About the page')])
+      expect(await screen.findByText('Could not read the comments. Try again in a moment.')).toBeTruthy()
+      expect(screen.queryByText(/No comments yet/)).toBeNull()
+      expect(document.querySelectorAll('[aria-hidden="true"] .animate-pulse')).toHaveLength(0)
+    } finally {
+      restore()
+    }
+  })
+
   it('moves a thread under Resolved without a reload when someone else resolves it', async () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
@@ -1007,6 +1045,22 @@ describe('editing and deleting your own comment (COMM-5)', () => {
 
   // Changed on purpose: the reply shows once the thread is open (the kit's replies row), here from its highlight in the
   // text; and the deleted card has no strip at all, so no Resolve.
+  // A guard (code review, 4 November): one question only. A refusal shown again after Cancel is the kit's to fix
+  // (0.104.3), so this test does not ask twice.
+  it('keeps the delete question open and says why when the relay refuses it; the comment stays', async () => {
+    const own = mine([], 'Too long?')
+    await open([own])
+    await found(() => entry(own.id))
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    choose(own.id, 'Delete message')
+    const dialog = await screen.findByRole('alertdialog')
+    act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Delete message' })))
+    expect(await within(dialog).findByText('Could not delete it. Try again.')).toBeTruthy()
+    expect(dialog.isConnected).toBe(true)
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(within(entry(own.id)!).getByText('Too long?')).toBeTruthy()
+  })
+
   it("deletes your comment after asking; QA-2's reply stays on its paragraph, highlighted, under the note, with no reply box and no Resolve", async () => {
     const own = mine([['block', PARAGRAPH]], 'Too long?')
     const theirs = replyTo(own, 'Cut it', QA2, [['block', PARAGRAPH]])
@@ -1809,6 +1863,74 @@ describe("a thread on the kit's cards", () => {
     expect(dialog.isConnected).toBe(true)
     expect((within(dialog).getByRole('textbox', { name: 'Resolution message (optional)' }) as HTMLTextAreaElement).value).toBe('Cut to one line.')
     expect(publish).toHaveBeenCalledTimes(1)
+  })
+
+  /* Guards, not red first (code review, 4 November): kept behaviour with no test of its own in Leaf until now. */
+
+  it('resolves on a second press after the relay refused the first, from the same dialog, with the same note', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    const dialog = await resolveWith(onParagraph.id, 'Cut to one line.')
+    expect(await within(dialog).findByText('Could not resolve it. Try again.')).toBeTruthy()
+    // The relay keeps what it accepts, so the column's read after the write finds it.
+    publish.mockImplementationOnce(async (e) => {
+      relay.events = [...relay.events, { ...e, id: 'f'.repeat(64), sig: '' } as SignedEvent]
+      return { ok: true }
+    })
+    act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' })))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
+    expect(publish).toHaveBeenCalledTimes(2)
+    expect([publish.mock.calls[1][0].kind, publish.mock.calls[1][0].content]).toEqual([9101, 'Cut to one line.'])
+  })
+
+  /** A thread resolved by QA-2, as the relay holds it. */
+  const resolvedBy = (root: SignedEvent): SignedEvent => ({ id: 'e'.repeat(64), pubkey: QA2, created_at: 1_760_000_200, kind: 9101, tags: [['h', FOLDER], ['e', root.id], ['t', 'resolution'], ['action', 'resolved']], content: '', sig: '' })
+  /** Open the column's "Resolved" group, closed at first, and press Reopen on a comment's strip there. */
+  const reopenFrom = (id: string) => {
+    const group = [...document.querySelectorAll<HTMLElement>('button[aria-expanded="false"]')].find((b) => b.textContent?.startsWith('Resolved'))
+    if (group) act(() => void fireEvent.click(group))
+    pointAt(entry(id)!)
+    act(() => void fireEvent.click(within(entry(id)!).getByRole('button', { name: 'Reopen' })))
+  }
+
+  it('Reopen on a resolved comment writes a 9101 reopening it, and the thread leaves Resolved', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph, resolvedBy(onParagraph)])
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
+    publish.mockImplementationOnce(async (e) => {
+      relay.events = [...relay.events, { ...e, id: 'f'.repeat(64), sig: '' } as SignedEvent]
+      return { ok: true }
+    })
+    reopenFrom(onParagraph.id)
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(false))
+    expect(publish.mock.calls[0][0].kind).toBe(9101)
+    expect(publish.mock.calls[0][0].tags).toEqual(expect.arrayContaining([['e', onParagraph.id], ['action', 'reopened']]))
+  })
+
+  it('says so when the relay refuses a Reopen, and the thread stays under Resolved', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph, resolvedBy(onParagraph)])
+    await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    reopenFrom(onParagraph.id)
+    // The toast, and the line read out with it.
+    expect((await screen.findAllByText('Could not reopen it. Try again.')).length).toBeGreaterThan(0)
+    expect(under('Resolved', onParagraph.id)).toBe(true)
+    expect(publish).toHaveBeenCalledTimes(1)
+  })
+
+  it('a comment is a Tab stop, and Enter on it opens its thread', async () => {
+    const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([onParagraph])
+    const card = await found(() => item(onParagraph.id)?.querySelector<HTMLElement>('[tabindex="0"]'))
+    expect(within(card).getByText('Too long?')).toBeTruthy()
+    act(() => card.focus())
+    expect(document.activeElement).toBe(card)
+    act(() => void fireEvent.keyDown(card, { key: 'Enter' }))
+    await waitFor(() => expect(item(onParagraph.id)!.getAttribute('data-open')).toBe('true'))
   })
 
   it('says when a comment was edited, under the pointer on its "(edited)"', async () => {
