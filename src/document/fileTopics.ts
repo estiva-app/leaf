@@ -10,6 +10,7 @@ import {
   topicsOfFile,
   type ForeignObject,
   type ReadTopic,
+  type TopicsRead,
 } from '@estiva-app/interop'
 import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
@@ -64,19 +65,38 @@ export async function readFileTopics(file: string): Promise<TopicOfFile[]> {
 }
 
 /**
- * Add to topic's choices, held per tab as Ship holds them, so the palette opened again draws at once while it reads
- * again. Not retried on its own: the next open reads, and a failed read never replaces a good one.
+ * Interop's one read of every topic the reader can read (SHIPS-2), held per tab as Ship holds it: the sidebar's Topics
+ * and Add to topic draw from the same read, so a palette opened again draws at once while it reads again. Not retried
+ * on its own: the next open reads, and a failed read never replaces a good one.
  */
-const held = createRetryingRead<TopicChoices>({ retryable: () => false })
+export const heldTopics = createRetryingRead<TopicsRead>({ retryable: () => false })
 
-/** Test seam: forget the held choices. */
+/** The Folders the relay listed for the reader at Add to topic's last read: where it accepts their entry. */
+let addableIn: ReadonlySet<string> | undefined
+
+/** Test seam: forget the held topics. */
 export function resetTopicChoicesForTests(): void {
-  held.clear()
+  heldTopics.clear()
+  addableIn = undefined
 }
 
-/** Add to topic's choices as this tab last read them, for the palette to draw at once; `undefined` before the first read. */
+/** Every topic the reader can read, read once more; throws, saying why, when nobody is signed in. */
+export function loadTopics(): Promise<TopicsRead> {
+  const me = viewerPubkey()
+  if (!me) return Promise.reject(new Error('Sign in to read your topics.'))
+  return readTopics(queryAll, me, { cache: manifests })
+}
+
+function choicesOf(read: TopicsRead, folders: ReadonlySet<string>): TopicChoices {
+  const { yours, others } = addableTopics(read, folders)
+  const drawn = (topic: ReadTopic) => asDrawn(topic.address, topic.folder, topic.object)
+  return { yours: yours.map(drawn), others: others.map(drawn) }
+}
+
+/** Add to topic's choices as this tab last read them, for the palette to draw at once; `undefined` before its first read. */
 export function topicChoicesNow(): TopicChoices | undefined {
-  return held.snapshot().value
+  const read = heldTopics.snapshot().value
+  return read && addableIn ? choicesOf(read, addableIn) : undefined
 }
 
 /**
@@ -86,17 +106,12 @@ export function topicChoicesNow(): TopicChoices | undefined {
  * each open, so a topic made or archived since shows; the palette draws {@link topicChoicesNow} until this lands.
  */
 export async function readTopicChoices(): Promise<TopicChoices> {
-  const me = viewerPubkey()
-  if (!me) throw new Error('Sign in to add it to a topic.')
-  await held.reload(async () => {
-    // Only the Folders' ids are used: their record channels are not placed (interop's listFolders, 149 s for the agent).
-    const [read, folders] = await Promise.all([readTopics(queryAll, me, { cache: manifests }), listFolders(query, { recordChannels: false })])
-    const { yours, others } = addableTopics(read, new Set(folders.map((folder) => folder.id)))
-    const drawn = (topic: ReadTopic) => asDrawn(topic.address, topic.folder, topic.object)
-    return { yours: yours.map(drawn), others: others.map(drawn) }
-  })
-  const { value, error } = held.snapshot()
-  if (value) return value
+  if (!viewerPubkey()) throw new Error('Sign in to add it to a topic.')
+  // Only the Folders' ids are used: their record channels are not placed (interop's listFolders, 149 s for the agent).
+  const [, folders] = await Promise.all([heldTopics.reload(loadTopics), listFolders(query, { recordChannels: false }).catch(() => null)])
+  const { value, error } = heldTopics.snapshot()
+  if (folders) addableIn = new Set(folders.map((folder) => folder.id))
+  if (value && addableIn) return choicesOf(value, addableIn)
   throw error ?? new Error('Topics could not be read.')
 }
 

@@ -34,6 +34,8 @@ import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
 import { useTabTitle } from './tabTitle'
+import { TopicsSection } from './topics/TopicsSection'
+import { useSidebarTopics } from './topics/useSidebarTopics'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
 type Unlisted = { address: string; folder: string; folderName: string }
@@ -101,6 +103,9 @@ function Frame() {
     [folders, children, opened, setOpen, setFolderOpen],
   )
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
+  // Your topics, read once the Folders are, so the page's text is not behind them (LTN-2).
+  const inTree = (address: string) => findFileAt(folders, children, address)?.file ?? null
+  const topics = useSidebarTopics(signedIn && (!reading || workspace.failed), inTree)
   const listedDocument = route.page === 'document' ? findDocument(folders, children, route.d) : null
   // Another app's address for a file, with Leaf's host (`/issue/<slug>-<d>`): the manifests say which file it names.
   // A document's own link is read by its `d` at once, beside the tree, so its text shows before the tree is read
@@ -249,6 +254,7 @@ function Frame() {
         nav={
           <Sidebar>
             <NavItem href="/" label="Home" icon={<IconHome size={16} stroke={1.5} />} active={route.page === 'home'} />
+            {signedIn && <TopicsSection topics={topics} current={current} fileNow={(file) => (file.address && inTree(file.address)) || file} />}
             <NavTree
               title="Folders"
               titleActions={
