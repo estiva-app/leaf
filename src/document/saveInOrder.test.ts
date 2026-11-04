@@ -37,7 +37,7 @@ vi.mock('../relay/projectFields', () => ({
   openReadOption: async () => ({ openRead: [30850] }),
 }))
 
-import { saveField, saveText, setDeleted, noteRead } from './save'
+import { saveField, saveText, setDeleted, noteRead, onMerged } from './save'
 
 const OWNER = 'b'.repeat(64)
 const THEM = 'c'.repeat(64)
@@ -104,6 +104,23 @@ describe('a project read by its fields, saved from Leaf (ALO-6)', () => {
     const saved = tag(newest(ADDRESS, 'description')!, 'value')!
     expect(saved).toContain('ONE')
     expect(saved).toContain('TWO')
+  })
+
+  it('tells the open page to read the text again when a save merged onto someone’s, and not when it followed mine', async () => {
+    const heard: string[] = []
+    const stop = onMerged((address) => heard.push(address))
+    try {
+      const base = doc(['b1', 'one'], ['b2', 'two'])
+      const file = opened(base)
+      const mine = doc(['b1', 'one'], ['b2', 'TWO'])
+      await saveText(file, { content: mine, format: FORMAT }, { content: base, format: FORMAT })
+      expect(heard).toEqual([])
+      theirs('description', doc(['b1', 'ONE'], ['b2', 'TWO']), newest(ADDRESS, 'description')!.id, FORMAT)
+      await saveText(file, { content: doc(['b1', 'one'], ['b2', 'TWO!']), format: FORMAT }, { content: mine, format: FORMAT })
+      expect(heard).toEqual([ADDRESS])
+    } finally {
+      stop()
+    }
   })
 
   it('asks for a block both changed and saves nothing, holding their words beside mine', async () => {

@@ -35,6 +35,16 @@ vi.mock('../relay/client', () => ({
   }),
 }))
 
+/* A save merged onto someone's, as save.ts announces it (its own test covers when it does): each page's listener. */
+const merges = vi.hoisted(() => [] as ((address: string) => void)[])
+vi.mock('./save', async (actual) => ({
+  ...(await actual<typeof import('./save')>()),
+  onMerged: (listener: (address: string) => void) => {
+    merges.push(listener)
+    return () => void merges.splice(merges.indexOf(listener), 1)
+  },
+}))
+
 import { buildManifest } from '../manifest'
 import { readDocument } from './save'
 import { useLiveDocument } from './useLiveDocument'
@@ -71,6 +81,26 @@ async function arrives(folder: string, event: SignedEvent) {
 
 afterEach(() => {
   live.watches.length = 0
+  merges.length = 0
+})
+
+describe('an open page whose save merged onto someone else’s', () => {
+  it('shows the merged text with nothing arriving live, and ignores a merge of another page', async () => {
+    relay.events = [signed(buildManifest(LEAF, 1_700_000_000_000)), page('C', HERE)]
+    const { result } = await opens((await readDocument(naddrOf('C')))!)
+    relay.events.push(signed({ kind: 1851, pubkey: LEAF, created_at: 1_760_000_300, tags: [['a', addr('C')], ['field', 'description'], ['value', 'Mine merged onto theirs'], ['h', HERE]], content: '' }))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => merges.forEach((heard) => heard(addr('D'))))
+      await act(() => vi.advanceTimersByTimeAsync(300))
+      expect(result.current.file.slots.body?.value ?? '').not.toContain('Mine merged')
+      act(() => merges.forEach((heard) => heard(addr('C'))))
+      await act(() => vi.advanceTimersByTimeAsync(300))
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => expect(result.current.file.slots.body?.value ?? '').toContain('Mine merged onto theirs'))
+  })
 })
 
 describe('an open page archived with the page above it', () => {
