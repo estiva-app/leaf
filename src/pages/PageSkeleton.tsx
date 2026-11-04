@@ -2,10 +2,16 @@ import { cn, Divider, PageHeader, Panel, SkeletonBar, SkeletonConversation } fro
 import { OverviewPanel } from './OverviewPanel'
 
 /**
+ * The empty comment box's height in Leaf, measured in its column: its edge, 12px in, one line of words, 16px, the row
+ * of its buttons, 12px, its edge. Given to the bar by number, as the kit's own placeholders give theirs a width.
+ */
+const EMPTY_BOX_HEIGHT = 87
+
+/**
  * A page before it is read, in the shape it arrives in (ONE-5, step 5), as Ship's PageSkeleton draws an issue (UIG-14,
  * ONE-6 step 4e): the kit's PageHeader with a bar for the name, then the title, the summary, the Topics row and three
  * lines of text where a Leaf page draws them, and beside it what the column will hold: the comments under "Comments" with the kit's own
- * placeholder for them, as the column draws them while they are read; the Overview; or nothing, when the comments are
+ * placeholder for them, as the column draws them while they are read, and the box's place at its foot; the Overview; or nothing, when the comments are
  * hidden. It was three list rows. Revealed after 150ms (the kit's `animate-skeleton-in`), so a fast read never
  * flashes it.
  *
@@ -51,7 +57,18 @@ export function PageSkeleton({ comments, overview }: { comments: boolean; overvi
         <>
           <Divider orientation="vertical" />
           <div className="flex flex-none flex-col">
-            <Panel title="Comments" className="min-h-0 w-96 flex-1" bodyClassName="p-3">
+            {/* The box's place at its foot, as the kit's column keeps its box there while the comments are read: 12px
+                round it, as the column's, so nothing moves when the page arrives (Katerina, 4 November). */}
+            <Panel
+              title="Comments"
+              className="min-h-0 w-96 flex-1"
+              bodyClassName="p-3"
+              footer={
+                <div className="p-3">
+                  <SkeletonBar shape="control" style={{ height: EMPTY_BOX_HEIGHT }} />
+                </div>
+              }
+            >
               <SkeletonConversation />
             </Panel>
           </div>
