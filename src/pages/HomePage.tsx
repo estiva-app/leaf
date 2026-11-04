@@ -90,11 +90,12 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex min-w-0 items-center gap-2">
-                      <WithTooltip label={r.title} wrapperClassName="min-w-0">
+                      {/* The wrapper shrinks only when told, so a long title ends in "…" instead of running over the caption (the kit's Tooltip page). */}
+                      <WithTooltip label={r.title} wrapperClassName="min-w-0 shrink">
                         <span className="block truncate text-body-2-strong text-text-primary">{r.title}</span>
                       </WithTooltip>
-                      {/* Another app's file says what it is, as its row in the tree does (record a-file-is-labelled-by-its-type-not-its-app). */}
-                      {r.type && <Chip type="neutral" label={r.type} />}
+                      {/* Another app's file says what it is, as its row in the tree does (record a-file-is-labelled-by-its-type-not-its-app); the title gives way, never the chip. */}
+                      {r.type && <Chip type="neutral" label={r.type} className="shrink-0" />}
                     </span>
                     {r.summary && <span className="block truncate text-body-2 text-text-secondary">{r.summary}</span>}
                   </span>
