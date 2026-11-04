@@ -16,6 +16,7 @@ import {
   openingWords,
   REACTION_EMOJI,
   REACTION_HORIZON,
+  refusalReason,
   type DraftStore,
 } from '@estiva-app/conversation'
 import { contentFormatOf, decodeNevent, decodeNpub, encodeNaddr, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
@@ -159,11 +160,26 @@ function useNames(pubkeys: readonly string[]): { names: Record<string, string>; 
 // Ship's `/` Insert rows (Miky, 16 October), after the shared Format section. An edit drops File and Urgent itself.
 const INSERT = [commentBoxRows.file, commentBoxRows.mention, commentBoxRows.urgent, commentBoxRows.reference]
 
-/** The box's upload: the file goes on the relay at once, and its `imeta` is what the send names (COMM-6). */
+/**
+ * The box's upload: the file goes on the relay at once, and its `imeta` is what the send names (COMM-6). A refusal is
+ * handed on as it came, and the kit's card says it; the kit also stops a file over the relay's limit before this.
+ */
 async function upload(file: File): Promise<UploadAnswer> {
   const answer = await uploadFile(file)
   return answer.ok ? { accepted: true, value: answer.file } : { accepted: false, reason: answer.reason }
 }
+
+/**
+ * A page with no team yet has nowhere to file a comment. None of the shared reasons names that, so it is said as
+ * "something went wrong, try again".
+ */
+const NO_TEAM = { cause: 'unknown' } as const
+
+/**
+ * A refused delete, resolve or reopen, said where the kit has no sentence of its own around it (the delete question,
+ * the Resolve dialog, a toast): "Not deleted: <reason>.", as the box says "Not sent:" and Peek "Not deleted:".
+ */
+const refusalSentence = (what: 'deleted' | 'resolved' | 'reopened', reason: unknown): string => `Not ${what}: ${refusalReason(reason)}.`
 
 /** The files a send names, in the order they were attached: the box sends only uploaded ones, each with the `imeta` `upload` answered. */
 const filesOf = (files: readonly BoxFile[]): Imeta[] => files.flatMap((f) => (f.value ? [f.value as Imeta] : []))
@@ -286,8 +302,8 @@ function Box({
     const attached = filesOf(files)
     if (editing) {
       // A file added or taken off while editing (Miky, 26 Oct, PEEKM-4) rides the edit as the whole set, and none takes every one off.
+      // The kit keeps Save off while the edit holds no words and no file.
       const before = editing.comment.files
-      if (!composerText(body as EditorDocument).text && attached.length === 0) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
       const same = attached.length === before.length && attached.every((file, i) => file.x === before[i].x)
       // The card it had stays unless ✕ took it off under the box; with none, a file the edit names first adds its card, unless ✕ took that off.
       const read = linksOfBox(body, here, previous, folded)
@@ -457,7 +473,6 @@ interface EntryProps {
  */
 function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, onReact, own, closed }: EntryProps): ConversationEntryProps {
   const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
-  const [refused, setRefused] = useState<string>()
   // A refused delete keeps the question open and says why, under it (the kit's `deleteRefused`).
   const [deleteRefused, setDeleteRefused] = useState<string>()
   // A refused ✕ leaves the card and says why, as a refused reaction does.
@@ -468,25 +483,23 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     if (!own || removing.current) return
     removing.current = true
     setRemoveRefused(null)
-    const result = await own.onRemoveCard(value).catch(() => ({ ok: false, reason: 'it did not go through' }) as const)
+    const result = await own.onRemoveCard(value).catch((error: unknown) => ({ ok: false, reason: error }) as const)
     removing.current = false
-    if (!result.ok) setRemoveRefused(result.reason)
+    if (!result.ok) setRemoveRefused(refusalReason(result.reason))
   }
   // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
   const pending = useRef(false)
   useEffect(() => {
     pending.current = false
   }, [comment])
-  const toggle = async (emoji: string) => {
-    if (!onReact || pending.current) return
+  // The relay's answer goes back to the kit's card, which says a refusal ("Not reacted: …") and keeps it until the next reaction.
+  const toggle = async (emoji: string): Promise<{ accepted: true } | { accepted: false; reason: unknown } | undefined> => {
+    if (!onReact || pending.current) return undefined
     pending.current = true
-    setRefused(undefined)
-    const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine).catch(() => ({ ok: false, reason: 'it did not go through' }) as const)
-    if (!result.ok) {
-      pending.current = false
-      // The kit says the sentence round it, "Not reacted: … ." — so a reason's own full stop goes, as Ship's does.
-      setRefused(result.reason.replace(/\.+$/, ''))
-    }
+    const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
+    if (result.ok) return { accepted: true }
+    pending.current = false
+    return { accepted: false, reason: result.reason }
   }
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   return {
@@ -495,8 +508,7 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     time: whenOf(comment.at, now),
     at: comment.at,
     edited: comment.edited ? `Edited${comment.editedAt === undefined ? '' : ` ${inSentence(whenOf(comment.editedAt, now))}`}` : undefined,
-    reactions: { reactions, options: REACTION_OPTIONS, nameOf: (pubkey) => named(pubkey) ?? 'Someone', viewer, onToggle: onReact ? (emoji) => void toggle(emoji) : undefined },
-    reactionRefused: refused,
+    reactions: { reactions, options: REACTION_OPTIONS, nameOf: (pubkey) => named(pubkey) ?? 'Someone', viewer, onToggle: onReact ? toggle : undefined },
     readOnly: closed,
     own: !!own,
     // The column holds it, so a sign-in ending can put it back (AUT-5).
@@ -522,7 +534,7 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
       (async () => {
         setDeleteRefused(undefined)
         const result = await own.onDelete()
-        if (!result.ok) setDeleteRefused(result.reason)
+        if (!result.ok) setDeleteRefused(refusalSentence('deleted', result.reason))
         return result.ok
       }),
     deleteRefused,
@@ -831,7 +843,7 @@ function ThreadComment(props: ThreadProps) {
         ? async (note) => {
             setResolveRefused(undefined)
             const result = await onResolve(note)
-            if (!result.ok) setResolveRefused(result.reason)
+            if (!result.ok) setResolveRefused(refusalSentence('resolved', result.reason))
             return result.ok
           }
         : undefined,
@@ -1069,7 +1081,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const commented = useMemo(() => (address && folder ? { address, folder } : null), [address, folder])
   const send = useCallback(
     async (written: Written): Promise<WriteResult> => {
-      if (!commented) return { ok: false, reason: 'this page is not in a team yet' }
+      if (!commented) return { ok: false, reason: NO_TEAM }
       const result = await postComment(commented, written, draft ?? undefined)
       if (result.ok) reread()
       return result
@@ -1077,14 +1089,14 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     [commented, draft, reread],
   )
   const reply = async (thread: Thread, written: Written): Promise<WriteResult> => {
-    if (!commented) return { ok: false, reason: 'this page is not in a team yet' }
+    if (!commented) return { ok: false, reason: NO_TEAM }
     const result = await postReply(commented, thread, written)
     if (result.ok) reread()
     return result
   }
   // A refused resolve is said in the kit's dialog, which stays open; a refused reopen has no dialog, so a toast says it.
   const resolve = async (thread: Thread, next: boolean, note?: string): Promise<WriteResult> => {
-    if (!commented) return { ok: false, reason: 'this page is not in a team yet' }
+    if (!commented) return { ok: false, reason: NO_TEAM }
     const result = await setResolved(commented, thread, next, note)
     if (!result.ok) return result
     if (next && active === thread.id) setActive(null)
@@ -1093,7 +1105,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   }
   const reopen = async (thread: Thread) => {
     const result = await resolve(thread, false)
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: refusalSentence('reopened', result.reason), type: 'error' })
   }
   const viewer = viewerPubkey() ?? undefined
   const toggleReaction = async (comment: CommentItem, emoji: string, mine?: string): Promise<WriteResult> => {

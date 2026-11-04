@@ -1,3 +1,4 @@
+import { tooLarge, uploadRefusal } from '@estiva-app/conversation'
 import { fetchBlob, imetaFor, uploadBlob, type Imeta } from '@estiva-app/protocol'
 import { sessionEnded } from '../auth/estivaId'
 import { relaySigner } from './bridge'
@@ -63,8 +64,8 @@ export function clearBlobCache(): void {
   cache.clear()
 }
 
-/** What an upload answered: the file's `imeta`, or what the box says under the file. */
-export type Uploaded = { ok: true; file: Imeta } | { ok: false; reason: string }
+/** What an upload answered: the file's `imeta`, or why not as it came — the error, or `{ cause }` — for `uploadRefusal` to say. */
+export type Uploaded = { ok: true; file: Imeta } | { ok: false; reason: unknown }
 
 /**
  * Put a file on the relay and describe it as the `imeta` a comment names it
@@ -75,7 +76,7 @@ export type Uploaded = { ok: true; file: Imeta } | { ok: false; reason: string }
  */
 export async function uploadFile(file: File): Promise<Uploaded> {
   const relay = relaySigner()
-  if (!relay) return { ok: false, reason: 'Signed out' }
+  if (!relay) return { ok: false, reason: { cause: 'signed-out' } }
   try {
     const blob = await uploadBlob({
       relayUrl: relay.relayUrl,
@@ -87,10 +88,10 @@ export async function uploadFile(file: File): Promise<Uploaded> {
     })
     return { ok: true, file: imetaFor(blob, { filename: file.name }) }
   } catch (error) {
-    // The relay's words name its limits in bytes: the console keeps them, the person gets what it means.
+    // The relay's words name its limits in bytes: the console keeps them, and `uploadRefusal` says what they mean.
     console.warn('[relay] upload refused', file.name, error)
     // Estiva ID refused to sign because the sign-in ended: signing in again is what helps, as a send says (bridge's signingFailure).
-    return { ok: false, reason: sessionEnded() ? 'Sign in again' : uploadRefusal(error) }
+    return { ok: false, reason: sessionEnded() ? { cause: 'signed-out' } : error }
   }
 }
 
@@ -100,16 +101,10 @@ export async function uploadFile(file: File): Promise<Uploaded> {
  * words the editor shows under the page (LED-2).
  */
 export async function uploadIntoText(file: File): Promise<Imeta> {
+  // A file over the relay's limit is stopped before it uploads, as the comment box does (ONE-4).
+  const over = tooLarge(file)
+  if (over) throw new Error(`${file.name}: ${over}`)
   const answer = await uploadFile(file)
-  if (!answer.ok) throw new Error(`${file.name}: ${answer.reason}`)
+  if (!answer.ok) throw new Error(`${file.name}: ${uploadRefusal(answer.reason, file)}`)
   return answer.file
-}
-
-/** The words under a file the relay did not take, short enough for the file's card. `uploadBlob` throws `upload failed: <status> <body>`. */
-export function uploadRefusal(error: unknown): string {
-  const status = Number(/^upload failed: (\d{3})/.exec(error instanceof Error ? error.message : '')?.[1])
-  if (status === 413) return 'Too large'
-  if (status === 415) return 'Type not accepted'
-  if (status === 401 || status === 403) return 'Not allowed'
-  return 'Could not upload'
 }

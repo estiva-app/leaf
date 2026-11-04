@@ -91,8 +91,14 @@ export interface Resolved {
   at: number
 }
 
-/** What a write tells the person: `ok`, or the plain words for a refusal. */
-export type WriteResult = { ok: true } | { ok: false; reason: string }
+/**
+ * What a write answered: `ok`, or the refusal as it came — the relay's words, an error, or `{ cause }` for Leaf's own —
+ * which the kit says in `@estiva-app/conversation`'s plain words (`refusalReason`), the same in every app (ONE-4).
+ */
+export type WriteResult = { ok: true } | { ok: false; reason: unknown }
+
+/** A write with no sign-in to sign it: the kit says "you are signed out; sign in again". */
+const SIGNED_OUT = { cause: 'signed-out' } as const
 
 /** A document's threads, and what the reaction read left out (SPEC §6.6 makes saying so a MUST). */
 export interface Threads {
@@ -194,15 +200,13 @@ async function deletedRoots(missing: string[], replies: Record<string, SignedEve
   })
 }
 
-async function send(unsigned: Parameters<typeof publish>[0] | null, refused: string, signedOut = 'Sign in to comment.'): Promise<WriteResult> {
-  if (!unsigned) return { ok: false, reason: signedOut }
+/** Publish `unsigned`, or answer signed out when there is none. A refusal is handed on as the relay said it; the console keeps it too. */
+async function send(unsigned: Parameters<typeof publish>[0] | null): Promise<WriteResult> {
+  if (!unsigned) return { ok: false, reason: SIGNED_OUT }
   const result = await publish(unsigned)
   if (result.ok) return { ok: true }
-  // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] write refused', unsigned.kind, result)
-  // Too fast is the refusal a person can do something about: they wait and try again (NIP-01's `rate-limited:` prefix).
-  if (/^rate-limited/.test(result.reason ?? '')) return { ok: false, reason: 'too many at once, try again in a moment' }
-  return { ok: false, reason: refused }
+  return { ok: false, reason: result.reason }
 }
 
 /** Where a comment is: a run of blocks, and the words where the selection starts and ends unless it covers them whole (SPEC §13.6). */
@@ -242,10 +246,6 @@ async function earnedTags(written: Written, own: { file: string; parent?: string
   ]
 }
 
-// The comment box says these after "Not sent:", and then that the text is back in the box.
-const NOT_SENT = 'it did not go through'
-const SIGNED_OUT = 'you are signed out'
-
 /**
  * A comment on the document — on a selection or on whole blocks when `anchor` is given (SPEC §13.6), else on the whole of it —
  * in the document's own Folder.
@@ -255,10 +255,10 @@ const SIGNED_OUT = 'you are signed out'
 export async function postComment(doc: Commented, written: Written, anchor?: Anchor): Promise<WriteResult> {
   // Signed out says so at once, not after the links' answers (up to 5 s), as an edit does.
   const pubkey = viewerPubkey()
-  if (!pubkey) return send(null, NOT_SENT, SIGNED_OUT)
+  if (!pubkey) return send(null)
   const place = anchor ? [blockRunTag(anchor.blocks), ...(anchor.quote ? [quoteTag(anchor.quote)] : [])] : []
   const tags = [...place, ...(await earnedTags(written, { file: doc.address })), ...embedTagsOf(written.cards ?? [])]
-  return send(buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }), NOT_SENT, SIGNED_OUT)
+  return send(buildComment(pubkey, Date.now(), { about: doc.address, folder: doc.folder, body: written.text, files: written.files, tags }))
 }
 
 /**
@@ -273,19 +273,15 @@ export async function postComment(doc: Commented, written: Written, anchor?: Anc
 export async function postReply(doc: Commented, thread: Thread, written: Written): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const root = thread.root
-  if (!root) return { ok: false, reason: 'the comment was deleted' }
-  if (!pubkey) return send(null, NOT_SENT, SIGNED_OUT)
+  // A send on a deleted message says "you can no longer write here" (ui 0.106): "deleted" is an edit's or a reaction's.
+  if (!root) return { ok: false, reason: { cause: 'no-access' } }
+  if (!pubkey) return send(null)
   const tags = [...(await earnedTags(written, { file: doc.address, parent: thread.id })), ...embedTagsOf(written.cards ?? [])]
   const folder = root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
   return send(
     buildReply(pubkey, Date.now(), { comment: { id: thread.id, anchor: doc.address, author: root.by, place: placeOf(root.event) }, folder, body: written.text, files: written.files, tags }),
-    NOT_SENT,
-    SIGNED_OUT,
   )
 }
-
-// The edit box says this after "Not saved:".
-const NOT_SAVED = 'it did not go through'
 
 /**
  * Your comment or reply, reworded: the `kind:40003` Peek and Ship write (SPEC
@@ -312,13 +308,14 @@ async function sendEdit(comment: CommentItem, body: string, embeds?: readonly Em
   const pubkey = viewerPubkey()
   const tagged = (name: string) => comment.event.tags.find((t) => t[0] === name)?.[1]
   const folder = tagged('h')
-  if (!folder) return { ok: false, reason: NOT_SAVED }
-  if (!pubkey) return send(null, NOT_SAVED, SIGNED_OUT)
+  // A comment read with no Folder cannot be edited where it was filed: nothing a person can do about it.
+  if (!folder) return { ok: false, reason: { cause: 'unknown' } }
+  if (!pubkey) return send(null)
   const changes = { ...(embeds ? { embeds } : {}), mediaTags: files.map(imetaTag) }
   const own = { file: tagged('A'), parent: tagged('e') }
   const linked = await links.tagsFor(toRenderTree(body, 'marker'), own, { edit: true })
   const edit = buildEdit(pubkey, Date.now(), { channelUuid: folder, targetEventId: comment.id, body, ...changes })
-  return send({ ...edit, tags: [...edit.tags, ...linked] }, NOT_SAVED, SIGNED_OUT)
+  return send({ ...edit, tags: [...edit.tags, ...linked] })
 }
 
 /**
@@ -336,7 +333,7 @@ export function removeCard(comment: CommentItem, value: string): Promise<WriteRe
 /** Delete your comment or reply: a `kind:5` naming it, as Peek's and Ship's Delete do. Its replies stay (SPEC §6.5). */
 export function deleteComment(comment: CommentItem): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: comment.id }) : null, 'Could not delete it. Try again.', SIGNED_OUT)
+  return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: comment.id }) : null)
 }
 
 /**
@@ -350,12 +347,8 @@ export function setResolved(doc: Commented, thread: Thread, resolved: boolean, n
   const rationale = resolved && note ? { rationale: note } : {}
   return send(
     pubkey ? buildResolution(pubkey, Date.now(), { channelUuid: folder, targetEventId: thread.id, action: resolved ? 'resolved' : 'reopened', ...rationale }) : null,
-    resolved ? 'Could not resolve it. Try again.' : 'Could not reopen it. Try again.',
   )
 }
-
-// The card says this after "Not reacted:".
-const NOT_REACTED = 'it did not go through'
 
 /**
  * React to a comment or a reply: the `kind:7` Ship and Peek write, with no
@@ -363,13 +356,13 @@ const NOT_REACTED = 'it did not go through'
  */
 export function react(comment: CommentItem, emoji: string): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  return send(pubkey ? buildReaction(pubkey, Date.now(), { targetEventId: comment.id, emoji }) : null, NOT_REACTED, SIGNED_OUT)
+  return send(pubkey ? buildReaction(pubkey, Date.now(), { targetEventId: comment.id, emoji }) : null)
 }
 
 /** Take your reaction back: a `kind:5` naming the reaction's own event, as Ship's and Peek's do. */
 export function unreact(reactionId: string): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: reactionId }) : null, NOT_REACTED, SIGNED_OUT)
+  return send(pubkey ? buildDeletion(pubkey, Date.now(), { targetEventId: reactionId }) : null)
 }
 
 /** The kinds that change what the column shows: a comment, a reply, an edit, a resolution, a reaction, and a deletion of a comment or a reaction. */

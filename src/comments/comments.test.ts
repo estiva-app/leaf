@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fileReference, messageReference } from '@estiva-app/conversation'
+import { fileReference, messageReference, refusalReason } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 
 const ME = 'a'.repeat(64)
@@ -17,7 +17,7 @@ vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => (relay.signedIn ? ME : null),
 }))
 
-import { deleteComment, editComment, postComment, postReply, readThreads, removeCard, setResolved, type CommentItem, type Thread } from './comments'
+import { deleteComment, editComment, postComment, postReply, readThreads, removeCard, setResolved, type CommentItem, type Thread, type WriteResult } from './comments'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const AUTHOR = 'b'.repeat(64)
@@ -167,9 +167,11 @@ describe('a comment from the column', () => {
     expect(sent().tags.filter((t) => t[0] === 'imeta')).toEqual([expect.arrayContaining([`url ${pdf.url}`])])
   })
 
-  it('gives plain words when the relay refuses, for the box to say after "Not sent:"', async () => {
+  it('hands the relay’s refusal on as it came, for the kit to say in the shared words after "Not sent:" (ONE-4)', async () => {
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 1111 not allowed' })
-    expect(await postComment(DOC, { text: 'x' }, { blocks: ['b1'] })).toEqual({ ok: false, reason: 'it did not go through' })
+    const answer = await postComment(DOC, { text: 'x' }, { blocks: ['b1'] })
+    expect(answer).toEqual({ ok: false, reason: 'blocked: kind 1111 not allowed' })
+    expect(answer.ok ? 'sent' : refusalReason(answer.reason)).toBe('you can no longer write here')
   })
 })
 
@@ -235,14 +237,11 @@ describe('what a link in a comment tags', () => {
     const D4 = '44444444-4444-4444-8444-444444444444'
     const root = comment([], 'Too long?')
     const thread: Thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
-    const answers: unknown[] = []
+    const answers: WriteResult[] = []
     void postComment(DOC, { text: `see ${urlOf('slow', D4)}` }).then((r) => answers.push(r))
     void postReply(DOC, thread, { text: `see ${urlOf('slow', D4)}` }).then((r) => answers.push(r))
     await vi.advanceTimersByTimeAsync(0)
-    expect(answers).toEqual([
-      { ok: false, reason: 'you are signed out' },
-      { ok: false, reason: 'you are signed out' },
-    ])
+    expect(answers.map((a) => (a.ok ? 'sent' : refusalReason(a.reason)))).toEqual(['you are signed out; sign in again', 'you are signed out; sign in again'])
     await vi.advanceTimersByTimeAsync(5_000)
   })
 
