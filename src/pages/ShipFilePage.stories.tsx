@@ -118,9 +118,6 @@ export const Project: Story = { args: { file: shipProject() } }
  */
 export const EmptyText: Story = { args: { file: shipIssue({ description: false }) } }
 
-/** While the file is read: the page's skeleton, as for a page. */
-export const Loading: Story = { args: { file: shipIssue() }, render: () => <FilePage file={null} loading /> }
-
 /** Archived in Ship: title, summary and text read-only; the comments only show, with the line every app shows in the box's place. */
 export const Archived: Story = { args: { file: shipIssue({ archived: true }) } }
 

@@ -75,6 +75,9 @@ export const LeafPage: Story = {
   },
 }
 
+/** While a file is read, before Leaf knows what it is: a page in its shape, with the comments column beside it (ONE-5, step 5). */
+export const Loading: Story = { args: { file: null, loading: true } }
+
 /** The side-panel button pressed: the Overview in the comments' place, empty for now. Press it again and the comments come back. */
 export const OverviewOpen: Story = {
   play: async ({ canvasElement }) => {
