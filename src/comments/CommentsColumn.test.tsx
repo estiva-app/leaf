@@ -31,7 +31,7 @@ vi.mock('../relay/bridge', () => ({
 
 /* A file's bytes on the relay: the upload answers with its imeta or a reason, and a read with an object URL. Their own contract is `blobs.test.ts`. */
 const blobs = vi.hoisted(() => ({
-  upload: vi.fn<(file: File) => Promise<{ ok: true; file: Record<string, unknown> } | { ok: false; reason: string }>>(),
+  upload: vi.fn<(file: File) => Promise<{ ok: true; file: Record<string, unknown> } | { ok: false; reason: unknown }>>(),
   read: vi.fn<(url: string) => Promise<string>>(async () => 'blob:leaf/1'),
 }))
 vi.mock('../relay/blobs', () => ({ uploadFile: blobs.upload, uploadIntoText: blobs.upload, blobObjectUrl: blobs.read }))
@@ -348,12 +348,12 @@ describe('the comments column', () => {
   })
 
   it('puts your text back and says so when the relay refuses it', async () => {
-    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    publish.mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
     await open([])
     await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
     write('Comment on this document…', 'Refused words')
     sendWithEnter('Comment on this document…')
-    await waitFor(() => expect(screen.getByText('Not sent: it did not go through. Your text is back in the box.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Not sent: you can no longer write here. Your text is back in the box.')).toBeTruthy())
     expect(box('Comment on this document…').editor.getText()).toBe('Refused words')
   })
 
@@ -811,7 +811,7 @@ describe('reactions on a comment (COMM-4)', () => {
     await open([root, reaction(root.id, '👍', QA2, '7'.repeat(64))])
     publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 7 not allowed' })
     act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
-    expect(await screen.findByText('Not reacted: it did not go through.')).toBeTruthy()
+    expect(await screen.findByText('Not reacted: you can no longer write here.')).toBeTruthy()
     expect(publish.mock.calls[0][0].kind).toBe(7)
     expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('false')
   })
@@ -1037,9 +1037,9 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     await waitFor(() => expect(line(own.id)).not.toBeNull())
     await choose(own.id, 'Edit message')
     act(() => void box('Edit message').editor.chain().focus().selectAll().insertContent('Far too long?').run())
-    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    publish.mockResolvedValueOnce({ ok: false, reason: 'invalid: target event not found' })
     act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
-    expect(await screen.findByText(/Not saved: it did not go through/)).toBeTruthy()
+    expect(await screen.findByText(/^Not saved: this message was deleted, or you can no longer write here\./)).toBeTruthy()
     expect(box('Edit message').textContent).toContain('Far too long?')
   })
 
@@ -1051,11 +1051,11 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     const own = mine([], 'Too long?')
     await open([own])
     await found(() => entry(own.id))
-    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    publish.mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
     choose(own.id, 'Delete message')
     const dialog = await screen.findByRole('alertdialog')
     act(() => void fireEvent.click(within(dialog).getByRole('button', { name: 'Delete message' })))
-    expect(await within(dialog).findByText('Could not delete it. Try again.')).toBeTruthy()
+    expect(await within(dialog).findByText('You can no longer write here.')).toBeTruthy()
     expect(dialog.isConnected).toBe(true)
     expect(publish).toHaveBeenCalledTimes(1)
     expect(within(entry(own.id)!).getByText('Too long?')).toBeTruthy()
@@ -1204,7 +1204,7 @@ describe('attaching a file to a comment (COMM-6)', () => {
     expect(screen.queryByText(/cannot be taken off/)).toBeNull()
   })
 
-  it('refuses taking the only file off a comment with no words, and publishes nothing: Delete removes it', async () => {
+  it('cannot save an edit that takes the only file off a comment with no words, and publishes nothing', async () => {
     const own: SignedEvent = { ...comment([['imeta', `url ${PDF.url}`, 'm application/pdf', `x ${PDF.x}`, 'size 193', 'filename plan.pdf']], ''), pubkey: ME }
     await open([own])
     await waitFor(() => expect(entry(own.id)).not.toBeNull())
@@ -1213,18 +1213,19 @@ describe('attaching a file to a comment (COMM-6)', () => {
     while (at && !at.querySelector('input[type=file]')) at = at.parentElement
     act(() => void fireEvent.click(within(at!).getByRole('button', { name: 'Remove plan.pdf' })))
     await waitFor(() => expect(within(at!).queryByText('plan.pdf')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
     act(() => void fireEvent.click(screen.getByRole('button', { name: 'Save' })))
-    expect(await screen.findByText(/a message needs words or a file/)).toBeTruthy()
     expect(publish).not.toHaveBeenCalled()
   })
 
   it('says why a file did not upload, keeps the words, sends nothing on Enter, and sends the words once its ✕ takes it off', async () => {
-    blobs.upload.mockResolvedValue({ ok: false, reason: 'Too large' })
+    // As protocol's uploadBlob throws it, handed on by blobs.ts as it came.
+    blobs.upload.mockResolvedValue({ ok: false, reason: new Error('upload failed: 413 file too large: 99999999 bytes (max 10485760)') })
     await open([])
     await waitFor(() => expect(screen.getByText(/No comments yet/)).toBeTruthy())
     write('Comment on this document…', 'Here is the deck')
     pick(new File(['big'], 'deck.pdf', { type: 'application/pdf' }))
-    await waitFor(() => expect(within(footBox()).getByText('Too large')).toBeTruthy())
+    await waitFor(() => expect(within(footBox()).getByText('Too large: the most is 10 MB')).toBeTruthy())
     expect(screen.getByText('Remove the file that did not upload to send.')).toBeTruthy()
     sendWithEnter('Comment on this document…')
     expect(box('Comment on this document…').editor.getText()).toBe('Here is the deck')
@@ -1857,9 +1858,9 @@ describe("a thread on the kit's cards", () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
     await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
-    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    publish.mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
     const dialog = await resolveWith(onParagraph.id, 'Cut to one line.')
-    expect(await within(dialog).findByText('Could not resolve it. Try again.')).toBeTruthy()
+    expect(await within(dialog).findByText('You can no longer write here.')).toBeTruthy()
     expect(dialog.isConnected).toBe(true)
     expect((within(dialog).getByRole('textbox', { name: 'Resolution message (optional)' }) as HTMLTextAreaElement).value).toBe('Cut to one line.')
     expect(publish).toHaveBeenCalledTimes(1)
@@ -1871,9 +1872,9 @@ describe("a thread on the kit's cards", () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph])
     await waitFor(() => expect(item(onParagraph.id)).not.toBeNull())
-    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    publish.mockResolvedValueOnce({ ok: false, reason: 'rate-limited: slow down' })
     const dialog = await resolveWith(onParagraph.id, 'Cut to one line.')
-    expect(await within(dialog).findByText('Could not resolve it. Try again.')).toBeTruthy()
+    expect(await within(dialog).findByText('Too many at once, try again in a moment.')).toBeTruthy()
     // The relay keeps what it accepts, so the column's read after the write finds it.
     publish.mockImplementationOnce(async (e) => {
       relay.events = [...relay.events, { ...e, id: 'f'.repeat(64), sig: '' } as SignedEvent]
@@ -1914,10 +1915,10 @@ describe("a thread on the kit's cards", () => {
     const onParagraph = comment([['block', PARAGRAPH]], 'Too long?')
     await open([onParagraph, resolvedBy(onParagraph)])
     await waitFor(() => expect(under('Resolved', onParagraph.id)).toBe(true))
-    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked' })
+    publish.mockResolvedValueOnce({ ok: false, reason: 'error: storage unavailable' })
     reopenFrom(onParagraph.id)
     // The toast, and the line read out with it.
-    expect((await screen.findAllByText('Could not reopen it. Try again.')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Something went wrong, try again.')).length).toBeGreaterThan(0)
     expect(under('Resolved', onParagraph.id)).toBe(true)
     expect(publish).toHaveBeenCalledTimes(1)
   })

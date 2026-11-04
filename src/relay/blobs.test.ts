@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { uploadRefusal } from '@estiva-app/conversation'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 
 const RELAY = 'https://relay.test'
@@ -79,17 +80,21 @@ describe('uploading a file for a comment', () => {
     expect(answer).toEqual({ ok: true, file: expect.objectContaining({ url: `${RELAY}/media/${sha}.png`, x: sha, m: 'image/png', filename: 'shot.png' }) })
   })
 
-  it('says a file is too large when the relay refuses its size, and other refusals in plain words', async () => {
+  it('hands a refused upload on with the relay’s status and words, for the card to say in the shared words (ONE-4)', async () => {
+    const pdf = new File(['x'], 'big.pdf', { type: 'application/pdf' })
     vi.stubGlobal('fetch', vi.fn(async () => ({ status: 413, text: async () => 'file too large: 99999999 bytes (max 10485760)' })))
-    expect(await uploadFile(new File(['x'], 'big.pdf', { type: 'application/pdf' }))).toEqual({ ok: false, reason: 'Too large' })
+    const big = await uploadFile(pdf)
+    expect(big.ok ? 'uploaded' : uploadRefusal(big.reason, pdf)).toBe('Too large: the most is 10 MB')
     vi.stubGlobal('fetch', vi.fn(async () => ({ status: 500, text: async () => 'storage: io error' })))
-    expect(await uploadFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toEqual({ ok: false, reason: 'Could not upload' })
+    const broken = await uploadFile(pdf)
+    expect(broken.ok ? 'uploaded' : uploadRefusal(broken.reason, pdf)).toBe('Could not upload, try again')
   })
 
   it('says to sign in again when the upload failed because the sign-in ended', async () => {
     signed.ended = true
-    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 401, text: async () => 'unauthorized' })))
-    expect(await uploadFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toEqual({ ok: false, reason: 'Sign in again' })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 500, text: async () => 'storage: io error' })))
+    const answer = await uploadFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))
+    expect(answer.ok ? 'uploaded' : uploadRefusal(answer.reason)).toBe('Sign in again')
   })
 })
 
@@ -102,7 +107,7 @@ describe('uploading a file into a page (LED-2)', () => {
     const file = await uploadIntoText(new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
     expect(file).toMatchObject({ url: `${RELAY}/media/${file.x}.pdf`, m: 'application/pdf', filename: 'plan.pdf' })
     vi.stubGlobal('fetch', vi.fn(async () => ({ status: 413, text: async () => 'file too large' })))
-    await expect(uploadIntoText(new File(['x'], 'big.pdf', { type: 'application/pdf' }))).rejects.toThrow('big.pdf: Too large')
+    await expect(uploadIntoText(new File(['x'], 'big.pdf', { type: 'application/pdf' }))).rejects.toThrow('big.pdf: Too large: the most is 100 MB')
   })
 })
 
