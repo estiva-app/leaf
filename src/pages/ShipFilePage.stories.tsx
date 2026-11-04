@@ -11,7 +11,6 @@ import { readDocument } from '../document/save'
 import { publish, query, viewerPubkey } from '../relay/bridge'
 import { relayClient } from '../relay/client'
 import { FilePage } from './FilePage'
-import { HomePage } from './HomePage'
 import { answer, factsOf } from './fixtures/relay'
 import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, threadsOn } from './fixtures/shipFiles'
 
@@ -152,7 +151,7 @@ export const NewerSave: Story = {
   },
 }
 
-// The tree and Home: Leaf's sidebar lists pages, projects and issues, and no topics.
+// The tree: Leaf's sidebar lists pages, projects and issues, and no topics.
 
 const node = (id: string, label: string, kind: ThingKind | 'file', more: Partial<NavTreeNode> = {}): NavTreeNode => ({
   id,
@@ -176,14 +175,14 @@ const PROPOSED: NavTreeGroup[] = [
 ]
 
 /** Leaf's frame, with Home and the tree in the sidebar, as `App` draws it. */
-function Frame({ groups, home, selected, children }: { groups: NavTreeGroup[]; home?: boolean; selected?: string; children: ReactNode }) {
+function Frame({ groups, selected, children }: { groups: NavTreeGroup[]; selected?: string; children: ReactNode }) {
   return (
     <AppShell
       variant="inset"
       logo="Leaf"
       nav={
         <Sidebar>
-          <NavItem href="#" label="Home" icon={<IconHome size={16} stroke={1.5} />} active={home} />
+          <NavItem href="#" label="Home" icon={<IconHome size={16} stroke={1.5} />} />
           <NavTree title="Folders" titleActions={[{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => {} }]} groups={groups} selected={selected} />
         </Sidebar>
       }
@@ -199,43 +198,6 @@ export const InTheTree: Story = {
   render: (args) => (
     <Frame groups={PROPOSED} selected="i2">
       <FilePage {...args} />
-    </Frame>
-  ),
-}
-
-const NOW = Date.UTC(2026, 9, 20, 8)
-const TYPES: Record<string, string> = { '30850': 'Project', '30851': 'Issue' }
-const recent = (address: string, title: string, folder: string, byName: string, ago: number, summary?: string) => ({
-  address,
-  kind: Number(address.split(':')[0]),
-  type: TYPES[address.split(':')[0]],
-  naddr: `naddr1${title.length}`,
-  eventId: `e${title.length}`,
-  folderId: folder.toLowerCase(),
-  title,
-  summary,
-  folder,
-  at: NOW - ago,
-  by: MIKY,
-  byName,
-})
-
-/** Home: the issue whose text you rewrote yesterday, beside your pages. */
-export const Home: Story = {
-  args: { file: shipIssue() },
-  render: () => (
-    <Frame groups={PROPOSED} home>
-      <HomePage
-        relay="http://localhost:3000"
-        state="live"
-        now={NOW}
-        recent={[
-          recent(`30842:${MIKY}:p1`, 'Weekly notes', 'Estiva HQ', 'Miky', 40 * 60_000),
-          recent(`30851:${MIKY}:ltx-3`, 'Sidebar should not show Peek topics', 'Estiva HQ', 'Miky', 22 * 3_600_000, 'A Ship project or issue opens in Leaf with its row, and Leaf\'s tree stops listing Peek topics.'),
-          recent(`30842:${MIKY}:p2`, 'Launch plan', 'Leaf', 'Katerina', 2 * 86_400_000, 'What ships on launch day, who does what, and the order we do it in.'),
-          recent(`30850:${MIKY}:ltx`, 'Leaf edits any file\'s text', 'Estiva HQ', 'Miky', 3 * 86_400_000),
-        ]}
-      />
     </Frame>
   ),
 }
