@@ -102,7 +102,10 @@ export function useWorkspace(): Workspace {
     setFailed(false)
     // Keep what was read until its new read lands, so a reload does not blank the tree.
     setFolders((before) =>
-      listing.map((folder) => ({ folder, contents: before?.find((f) => f.folder.id === folder.id)?.contents ?? null })),
+      listing.map((folder) => {
+        const was = before?.find((f) => f.folder.id === folder.id)
+        return { folder, contents: was?.contents ?? null, archived: was?.archived }
+      }),
     )
     await Promise.all(listing.map((folder) => readInto(folder, read)))
   }, [readInto])
