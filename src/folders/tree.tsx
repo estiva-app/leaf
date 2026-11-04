@@ -44,14 +44,19 @@ export function fileKey(file: ForeignObject): string {
 /** What the tree needs besides the listings: the rows read on opening, and how to ask for them. */
 export type Expansion = Pick<Workspace, 'children' | 'opened' | 'setOpen' | 'setFolderOpen'>
 
-function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignObject[], expansion: Expansion): NavTreeNode {
-  const node: NavTreeNode = {
+/** A file's row as every sidebar list draws it: its title, its link, its kind's icon and, for another app's file, its type. */
+export function rowOf(file: ForeignObject): NavTreeNode {
+  return {
     id: fileKey(file),
     label: titleOf(file),
     href: pagePath({ ...file, title: file.slots.title?.value }),
     icon: <KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />,
     hint: isDocument(file) ? undefined : <Chip type="neutral" label={typeOf(file)} />,
   }
+}
+
+function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignObject[], expansion: Expansion): NavTreeNode {
+  const node = rowOf(file)
   const nested = nestedUnder(file).map((c) => nodeOf(c, nestedUnder, expansion))
   // A file whose app lists its own children — a project its issues — reads them when the row opens,
   // and draws them after anything filed under it in the Folder. A page's children are pages filed in
