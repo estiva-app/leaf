@@ -131,7 +131,8 @@ export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder'
     // A project read by its fields names its summary's current change, which the relay kept in order: that one change
     // is read, not every change (ALO-6).
     if ((await byFields(file.address)) && file.prevs) {
-      const current = file.prevs.summary
+      // As this tab last read or wrote it: the file a page hands in is the one it opened.
+      const current = held.get(file.address)?.prevs.summary ?? file.prevs.summary
       const [event] = await query([{ ids: [current ?? file.eventId] }])
       if (!event) return null
       return (current ? fieldsSetBy(event).find((set) => set.field === 'summary')?.value : value(event, 'summary')) ?? ''
