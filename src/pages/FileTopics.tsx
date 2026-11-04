@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { IconPlus, IconX } from '@tabler/icons-react'
 import { Button, Chip, CommandPalette, EmptyState, CommandPaletteSearch, IconButton, KindIcon, SkeletonBar, useToast, type CommandPaletteRow } from '@estiva-app/ui'
-import { readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
+import { heldTopics, readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
 import { isKnownSpace, topicPath } from '../topics/topicLinks'
 import { useFileTopics, type FileTopicsState } from '../document/useFileTopics'
+
+const subscribeTopics = (listener: () => void) => heldTopics.subscribe(listener)
+const topicsNow = () => heldTopics.snapshot()
 
 /** A topic's address kind: a topic lists no other topic (Miky, TOP-3 kickoff), so a topic has no Topics row. */
 const TOPIC = '30840:'
@@ -59,6 +62,8 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
   choicesNow?: () => TopicChoices | undefined
 }) {
   const [picking, setPicking] = useState(false)
+  // Drawn again when the topics read lands, so a space's chip goes to Peek once the read knows it is one.
+  useSyncExternalStore(subscribeTopics, topicsNow)
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-2 text-body-2" data-file-topics>
       <span className="text-text-secondary">Topics</span>

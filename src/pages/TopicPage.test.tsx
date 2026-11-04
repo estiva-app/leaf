@@ -24,11 +24,13 @@ function relay(filters: Filter[]): SignedEvent[] {
     Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1])))
   return held.filter((e) => filters.some((f) => matches(e, f)))
 }
-vi.mock('../relay/bridge', () => ({
-  viewerPubkey: () => ME,
-  query: async (filters: Filter[]) => relay(filters),
-  queryAll: async (filters: Filter[]) => relay(filters),
-}))
+/* When set, the relay refuses every read: a busy relay or a dropped socket. */
+let down = false
+const answer = async (filters: Filter[]) => {
+  if (down) throw new Error('rate-limited: slow down')
+  return relay(filters)
+}
+vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, queryAll: answer }))
 // A fresh cache, as Leaf's own: Peek's manifest names where the topic's conversation is.
 vi.mock('../relay/manifests', async () => {
   const { createProjectionCache } = await import('@estiva-app/interop')
@@ -48,6 +50,7 @@ vi.mock('@estiva-app/interop', async (original) => {
 
 const { TopicPage } = await import('./TopicPage')
 const { resetTopicChoicesForTests } = await import('../document/fileTopics')
+const { projections } = await import('../relay/manifests')
 
 let n = 0
 const sign = (e: UnsignedEvent): SignedEvent => ({ ...e, id: `e${++n}`.padStart(64, '0'), sig: '' }) as SignedEvent
@@ -98,7 +101,10 @@ beforeEach(() => {
     }),
   ]
   outside = {}
+  down = false
   resetTopicChoicesForTests()
+  // Each case publishes its own manifests: what an earlier case's read remembered about them is forgotten.
+  projections.clear()
 })
 afterEach(cleanup)
 
@@ -171,6 +177,35 @@ describe("a topic's page in Leaf", () => {
     show(d)
     await waitFor(() => expect(replace).toHaveBeenCalledWith(`https://peek.estiva.app/topic/bugs-${d}`))
     expect(screen.queryByRole('heading', { name: 'Bugs' })).toBeNull()
+  })
+
+  it("says the topic didn't load, not that it can't be opened, when the read for a topic made since fails", async () => {
+    const { heldTopics, loadTopics } = await import('../document/fileTopics')
+    // The tab already holds a read from before the topic was made, as after Add to topic.
+    await heldTopics.reload(loadTopics)
+    const d = topic('Made since', [])
+    down = true
+    show(d)
+    expect(await screen.findByText('This topic didn’t load.')).toBeTruthy()
+    expect(screen.queryByText("You can't open this topic")).toBeNull()
+    down = false
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('heading', { name: 'Made since' })).toBeTruthy()
+  })
+
+  it('draws the page without a Peek link when the newest conversation app publishes a link that does not parse', async () => {
+    held.push(
+      sign({
+        kind: 31990,
+        pubkey: 'd'.repeat(64),
+        created_at: 1_800_000_000,
+        tags: [['d', 'planted'], ['web', 'https://a b/<bech32>', 'naddr']],
+        content: JSON.stringify({ name: 'Planted', aspect: 'conversation' }),
+      }),
+    )
+    show(topic('Widgets', []))
+    expect(await screen.findByRole('heading', { name: 'Widgets' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Conversation in Peek/ })).toBeNull()
   })
 
   it("says it can't be opened when no topic the reader can read has that id", async () => {

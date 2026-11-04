@@ -60,12 +60,17 @@ export function useTopicPage(
   const topic = held.value ? topicOfD(held.value, d) : undefined
   // A read this open made has every topic the reader can read; only one held from before is read again.
   const [heldAtOpen] = useState(() => !!heldTopics.snapshot().value)
-  const [readAgain, setReadAgain] = useState<'landed'>()
+  const [readAgain, setReadAgain] = useState<'landed' | 'failed'>()
   const askedAgain = useRef(false)
+  // A failed read keeps the held answer, so whether it landed is whether the answer changed: "didn't load", not "can't open".
+  const readOnceMore = () => {
+    const before = heldTopics.snapshot().value
+    void heldTopics.reload(loadTopics).then(() => setReadAgain(heldTopics.snapshot().value !== before ? 'landed' : 'failed'))
+  }
   useEffect(() => {
     if (!held.value || topic || !heldAtOpen || askedAgain.current) return
     askedAgain.current = true
-    void heldTopics.reload(loadTopics).finally(() => setReadAgain('landed'))
+    readOnceMore()
   }, [held.value, topic, heldAtOpen])
 
   const [attempt, setAttempt] = useState(0)
@@ -87,13 +92,16 @@ export function useTopicPage(
   }, [topic, listedHere, attempt, treeRead])
 
   const retry = () => {
-    if (!topic) void heldTopics.reload(loadTopics)
-    else setAttempt((n) => n + 1)
+    if (topic) return setAttempt((n) => n + 1)
+    if (readAgain === 'failed') {
+      setReadAgain(undefined)
+      readOnceMore()
+    } else void heldTopics.reload(loadTopics)
   }
 
   if (!topic) {
     if (held.value && (!heldAtOpen || readAgain === 'landed')) return { state: 'unavailable', retry }
-    return { state: held.error && !held.value ? 'failed' : 'loading', retry }
+    return { state: (held.error && !held.value) || readAgain === 'failed' ? 'failed' : 'loading', retry }
   }
   const title = topicTitleOf(topic)
   const summary = topic.object.slots.subtitle?.value?.trim()

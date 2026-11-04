@@ -87,7 +87,7 @@ export function TopicPage({
                     {files.live.length > 0 ? (
                       <Rows files={files.live} />
                     ) : (
-                      <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'Nothing listed yet.'} />
+                      <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />
                     )}
                     {files.archived.length > 0 &&
                       (showArchived || files.live.length === 0 ? (

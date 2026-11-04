@@ -206,6 +206,10 @@ describe('a topic linked in a Leaf page or a comment (LTN-3)', () => {
     expect(opens('chip', `https://peek.estiva.app/topic/launch-chat-${D}`)).toBe(page)
   })
 
+  it('still draws the page, with the topic opening here, when the link it was written as does not parse', () => {
+    expect(opens('chip', 'https://[')).toBe(`/topic/launch-chat-${D}`)
+  })
+
   it('opens a link to one message in the topic as written, in Peek, which shows it', () => {
     const message = `https://peek.estiva.app/topic/launch-chat-${D}?thread=${'e'.repeat(64)}`
     expect(opens('chip', message)).toBe(message)

@@ -23,8 +23,19 @@ export function isTopicAddress(address: string | undefined): address is string {
  * changing the host. Absent when Peek's manifest gave no `https:` link: it comes from a manifest anyone may publish.
  */
 export function topicInPeek(openUrl: string | undefined, address: string, title: string): string | undefined {
-  if (!openUrl || !/^https:\/\//i.test(openUrl)) return undefined
-  return `${new URL(openUrl).origin}/topic/${objectRef(dOf(address), title)}`
+  const url = parsed(openUrl)
+  if (!url || url.protocol !== 'https:') return undefined
+  return `${url.origin}/topic/${objectRef(dOf(address), title)}`
+}
+
+/** A URL from the relay (a manifest's template, a page's written link), or `undefined` where it does not parse: never a throw while a page draws. */
+function parsed(url: string | undefined): URL | undefined {
+  if (!url) return undefined
+  try {
+    return new URL(url)
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -49,10 +60,8 @@ export function isKnownSpace(address: string): boolean {
  */
 export function topicOpener(file: Pick<ForeignObject, 'address'> & { slots?: ForeignObject['slots'] }, written?: string): string | undefined {
   if (!isTopicAddress(file.address) || isKnownSpace(file.address)) return undefined
-  if (written && /^https?:\/\//i.test(written)) {
-    const url = new URL(written)
-    if (url.searchParams.has('thread') || (url.hash.length >= 2 && !url.hash.startsWith('#/'))) return undefined
-  }
+  const url = written && /^https?:\/\//i.test(written) ? parsed(written) : undefined
+  if (url && (url.searchParams.has('thread') || (url.hash.length >= 2 && !url.hash.startsWith('#/')))) return undefined
   const title = file.slots?.title
   return topicPath(file.address, title && !title.isPubkey ? title.value : undefined)
 }
