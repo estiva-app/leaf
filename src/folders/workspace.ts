@@ -108,7 +108,7 @@ export async function createDocument(args: {
   const summary = summaryText(args.summary ?? '')
   if (summary) root.tags.push(['summary', summary])
   const made = await publish(root)
-  if (!made.ok) return { ok: false, made: false, reason: plainly(made, 'The document could not be made in that Folder. Try again.') }
+  if (!made.ok) return { ok: false, made: false, reason: plainly(made, 'The document could not be made in that team. Try again.') }
   const address = `${KIND.DOCUMENT}:${pubkey}:${fileId}`
   const naddr = encodeNaddr({ kind: KIND.DOCUMENT, pubkey, identifier: fileId, relays: [] })
   const listed = await listDocument({ folder: args.folder, address })
@@ -118,10 +118,10 @@ export async function createDocument(args: {
 /** Add a document that exists to its Folder's listing: the second half of {@link createDocument}, and its retry. */
 export async function listDocument(args: { folder: string; address: string }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const pubkey = viewerPubkey()
-  if (!pubkey) return { ok: false, reason: 'Sign in to add it to the Folder.' }
+  if (!pubkey) return { ok: false, reason: 'Sign in to add it to the team.' }
   for (const event of planPlaceFile(pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: true })) {
     const result = await publish(event)
-    if (!result.ok) return { ok: false, reason: plainly(result, 'The Folder did not take it. Try again.') }
+    if (!result.ok) return { ok: false, reason: plainly(result, 'The team did not take it. Try again.') }
   }
   return { ok: true }
 }

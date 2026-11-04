@@ -81,11 +81,11 @@ export function NewDocumentDialog({
       onClose={close}
     >
       {folders.length === 0 ? (
-        <EmptyState scope="section" message="There is no Folder to put a document in yet." />
+        <EmptyState scope="section" message="There is no team to put a document in yet." />
       ) : (
         <>
           <p className="text-body-2 text-text-secondary">
-            {under ? `Everyone who can read ${under.title} can read it.` : `Everyone in ${where?.name ?? 'the Folder'} can read it.`}
+            {under ? `Everyone who can read ${under.title} can read it.` : `Everyone in ${where?.name ?? 'the team'} can read it.`}
           </p>
           <Field label="Title">
             <TextInput value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What is it about?" aria-label="Document title" autoFocus />
@@ -96,11 +96,11 @@ export function NewDocumentDialog({
             <SummaryCount text={summary} />
           </Field>
           {!under && (
-            <Field label="Folder">
+            <Field label="Team">
               <Select
                 value={folder}
                 onChange={setFolder}
-                ariaLabel="Folder"
+                ariaLabel="Team"
                 options={folders.map((f) => ({ value: f.id, label: f.name ?? f.id }))}
               />
             </Field>

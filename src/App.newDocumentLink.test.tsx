@@ -48,7 +48,7 @@ const { App } = await import('./App')
 /** The link as another app would write it; `route.test.ts` checks `newDocumentPath` writes the same. */
 const newDocumentPath = (folder: string) => `/new?folder=${encodeURIComponent(folder)}`
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
-const REFUSAL = 'You can’t add a document to that Folder.'
+const REFUSAL = 'You can’t add a document to that team.'
 
 beforeEach(() => {
   published.length = 0
@@ -98,7 +98,7 @@ describe('a link to New document in a Folder', () => {
     window.history.replaceState(null, '', newDocumentPath(QA))
     render(<App />)
 
-    await waitFor(() => expect(screen.queryByText('Your Folders could not be read. Reload to try again.')).not.toBeNull())
+    await waitFor(() => expect(screen.queryByText('Your teams could not be read. Reload to try again.')).not.toBeNull())
     // A refusal replaces the link with Home; the toast region outlives a render, so the address is what tells.
     expect(`${window.location.pathname}${window.location.search}`).toBe(newDocumentPath(QA))
   })

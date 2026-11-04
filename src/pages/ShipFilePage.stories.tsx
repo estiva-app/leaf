@@ -184,7 +184,7 @@ function Frame({ groups, selected, children }: { groups: NavTreeGroup[]; selecte
       nav={
         <Sidebar>
           <NavItem href="#" label="Home" icon={<IconHome size={16} stroke={1.5} />} />
-          <NavTree title="Folders" titleActions={[{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => {} }]} groups={groups} selected={selected} />
+          <NavTree title="Teams" titleActions={[{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => {} }]} groups={groups} selected={selected} />
         </Sidebar>
       }
     >

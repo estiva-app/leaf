@@ -31,7 +31,7 @@ const FOLDER = '39000'
 export function manifestContent() {
   return {
     name: 'Leaf',
-    about: 'Documents in your Folders, written together by everyone in the Folder.',
+    about: 'Documents in your teams, written together by everyone in the team.',
     /*
       Leaf is also the document app (SPEC §7.8, LTX-4): it writes the title,
       summary and text of any file whose own app shares them, as Peek shows
@@ -67,8 +67,8 @@ export function manifestContent() {
         id: 'add-document',
         label: 'New document',
         description:
-          'Start a document in a Folder: a title and, if you like, a one- or two-sentence summary. Everyone who ' +
-          'can read the Folder can read and change it, and the Folder lists it straight away. Write its text ' +
+          'Start a document in a team: a title and, if you like, a one- or two-sentence summary. Everyone who ' +
+          'can read the team can read and change it, and the team lists it straight away. Write its text ' +
           'afterwards with describe.',
         effect: 'writes',
         appliesTo: FOLDER,
@@ -95,7 +95,7 @@ export function manifestContent() {
       {
         id: 'rename',
         label: 'Rename',
-        description: 'Give this document a new title. A change, so anyone in its Folder may.',
+        description: 'Give this document a new title. A change, so anyone in its team may.',
         effect: 'writes',
         appliesTo: [DOCUMENT],
         emits: { kind: CHANGE, field: 'title' },
@@ -106,7 +106,7 @@ export function manifestContent() {
         label: 'Edit',
         description:
           "Replace this document's text with new text, as a whole block document. A change, so anyone in its " +
-          'Folder may; the later save wins. Save when the person leaves the text, never per keystroke.',
+          'team may; the later save wins. Save when the person leaves the text, never per keystroke.',
         effect: 'writes',
         appliesTo: [DOCUMENT],
         emits: { kind: CHANGE, field: 'description' },
@@ -124,7 +124,7 @@ export function manifestContent() {
         label: 'Edit summary',
         description:
           "Set the one- or two-sentence summary shown under this document's title, in lists and on cards, about " +
-          '240 characters of plain text; an empty value clears it. A change, so anyone in its Folder may.',
+          '240 characters of plain text; an empty value clears it. A change, so anyone in its team may.',
         effect: 'writes',
         appliesTo: [DOCUMENT],
         emits: { kind: CHANGE, field: 'summary' },
@@ -134,7 +134,7 @@ export function manifestContent() {
         id: 'move',
         label: 'Move',
         description:
-          'Put this document under another file in the same Folder, or back at the top. Who can read it does not change.',
+          'Put this document under another file in the same team, or back at the top. Who can read it does not change.',
         effect: 'writes',
         appliesTo: [DOCUMENT],
         emits: { kind: CHANGE, field: 'parent' },

@@ -19,7 +19,7 @@ describe('New document under a page (LFB-8)', () => {
     render(<NewDocumentDialog folders={folders} defaultFolder={STEER} under={LAUNCH} onCreate={onCreate} onClose={vi.fn()} />)
     expect(screen.getByText('New document under Launch plan')).toBeTruthy()
     expect(screen.getByText('Everyone who can read Launch plan can read it.')).toBeTruthy()
-    expect(screen.queryByRole('combobox', { name: 'Folder' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Team' })).toBeNull()
     fireEvent.change(screen.getByLabelText('Document title'), { target: { value: 'Risks' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith('Risks', STEER, ''))
@@ -28,7 +28,7 @@ describe('New document under a page (LFB-8)', () => {
   it('opened from the sidebar, it still asks the Folder and says that Folder reads it', () => {
     render(<NewDocumentDialog folders={folders} defaultFolder={QA} onCreate={vi.fn(async () => true)} onClose={vi.fn()} />)
     expect(screen.getByText('New document')).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: 'Folder' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Team' })).toBeTruthy()
     expect(screen.getByText('Everyone in QA can read it.')).toBeTruthy()
   })
 })

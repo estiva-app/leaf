@@ -29,7 +29,7 @@ export function FileTopicsOf({ address }: { address: string | undefined }) {
  * Estiva ID's are already sentences (`signingFailure`).
  */
 export function refusal(topic: Pick<TopicOfFile, 'title'>, listed: boolean, reason: string): string {
-  if (/^restricted:/.test(reason)) return `Only people in “${topic.title}”’s Folder can change what it lists.`
+  if (/^restricted:/.test(reason)) return `Only people in “${topic.title}”’s team can change what it lists.`
   if (/^rate-limited:/.test(reason)) return 'Too busy right now. Try again shortly.'
   // A refusal the relay will repeat (malformed, blocked): trying again cannot help.
   if (/^(invalid|blocked|pow):/.test(reason)) return listed ? `The workspace would not add it to “${topic.title}”.` : `The workspace would not remove it from “${topic.title}”.`

@@ -68,14 +68,14 @@ describe('New document', () => {
     // The relay refuses as 200 with `accepted: false`, and its answer always carries the status.
     answers = [{ ok: false, reason: 'blocked: not a member', httpStatus: 200 }]
     const result = await createDocument({ folder: FOLDER, title: 'Friday notes' })
-    expect(result).toEqual({ ok: false, made: false, reason: 'The document could not be made in that Folder. Try again.' })
+    expect(result).toEqual({ ok: false, made: false, reason: 'The document could not be made in that team. Try again.' })
     expect(published).toHaveLength(1)
   })
 
   it('says the document was made but is not listed when only the add is refused, so it can be retried', async () => {
     answers = [{ ok: true }, { ok: false, reason: 'rate-limited', httpStatus: 429 }]
     const result = await createDocument({ folder: FOLDER, title: 'Friday notes' })
-    expect(result).toMatchObject({ ok: false, made: true, reason: 'The Folder did not take it. Try again.' })
+    expect(result).toMatchObject({ ok: false, made: true, reason: 'The team did not take it. Try again.' })
     if (result.ok || !result.made) throw new Error('unreachable')
     expect(await listDocument({ folder: FOLDER, address: result.address })).toEqual({ ok: true })
     expect(tag(published[2], 'a')).toBe(result.address)
