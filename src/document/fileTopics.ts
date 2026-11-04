@@ -74,10 +74,27 @@ export const heldTopics = createRetryingRead<TopicsRead>({ retryable: () => fals
 /** The Folders the relay listed for the reader at Add to topic's last read: where it accepts their entry. */
 let addableIn: ReadonlySet<string> | undefined
 
+/**
+ * This tab's own Add to topic and Remove since it loaded, by topic, then file address: the sidebar draws them over the
+ * held read at once, without reading every topic again (LTN-2). Replaced, never changed, so a snapshot stays as it was.
+ */
+let listedHere: ReadonlyMap<string, ReadonlyMap<string, boolean>> = new Map()
+const listedListeners = new Set<() => void>()
+
+/** {@link listedHere}, for `useSyncExternalStore`. */
+export const listedInTab = {
+  snapshot: () => listedHere,
+  subscribe(listener: () => void) {
+    listedListeners.add(listener)
+    return () => void listedListeners.delete(listener)
+  },
+}
+
 /** Test seam: forget the held topics. */
 export function resetTopicChoicesForTests(): void {
   heldTopics.clear()
   addableIn = undefined
+  listedHere = new Map()
 }
 
 /** Every topic the reader can read, read once more; throws, saying why, when nobody is signed in. */
@@ -108,11 +125,18 @@ export function topicChoicesNow(): TopicChoices | undefined {
 export async function readTopicChoices(): Promise<TopicChoices> {
   if (!viewerPubkey()) throw new Error('Sign in to add it to a topic.')
   // Only the Folders' ids are used: their record channels are not placed (interop's listFolders, 149 s for the agent).
-  const [, folders] = await Promise.all([heldTopics.reload(loadTopics), listFolders(query, { recordChannels: false }).catch(() => null)])
+  let foldersError: unknown
+  const [, folders] = await Promise.all([
+    heldTopics.reload(loadTopics),
+    listFolders(query, { recordChannels: false }).catch((error: unknown) => {
+      foldersError = error
+      return null
+    }),
+  ])
   const { value, error } = heldTopics.snapshot()
   if (folders) addableIn = new Set(folders.map((folder) => folder.id))
   if (value && addableIn) return choicesOf(value, addableIn)
-  throw error ?? new Error('Topics could not be read.')
+  throw error ?? foldersError ?? new Error('Topics could not be read.')
 }
 
 /** Put a file on a topic's list, or take it off: one `lists:<d>` entry on the topic, signed by the reader. */
@@ -121,5 +145,10 @@ export async function setListedInTopic(topic: Pick<TopicOfFile, 'address' | 'fol
   if (!pubkey) return { ok: false, reason: 'Sign in to change its topics.' }
   const plan = listed ? planListInTopic : planRemoveFromTopic
   const [entry] = plan(pubkey, Date.now(), { topic: { address: topic.address, folder: topic.folder }, file })
-  return publish(entry)
+  const result = await publish(entry)
+  if (result.ok) {
+    listedHere = new Map(listedHere).set(topic.address, new Map(listedHere.get(topic.address)).set(file, listed))
+    for (const listener of listedListeners) listener()
+  }
+  return result
 }

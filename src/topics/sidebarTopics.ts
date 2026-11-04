@@ -33,10 +33,19 @@ const byKindThenTitle = (a: ForeignObject, b: ForeignObject) => rank(a) - rank(b
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-keeps-its-own-list-of-files.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-space-is-the-teams-own-mark-on-a-topic-it-lists.md
  */
-export async function readSidebarTopics(read: TopicsRead, inTree: (address: string) => ForeignObject | null): Promise<SidebarTopic[]> {
+export async function readSidebarTopics(
+  read: TopicsRead,
+  inTree: (address: string) => ForeignObject | null,
+  /** This tab's own adds and removes since the read, by topic, then file address: they win over the read. */
+  listedHere: ReadonlyMap<string, ReadonlyMap<string, boolean>> = new Map(),
+): Promise<SidebarTopic[]> {
   const candidates = read.topics.filter((topic) => topic.yours && !topic.space && !isArchived(topic.object))
-  const listedOf = (topic: (typeof candidates)[number]) =>
-    [...new Set(topic.listed.flatMap((l) => (l.address && OPENS.has(kindOf(l.address)) ? [l.address] : [])))]
+  const listedOf = (topic: (typeof candidates)[number]) => {
+    const here = listedHere.get(topic.address) ?? new Map<string, boolean>()
+    const addresses = new Set(topic.listed.flatMap((l) => (l.address && here.get(l.address) !== false ? [l.address] : [])))
+    for (const [address, listed] of here) if (listed) addresses.add(address)
+    return [...addresses].filter((address) => OPENS.has(kindOf(address)))
+  }
   const listed = [...new Set(candidates.flatMap(listedOf))]
   const outside = listed.filter((address) => !inTree(address))
   const resolved = new Map<string, ForeignObject>()
@@ -53,19 +62,20 @@ export async function readSidebarTopics(read: TopicsRead, inTree: (address: stri
   })
   if (topics.length === 0) return []
 
-  const shown = [...new Set(topics.flatMap((topic) => topic.files.map((file) => file.address!)))]
+  const shown = new Set(topics.flatMap((topic) => topic.files.map((file) => file.address!)))
+  // The order is a nicety: when its read fails, the topics still show, A–Z.
   const events = await query(
-    shown.flatMap((file) => [
+    [...shown].flatMap((file) => [
       { kinds: [1851], authors: [read.me], '#a': [file], limit: 1 },
       { kinds: [1111], authors: [read.me], '#A': [file], limit: 1 },
     ]),
-  )
+  ).catch(() => [])
   const last = new Map<string, number>()
   for (const event of events) {
     if (event.pubkey !== read.me) continue
     const at = timeOf(event)
     for (const [name, address] of event.tags)
-      if ((name === 'a' || name === 'A') && shown.includes(address)) last.set(address, Math.max(last.get(address) ?? 0, at))
+      if ((name === 'a' || name === 'A') && shown.has(address)) last.set(address, Math.max(last.get(address) ?? 0, at))
   }
   const timeOfTopic = (topic: SidebarTopic) => Math.max(0, ...topic.files.map((file) => last.get(file.address!) ?? 0))
   const at = new Map(topics.map((topic) => [topic.address, timeOfTopic(topic)]))

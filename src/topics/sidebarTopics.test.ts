@@ -1,6 +1,7 @@
 import type { ForeignObject } from '@estiva-app/interop'
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, planListInTopic, readTopics } from '@estiva-app/interop'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /* LTN-2: which of your topics Leaf's sidebar shows, in what order, and the files each folds to. */
@@ -21,7 +22,23 @@ function relay(filters: Filter[]): SignedEvent[] {
   return held.filter((e) => filters.some((f) => matches(e, f)))
 }
 
-vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: async (filters: Filter[]) => relay(filters) }))
+/* When set, the relay refuses the read of your changes: the order's read. */
+let changesRefused = false
+/* What this tab sent to the relay. */
+let sent: UnsignedEvent[] = []
+vi.mock('../relay/bridge', () => ({
+  viewerPubkey: () => ME,
+  query: async (filters: Filter[]) => {
+    if (changesRefused && filters.some((f) => f.kinds?.includes(1111))) throw new Error('rate-limited')
+    return relay(filters)
+  },
+  queryAll: async (filters: Filter[]) => relay(filters),
+  publish: async (event: UnsignedEvent) => {
+    sent.push(event)
+    held.push(sign(event))
+    return { ok: true }
+  },
+}))
 vi.mock('../relay/manifests', () => ({ resolveQuery: async (filters: Filter[]) => relay(filters), projections: undefined }))
 // A file outside the tree is drawn through its app's manifest; what that answers is stood in for here, as `outside` says.
 let outside: Record<string, ForeignObject> = {}
@@ -31,6 +48,8 @@ vi.mock('@estiva-app/interop', async (original) => {
 })
 
 const { readSidebarTopics } = await import('./sidebarTopics')
+const { useSidebarTopics } = await import('./useSidebarTopics')
+const { resetTopicChoicesForTests, setListedInTopic } = await import('../document/fileTopics')
 
 let n = 0
 const sign = (e: UnsignedEvent): SignedEvent => ({ ...e, id: `e${++n}`.padStart(64, '0'), sig: '' }) as SignedEvent
@@ -75,6 +94,9 @@ beforeEach(() => {
   held = []
   tree = []
   outside = {}
+  sent = []
+  changesRefused = false
+  resetTopicChoicesForTests()
 })
 
 describe('which of your topics the sidebar shows', () => {
@@ -153,5 +175,43 @@ describe('the order of your topics', () => {
     save(ME, fresh, 1_700_000_300)
 
     expect(await titles()).toEqual(['Two files', 'One file'])
+  })
+
+  it('still shows your topics, A–Z, when the relay refuses the read of your changes', async () => {
+    const a = file(30842, 'A')
+    const b = file(30842, 'B')
+    tree = [a, b]
+    topic(ME, 'Zebra', [a])
+    topic(ME, 'Apple', [b])
+    save(ME, a, 1_700_000_200)
+    changesRefused = true
+
+    await expect(titles()).resolves.toEqual(['Apple', 'Zebra'])
+  })
+})
+
+describe('when you add a file to a topic or take one off in this tab', () => {
+  it('folds the topic to what you added at once, shows a topic it is the first file of, and drops what you took off', async () => {
+    const page = file(30842, 'Launch plan')
+    const notes = file(30842, 'Press notes')
+    tree = [page, notes]
+    const launch = topic(ME, 'Launch', [page])
+    const hiring = topic(ME, 'Hiring', [])
+    const drawn = (state: ReturnType<typeof useSidebarTopics>) =>
+      Array.isArray(state) ? state.map((t) => `${t.title}: ${t.files.map((f) => f.slots.title?.value).join(', ')}`) : state
+    const { result } = renderHook(() => useSidebarTopics(true, (a) => tree.find((f) => f.address === a) ?? null))
+    await waitFor(() => expect(drawn(result.current)).toEqual(['Launch: Launch plan']))
+
+    await act(() => setListedInTopic({ address: hiring, folder: HQ }, notes.address!, true))
+    await act(() => setListedInTopic({ address: launch, folder: HQ }, notes.address!, true))
+    await act(() => setListedInTopic({ address: launch, folder: HQ }, page.address!, false))
+
+    // The three entries went to the relay, signed by you, on each topic's list.
+    expect(sent.map((e) => [e.kind, e.pubkey, e.tags.find((t) => t[0] === 'a')?.[1]])).toEqual([
+      [1851, ME, hiring],
+      [1851, ME, launch],
+      [1851, ME, launch],
+    ])
+    await waitFor(() => expect(drawn(result.current)).toEqual(['Hiring: Press notes', 'Launch: Press notes']))
   })
 })
