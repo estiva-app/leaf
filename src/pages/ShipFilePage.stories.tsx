@@ -1,127 +1,89 @@
-import { useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fireEvent, mocked, userEvent, within } from 'storybook/test'
-import type { Editor } from '@tiptap/react'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
-import { archivedLine } from '@estiva-app/conversation'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { AppShell, Chip, Divider, FieldLine, KindIcon, NavItem, NavTree, PageHeader, Panel, Sidebar, ToastProvider, type NavTreeGroup, type NavTreeNode, type ThingKind } from '@estiva-app/ui'
-import { InlineText } from '@estiva-app/ui/editor'
-import { CommentsColumn } from '../comments/CommentsColumn'
-import type { Anchor } from '../comments/comments'
+import type { LiveClient } from '@estiva-app/platform'
+import type { SignedEvent } from '@estiva-app/protocol'
+import { AppShell, Chip, KindIcon, NavItem, NavTree, Sidebar, ToastProvider, type NavTreeGroup, type NavTreeNode, type ThingKind } from '@estiva-app/ui'
 import { useThreads } from '../comments/useThreads'
-import { LiveDocument } from '../document/LiveDocument'
-import { PageSummary } from '../document/PageSummary'
-import type { ChangedBy } from '../document/useLiveDocument'
-import { titleOf } from '../folders/tree'
-import { query, viewerPubkey } from '../relay/bridge'
+import { readDocument } from '../document/save'
+import { publish, query, viewerPubkey } from '../relay/bridge'
+import { relayClient } from '../relay/client'
 import { FilePage } from './FilePage'
 import { HomePage } from './HomePage'
-import { FileKey, OpenIn, OwnerRow, openerOf } from './OwnerRow'
+import { answer, factsOf } from './fixtures/relay'
 import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, threadsOn } from './fixtures/shipFiles'
 
 /*
   LTX's prototype, for Miky to judge before anything is built: a Ship issue and a Ship project opened in Leaf. The
   files are projected by interop through Ship's real manifest (`fixtures/shipFiles.ts`), and the row under the title
   is read from the projection's status slot and meta slots in the manifest's order, never from knowing 30850/30851.
-  The title, summary, text and comments are Leaf's own parts, as a page draws them; only the reads are handed in.
+  Each is drawn by FilePage itself, as the app draws it (ONE-5, step 6), its bar and its column included; only the
+  relay is handed in.
 */
 
-/**
- * Another app's file opened in Leaf, as LTX proposes it: its title and summary written in place, its owner's row
- * under them, its text in Leaf's editor and its comments beside it — a page's layout (FilePage's DocumentView).
- * Archived, its title, summary and text are read-only and its comments only show, the box's place saying why (SPEC §6.5,
- * PEEKM-8), as the page draws it.
- */
-function SharedTextView({ file, value, changedBy = null, onCommit = async () => true }: { file: ForeignObject; value?: string; changedBy?: ChangedBy | null; onCommit?: (saved: { content: string }) => Promise<boolean> }) {
-  const body = file.slots[BODY_SLOT]
-  const locked = !!file.archived
-  const opener = openerOf(file)
-  const [editor, setEditor] = useState<Editor | null>(null)
-  const [draft, setDraft] = useState<Anchor | null>(null)
-  const docBody = useRef<HTMLDivElement | null>(null)
-  const addressable = !body?.value || body.format === 'blocks'
-  return (
-    <div className="flex min-h-0 flex-1 [contain:size]">
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* The page's bar as FilePage draws it, the kit's PageHeader (ONE-5, step 5): its name and "Open" after it. */}
-        <Panel
-          title={titleOf(file)}
-          header={<PageHeader title={titleOf(file)} after={opener && file.appName ? <OpenIn opener={opener} appName={file.appName} /> : undefined} />}
-          bodyRef={docBody}
-          bodyClassName="px-12 pt-10 pb-24"
-        >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <FileKey file={file} />
-              <div className="flex flex-col gap-1">
-                <h1 className="text-h1 text-text-primary">
-                  <InlineText variant="heading" value={titleOf(file)} placeholder="Untitled" label="Title" readOnly={locked} onCommit={async () => true} />
-                </h1>
-                <PageSummary value={file.slots.subtitle?.value ?? ''} readOnly={locked} onCommit={async () => true} />
-              </div>
-            </div>
-            <OwnerRow file={file} />
-            {locked && <FieldLine tone="helper">Archived. Unarchive it in {file.appName ?? 'its app'} to edit.</FieldLine>}
-            <LiveDocument
-              value={value ?? body?.value ?? ''}
-              format={body?.format ?? 'blocks'}
-              changedBy={changedBy}
-              onCommit={onCommit}
-              onLeftUnsaved={() => {}}
-              onEditor={setEditor}
-              onCommentOn={addressable && !locked ? setDraft : undefined}
-              readOnly={locked}
-            />
-          </div>
-        </Panel>
-      </div>
-      <Divider orientation="vertical" />
-      <div className="flex flex-none flex-col">
-        <CommentsColumn
-          doc={{ address: file.address, folder: file.folder }}
-          addressable={addressable}
-          editor={editor}
-          docBody={docBody}
-          draft={locked ? null : draft}
-          onDraft={setDraft}
-          closed={locked ? (archivedLine(file.archived) ?? '') : undefined}
-        />
-      </div>
-    </div>
-  )
-}
+type Hear = (folder: string, event?: SignedEvent) => void
 
-/** Someone else saves while you are in the text: Katerina's save lands a moment after you start typing. */
-function WhileYouWrite() {
-  const file = shipIssue()
-  const [value, setValue] = useState(file.slots[BODY_SLOT]?.value)
-  const [changedBy, setChangedBy] = useState<ChangedBy | null>(null)
-  const started = useRef(false)
-  const arrive = () => {
-    if (started.current) return
-    started.current = true
-    setTimeout(() => {
-      setValue(NEWER_DESCRIPTION)
-      setChangedBy({ pubkey: KATERINA, name: 'Katerina' })
+/**
+ * Katerina saves the file's text a moment after you start typing in it, as the relay hands the open page someone
+ * else's save: on the tab's live connection, to what watches the file's Folder, and a read of the file then finds her
+ * text. Only typing in this story's own canvas starts it. Gives back the connection and the read when it is left.
+ */
+function katerinaSavesWhileYouWrite(file: ForeignObject, canvas: HTMLElement): () => void {
+  const watching = new Set<Hear>()
+  let saved = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  mocked(relayClient).mockReturnValue({
+    watchFolders: (_folders: string[], hear: Hear) => {
+      watching.add(hear)
+      return { stop: () => void watching.delete(hear) }
+    },
+  } as unknown as LiveClient)
+  // Before her save, a read finds nothing new and the page keeps what it opened with.
+  const newer: ForeignObject = { ...file, slots: { ...file.slots, [BODY_SLOT]: { ...file.slots[BODY_SLOT], value: NEWER_DESCRIPTION } } }
+  mocked(readDocument).mockImplementation(async () => (saved ? newer : null))
+  const typing = () => {
+    canvas.removeEventListener('keydown', typing, true)
+    timer = setTimeout(() => {
+      saved = true
+      const change: SignedEvent = {
+        id: 'd'.repeat(64),
+        sig: '',
+        kind: 1851,
+        pubkey: KATERINA,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['a', file.address ?? ''], ['field', 'description'], ['value', NEWER_DESCRIPTION], ['content-format', 'estiva-blocks-1'], ['h', file.folder ?? '']],
+        content: '',
+      }
+      for (const hear of watching) hear(file.folder ?? '', change)
     }, 1200)
   }
-  return (
-    <div className="flex min-h-0 flex-1 flex-col" onKeyDownCapture={arrive}>
-      <SharedTextView file={file} value={value} changedBy={changedBy} />
-    </div>
-  )
+  canvas.addEventListener('keydown', typing, true)
+  return () => {
+    canvas.removeEventListener('keydown', typing, true)
+    clearTimeout(timer)
+    mocked(relayClient).mockReset()
+    mocked(readDocument).mockReset()
+  }
 }
 
 const meta = {
   title: 'Pages/Ship file in Leaf',
-  component: SharedTextView,
+  component: FilePage,
   parameters: { layout: 'fullscreen' },
-  // The relay's answers, handed in: the file's comments, and the names on them.
+  args: { loading: false },
+  // The relay's answers, handed in: the file's comments, the names on them, and the page's own reads (who is in it
+  // and its last edit, `fixtures/relay.ts`). A save is taken, as the relay takes one; Save Refused's is refused.
   beforeEach: ({ args }) => {
-    mocked(useThreads).mockReturnValue(threadsOn(args.file))
+    const file = args.file
+    if (file) mocked(useThreads).mockReturnValue(threadsOn(file))
     mocked(viewerPubkey).mockReturnValue(MIKY)
-    mocked(query).mockImplementation(async (filters) => (filters.some((f) => Array.isArray(f.kinds) && f.kinds.includes(0)) ? PROFILES : []))
+    mocked(query).mockImplementation(async (filters) =>
+      filters.some((f) => Array.isArray(f.kinds) && f.kinds.includes(0)) ? PROFILES : file ? answer(factsOf(file), filters) : [],
+    )
+    mocked(publish).mockResolvedValue({ ok: true })
+    return () => void mocked(publish).mockReset()
   },
   decorators: [
     (Story) => (
@@ -132,7 +94,7 @@ const meta = {
       </ToastProvider>
     ),
   ],
-} satisfies Meta<typeof SharedTextView>
+} satisfies Meta<typeof FilePage>
 
 export default meta
 type Story = StoryObj<typeof meta>
@@ -143,7 +105,10 @@ export const Issue: Story = { args: { file: shipIssue() } }
 /** A Ship project: its key above the title, then status and lead, the pickers its card has; "Open" after the title in the bar. */
 export const Project: Story = { args: { file: shipProject() } }
 
-/** An issue nobody has written a description for: the text starts empty, as a new page does. */
+/**
+ * An issue nobody has written a description for. Its projection has no text yet, so Leaf does not offer to write one
+ * (`writableFields`): the page names it and offers "Open in Ship", as for a file whose app shares no text.
+ */
 export const EmptyText: Story = { args: { file: shipIssue({ description: false }) } }
 
 /** While the file is read: the page's skeleton, as for a page. */
@@ -154,7 +119,10 @@ export const Archived: Story = { args: { file: shipIssue({ archived: true }) } }
 
 /** A save refused when you leave the text — the relay said no, or the sign-in ended: your text stays, and the line says so. */
 export const SaveRefused: Story = {
-  args: { file: shipIssue(), onCommit: async () => false },
+  args: { file: shipIssue() },
+  beforeEach: () => {
+    mocked(publish).mockResolvedValue({ ok: false, reason: 'blocked: not this time' })
+  },
   play: async ({ canvasElement }) => {
     const text = await within(canvasElement).findByRole('textbox', { name: 'Document' })
     await userEvent.click(text)
@@ -167,7 +135,7 @@ export const SaveRefused: Story = {
 /** Someone else saved while you were writing: theirs waits behind yours, with "Load it". */
 export const NewerSave: Story = {
   args: { file: shipIssue() },
-  render: () => <WhileYouWrite />,
+  beforeEach: ({ args, canvasElement }) => (args.file ? katerinaSavesWhileYouWrite(args.file, canvasElement) : undefined),
   play: async ({ canvasElement }) => {
     const text = await within(canvasElement).findByRole('textbox', { name: 'Document' })
     await userEvent.click(text)
@@ -233,7 +201,7 @@ export const InTheTree: Story = {
   args: { file: shipIssue() },
   render: (args) => (
     <Frame groups={PROPOSED} selected="i2">
-      <SharedTextView {...args} />
+      <FilePage {...args} />
     </Frame>
   ),
 }
