@@ -780,7 +780,7 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     )
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Move…' }))
-    await pick('Folder', 'Steer')
+    await pick('Team', 'Steer')
     await pick('Put it under', 'The top of Steer')
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(published).toHaveLength(1))
