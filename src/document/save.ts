@@ -216,6 +216,20 @@ export function onSaved(listener: () => void): () => void {
   }
 }
 
+const merged = new Set<(address: string) => void>()
+
+/**
+ * Hear a text save merged onto someone's newer one, by the project's address. The editor still holds the text as typed,
+ * and only the merged one is the next save's base: the open page reads it again, so it is drawn even with no live
+ * connection to bring it (ALO-6; Ship hands its editor the merged text the same way).
+ */
+export function onMerged(listener: (address: string) => void): () => void {
+  merged.add(listener)
+  return () => {
+    merged.delete(listener)
+  }
+}
+
 /** The fields a page writes: its title, its summary (plain text, never a `content-format`, SPEC §6.12) and its text. */
 export type DocumentField = 'title' | 'summary' | 'description'
 
@@ -309,6 +323,7 @@ async function saveTextInOrder(pubkey: string, file: Writable & { address: strin
     // What the relay now holds: mine, or mine merged onto theirs — the text the editor is handed back next.
     const kept = 'event' in result ? textOf(result.event)?.value : textOf(result.mergedOnto)?.value
     one.texts.set(kept ?? text.content, result.id)
+    if (result.mergedOnto) for (const listener of merged) listener(file.address)
   }
   if (result.ok || 'refused' in result) return answered(result)
   const theirs = textOf(result.theirs) ?? { value: '' }

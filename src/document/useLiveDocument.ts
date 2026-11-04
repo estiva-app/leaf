@@ -3,7 +3,7 @@ import { ARCHIVED_FIELD, type ForeignObject } from '@estiva-app/interop'
 import { relayClient } from '../relay/client'
 import { viewerPubkey } from '../relay/bridge'
 import { byFields } from '../relay/projectFields'
-import { CHANGE, archiveFolderOf, nameOf, readDocument } from './save'
+import { CHANGE, archiveFolderOf, nameOf, onMerged, readDocument } from './save'
 
 /** Who saved the document's text last, when it was not you: the name in "<name> saved a newer version". */
 export type ChangedBy = { pubkey: string; name: string | null }
@@ -71,10 +71,15 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
       // Only what is saved from now: what came before is in the document as it was read.
       { kinds: [CHANGE], since: Math.floor(Date.now() / 1000) },
     )
+    // A save of mine merged onto someone's: read the merged text, which no live event may bring.
+    const unmerged = onMerged((saved) => {
+      if (saved === address) reread()
+    })
     return () => {
       live = false
       clearTimeout(timer)
       watch.stop()
+      unmerged()
     }
   }, [address, folder, naddr])
 
