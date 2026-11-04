@@ -1,5 +1,5 @@
 // @vitest-environment-options {"url": "https://leaf.estiva.app/document/plan"}
-import type { ForeignObject } from '@estiva-app/interop'
+import type { ForeignObject, TopicsRead } from '@estiva-app/interop'
 import { ToastProvider } from '@estiva-app/ui'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -171,5 +171,56 @@ describe('a link written as a URL whose file cannot be read (widget review, item
     )
     expect(screen.getByRole('link', { name: written }).getAttribute('href')).toBe(written)
     expect(screen.queryByText(/not available/)).toBeNull()
+  })
+})
+
+describe('a topic linked in a Leaf page or a comment (LTN-3)', () => {
+  const D = '5bd936dc-1111-4222-8333-444455556666'
+  const TOPIC_URI = 'nostr:naddr1topic'
+  const topic = file({
+    kind: 30840,
+    address: `30840:${LEAD}:${D}`,
+    noun: 'topic',
+    appName: 'Peek',
+    openUrl: 'https://peek.estiva.app/o/naddr1topic',
+    slots: { title: { value: 'Launch chat' } } as ForeignObject['slots'],
+  })
+  const opens = (place: 'chip' | 'row' | 'card', written?: string) => {
+    render(
+      <ToastProvider>
+        <ReferencesProvider value={{ [TOPIC_URI]: topic }}>
+          <PageLink uri={TOPIC_URI} href={written} place={place} editing={false} />
+        </ReferencesProvider>
+      </ToastProvider>,
+    )
+    const href = screen.getAllByText('Launch chat')[0].closest('a')?.getAttribute('href')
+    cleanup()
+    return href
+  }
+
+  it("opens the topic's page in Leaf, as a chip, a row or a card, whether picked or written as Peek's URL", () => {
+    const page = `/topic/launch-chat-${D}`
+    expect(opens('chip')).toBe(page)
+    expect(opens('row')).toBe(page)
+    expect(opens('card')).toBe(page)
+    expect(opens('chip', `https://peek.estiva.app/topic/launch-chat-${D}`)).toBe(page)
+  })
+
+  it('opens a link to one message in the topic as written, in Peek, which shows it', () => {
+    const message = `https://peek.estiva.app/topic/launch-chat-${D}?thread=${'e'.repeat(64)}`
+    expect(opens('chip', message)).toBe(message)
+  })
+
+  it('opens the topic in Peek when the tab knows it for a space (D4)', async () => {
+    const { heldTopics } = await import('./fileTopics')
+    const space = { address: topic.address, space: true, yours: false, folder: 'hq', listed: [], object: topic }
+    await heldTopics.reload(async () => ({ me: LEAD, topics: [space], membership: {} }) as unknown as TopicsRead)
+    try {
+      expect(opens('chip')).toBe(topic.openUrl)
+      const written = `https://peek.estiva.app/topic/launch-chat-${D}`
+      expect(opens('chip', written)).toBe(written)
+    } finally {
+      heldTopics.clear()
+    }
   })
 })

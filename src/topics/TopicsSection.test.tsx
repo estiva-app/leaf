@@ -36,13 +36,24 @@ describe('the sidebar’s Topics', () => {
     expect(screen.queryByRole('link', { name: 'More' })).toBeNull()
   })
 
-  it('folds a topic open on a click, to its files, each a link to open it in Leaf, with the title the tree has now', () => {
+  it('folds a topic open from its arrow, to its files, each a link to open it in Leaf, with the title the tree has now', () => {
     const plan = page('3518cd7b-5b85-49e8-ba94-4aacacad2163', 'Launch plan')
     draw([topicOf(1, [plan])], (f) => (f === plan ? page('3518cd7b-5b85-49e8-ba94-4aacacad2163', 'Launch plan, renamed') : f))
     expect(screen.queryByRole('link', { name: /Launch plan/ })).toBeNull()
-    fireEvent.click(screen.getByRole('link', { name: 'Topic 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show what is under Topic 1' }))
     const file = screen.getByRole('link', { name: /Launch plan, renamed/ })
     expect(file.getAttribute('href')).toBe('/document/launch-plan-renamed-3518cd7b-5b85-49e8-ba94-4aacacad2163')
+  })
+
+  it("opens a topic's own page in Leaf from its name (LTN-3), marked as the current row while it is open", () => {
+    render(
+      <TooltipProvider>
+        <TopicsSection topics={[topicOf(1), topicOf(2)]} topicNow="t2" fileNow={(f) => f} />
+      </TooltipProvider>,
+    )
+    expect(screen.getByRole('link', { name: 'Topic 1' }).getAttribute('href')).toBe('/topic/topic-1-t1')
+    expect(screen.getByRole('link', { name: 'Topic 2' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('link', { name: 'Topic 1' }).getAttribute('aria-current')).toBeNull()
   })
 
   it('shows placeholder rows while your topics are read, and says so when they could not be', () => {

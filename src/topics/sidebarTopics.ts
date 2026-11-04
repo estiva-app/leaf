@@ -1,4 +1,4 @@
-import { isArchived, resolveForeignRoots, type ForeignObject, type TopicsRead } from '@estiva-app/interop'
+import { isArchived, resolveForeignRoots, type ForeignObject, type ReadTopic, type TopicsRead } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
 import { isDocument, isListed, titleOf } from '../folders/tree'
 import { timeOf } from '../home/recent'
@@ -20,7 +20,34 @@ const kindOf = (address: string) => Number(address.split(':')[0])
 
 /** Pages first, then projects, then issues: Leaf's own files lead. */
 const rank = (file: ForeignObject) => (isDocument(file) ? 0 : file.kind === 30850 ? 1 : 2)
-const byKindThenTitle = (a: ForeignObject, b: ForeignObject) => rank(a) - rank(b) || titleOf(a).localeCompare(titleOf(b))
+export const byKindThenTitle = (a: ForeignObject, b: ForeignObject) => rank(a) - rank(b) || titleOf(a).localeCompare(titleOf(b))
+
+/** A topic's title as Leaf draws it everywhere. */
+export const topicTitleOf = (topic: ReadTopic) => topic.object.slots.title?.value?.trim() || 'Untitled topic'
+
+/** This tab's own adds and removes since the read, by topic, then file address. */
+export type ListedHere = ReadonlyMap<string, ReadonlyMap<string, boolean>>
+
+/** The addresses a topic lists that Leaf opens, with this tab's own adds and removes over the read. */
+export function listedThatLeafOpens(topic: ReadTopic, listedHere: ListedHere = new Map()): string[] {
+  const here = listedHere.get(topic.address) ?? new Map<string, boolean>()
+  const addresses = new Set(topic.listed.flatMap((l) => (l.address && here.get(l.address) !== false ? [l.address] : [])))
+  for (const [address, listed] of here) if (listed) addresses.add(address)
+  return [...addresses].filter((address) => OPENS.has(kindOf(address)))
+}
+
+/**
+ * Listed files, read: the tree's copy when it holds one, the rest in one batched read. Archived ones are kept, for the
+ * caller to leave out or put behind a link; a file nobody lists any more, or one not there, is `null`.
+ */
+export async function readListedFiles(addresses: readonly string[], inTree: (address: string) => ForeignObject | null): Promise<(address: string) => ForeignObject | null> {
+  const outside = addresses.filter((address) => !inTree(address))
+  const resolved = new Map<string, ForeignObject>()
+  if (outside.length > 0)
+    for (const file of await resolveForeignRoots(outside, resolveQuery, manifests, { archivedWith: true }))
+      if (file.address && isListed(file)) resolved.set(file.address, file)
+  return (address) => inTree(address) ?? resolved.get(address) ?? null
+}
 
 /**
  * Your topics for Leaf's sidebar (LTN-2): those that are yours, not a team's space and not archived, listing at least
@@ -37,32 +64,21 @@ const byKindThenTitle = (a: ForeignObject, b: ForeignObject) => rank(a) - rank(b
 export async function readSidebarTopics(
   read: TopicsRead,
   inTree: (address: string) => ForeignObject | null,
-  /** This tab's own adds and removes since the read, by topic, then file address: they win over the read. */
-  listedHere: ReadonlyMap<string, ReadonlyMap<string, boolean>> = new Map(),
+  /** This tab's own adds and removes since the read: they win over the read. */
+  listedHere: ListedHere = new Map(),
 ): Promise<SidebarTopic[]> {
   const candidates = read.topics.filter((topic) => topic.yours && !topic.space && !isArchived(topic.object))
-  const listedOf = (topic: (typeof candidates)[number]) => {
-    const here = listedHere.get(topic.address) ?? new Map<string, boolean>()
-    const addresses = new Set(topic.listed.flatMap((l) => (l.address && here.get(l.address) !== false ? [l.address] : [])))
-    for (const [address, listed] of here) if (listed) addresses.add(address)
-    return [...addresses].filter((address) => OPENS.has(kindOf(address)))
-  }
-  const listed = [...new Set(candidates.flatMap(listedOf))]
-  const outside = listed.filter((address) => !inTree(address))
-  const resolved = new Map<string, ForeignObject>()
-  if (outside.length > 0)
-    for (const file of await resolveForeignRoots(outside, resolveQuery, manifests, { archivedWith: true }))
-      if (file.address && isListed(file) && !isArchived(file)) resolved.set(file.address, file)
-  const fileAt = (address: string) => {
-    const held = inTree(address)
-    return held ? (isArchived(held) ? null : held) : (resolved.get(address) ?? null)
-  }
+  const listedOf = (topic: ReadTopic) => listedThatLeafOpens(topic, listedHere)
+  const fileAt = await readListedFiles([...new Set(candidates.flatMap(listedOf))], inTree)
 
   const topics = candidates.flatMap((topic): SidebarTopic[] => {
     const files = listedOf(topic)
-      .flatMap((address) => fileAt(address) ?? [])
+      .flatMap((address) => {
+        const file = fileAt(address)
+        return file && !isArchived(file) ? [file] : []
+      })
       .sort(byKindThenTitle)
-    return files.length ? [{ address: topic.address, title: topic.object.slots.title?.value?.trim() || 'Untitled topic', files }] : []
+    return files.length ? [{ address: topic.address, title: topicTitleOf(topic), files }] : []
   })
   if (topics.length === 0) return []
 

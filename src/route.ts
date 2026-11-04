@@ -22,8 +22,12 @@ export type Route =
   | { page: 'file'; naddr: string }
   | { page: 'document'; d: string }
   | { page: 'path'; word: string; ref: string }
+  | { page: 'topic'; d: string }
 
-/** Leaf's own first segments, which are never another app's word. */
+/**
+ * Leaf's own first segments, which are never another app's word. Not `topic`: it is Peek's word, which Leaf matches
+ * first for its own topic page (LTN-3), and still the word another app's topic is drawn at here (`ownerPathOf`).
+ */
 const OWN = new Set(['f', 'document', 'new', 'app'])
 
 /** Whether `word` can be another app's type word on Leaf's host: the grammar {@link routeOf} reads, and none of Leaf's own. */
@@ -39,6 +43,10 @@ export function routeOf(pathname: string): Route {
   const document = /^\/document\/([^/]+)\/?$/.exec(pathname)
   const d = document ? identifierFromRef(decodeRef(document[1])) : null
   if (d) return { page: 'document', d }
+  // A topic has a page of its own here (LTN-3), at the path Peek and Ship show it at, read by its `d` as a document is.
+  const topic = /^\/topic\/([^/]+)\/?$/.exec(pathname)
+  const topicD = topic ? identifierFromRef(decodeRef(topic[1])) : null
+  if (topicD) return { page: 'topic', d: topicD }
   const other = /^\/([^/]+)\/([^/]+)\/?$/.exec(pathname)
   if (other && isOtherAppsWord(other[1])) return { page: 'path', word: other[1], ref: decodeRef(other[2]) }
   return { page: 'home' }

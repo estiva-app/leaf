@@ -3,6 +3,8 @@ import { EmptyState, KindIcon, NavItem, NavTree, SkeletonList } from '@estiva-ap
 import { IconDots } from '@tabler/icons-react'
 import { useState, type MouseEvent } from 'react'
 import { rowOf } from '../folders/tree'
+import { dOf } from '../route'
+import { topicPath } from './topicLinks'
 import type { SidebarTopicsState } from './useSidebarTopics'
 
 /** How many topics show before More. */
@@ -15,17 +17,20 @@ const quietly = (run: () => void) => (event: MouseEvent) => {
 
 /**
  * The sidebar's Topics (LTN-2): up to five of your topics, each folding to the files it lists that Leaf opens, then a
- * quiet More that opens the rest in place. None, and the section is not drawn. A topic's row only folds: it has no page
- * in Leaf yet (LTN-3).
+ * quiet More that opens the rest in place. None, and the section is not drawn. A topic's name opens its page in Leaf
+ * (LTN-3); its icon, an arrow while pointed at, folds it.
  */
 export function TopicsSection({
   topics,
   current,
+  topicNow,
   fileNow,
 }: {
   topics: SidebarTopicsState
   /** The open file's key, as the tree selects it. */
   current?: string
+  /** The `d` of the topic whose page is open. */
+  topicNow?: string
   /** The tree's copy of a file when it holds one, so a rename since the read shows. */
   fileNow: (file: ForeignObject) => ForeignObject
 }) {
@@ -57,10 +62,10 @@ export function TopicsSection({
       {(more ? topics : topics.slice(0, FIVE)).map((topic) => (
         <NavItem
           key={topic.address}
-          href="#"
+          href={topicPath(topic.address, topic.title)}
           label={topic.title}
           icon={<KindIcon kind="topic" />}
-          onClick={quietly(() => fold(topic.address, !open.has(topic.address)))}
+          active={!!topicNow && dOf(topic.address) === topicNow}
           open={open.has(topic.address)}
           onOpenChange={(to) => fold(topic.address, to)}
         >
