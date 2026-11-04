@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { IconPlus, IconX } from '@tabler/icons-react'
 import { Button, Chip, CommandPalette, EmptyState, CommandPaletteSearch, IconButton, KindIcon, SkeletonBar, useToast, type CommandPaletteRow } from '@estiva-app/ui'
-import { readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
+import { heldTopics, readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
+import { isKnownSpace, topicPath } from '../topics/topicLinks'
 import { useFileTopics, type FileTopicsState } from '../document/useFileTopics'
+
+const subscribeTopics = (listener: () => void) => heldTopics.subscribe(listener)
+const topicsNow = () => heldTopics.snapshot()
 
 /** A topic's address kind: a topic lists no other topic (Miky, TOP-3 kickoff), so a topic has no Topics row. */
 const TOPIC = '30840:'
@@ -40,7 +44,7 @@ export function refusal(topic: Pick<TopicOfFile, 'title'>, listed: boolean, reas
 /**
  * **A file's topics**, as the Per app prototype draws a file's Topics row (estiva-ui `concept/cross-app-navigation`,
  * `Lens.tsx` FilePage) and Ship draws it in its rail (ship#359): one chip per topic whose list names this file, each
- * opening the topic in Peek, then Add to topic. "None" when no topic lists it.
+ * opening the topic's page in Leaf (LTN-3), a space Peek (D4), then Add to topic. "None" when no topic lists it.
  *
  * Add and each chip's ✕ follow the topic, not the file: the list is the topic's, so an archived file can still be put
  * in a topic, and an archived topic keeps its chip with no ✕.
@@ -58,6 +62,8 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
   choicesNow?: () => TopicChoices | undefined
 }) {
   const [picking, setPicking] = useState(false)
+  // Drawn again when the topics read lands, so a space's chip goes to Peek once the read knows it is one.
+  useSyncExternalStore(subscribeTopics, topicsNow)
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-2 text-body-2" data-file-topics>
       <span className="text-text-secondary">Topics</span>
@@ -70,7 +76,11 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
           {topics.length === 0 && <EmptyState scope="section" message="None" />}
           {topics.map((topic) => (
             <span key={topic.address} className="flex items-center" data-file-topic={topic.address}>
-              <Chip label={topic.title} leadingIcon={<KindIcon kind="topic" size={14} tone="inherit" />} href={topic.openUrl} onClick={(event) => openBeside(event, topic.openUrl)} />
+              {isKnownSpace(topic.address) ? (
+                <Chip label={topic.title} leadingIcon={<KindIcon kind="topic" size={14} tone="inherit" />} href={topic.openUrl} onClick={(event) => openBeside(event, topic.openUrl)} />
+              ) : (
+                <Chip label={topic.title} leadingIcon={<KindIcon kind="topic" size={14} tone="inherit" />} href={topicPath(topic.address, topic.title)} />
+              )}
               {!topic.archived && !busy.has(topic.address) && (
                 <IconButton variant="muted" aria-label={`Remove from ${topic.title}`} tooltip={`Remove from ${topic.title}`} onClick={() => onChange(topic, false)}>
                   <IconX size={12} stroke={1.5} />
@@ -108,7 +118,7 @@ function startsWords(title: string, words: readonly string[]): boolean {
   return words.every((word) => own.some((w) => w.startsWith(word)))
 }
 
-/** A topic opens in Peek, beside Leaf rather than in its place, as every other app's file does from Leaf. */
+/** A space opens in Peek, beside Leaf rather than in its place, as every other app's file does from Leaf. */
 function openBeside(event: { preventDefault: () => void }, url: string | undefined) {
   if (!url) return
   event.preventDefault()

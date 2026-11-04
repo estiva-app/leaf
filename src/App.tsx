@@ -29,6 +29,7 @@ import { useSidebarFold } from './frame/folds'
 import { useFileByAddress } from './pages/useFileByAddress'
 import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
 import { HomePage } from './pages/HomePage'
+import { TopicPage } from './pages/TopicPage'
 import { viewerPubkey } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
@@ -153,7 +154,7 @@ function Frame() {
   */
   const current = open ? fileKey(open.file) : onPage ? fileKey(onPage) : route.page === 'file' ? route.naddr : undefined
   const under = onPage?.parentRef ? findFileAt(folders, children, onPage.parentRef) : null
-  useTabTitle(route.page === 'home' ? 'Home' : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
+  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
@@ -227,6 +228,14 @@ function Frame() {
         recent={workspace.failed ? 'failed' : recent}
         onNew={takers.length ? () => setMaking(true) : undefined}
       />
+    ) : route.page === 'topic' ? (
+      <TopicPage
+        key={route.d}
+        d={route.d}
+        folders={workspace.folders || workspace.failed ? summaries : undefined}
+        inTree={readByTree}
+        treeRead={!reading || workspace.failed}
+      />
     ) : unlisted && route.page === 'document' && dOf(unlisted.address) === route.d && !open ? (
       <EmptyState
         scope="page"
@@ -256,7 +265,14 @@ function Frame() {
         nav={
           <Sidebar>
             <NavItem href="/" label="Home" icon={<IconHome size={16} stroke={1.5} />} active={route.page === 'home'} />
-            {signedIn && <TopicsSection topics={topics} current={current} fileNow={(file) => (file.address && inTree(file.address)) || file} />}
+            {signedIn && (
+              <TopicsSection
+                topics={topics}
+                current={current}
+                topicNow={route.page === 'topic' ? route.d : undefined}
+                fileNow={(file) => (file.address && inTree(file.address)) || file}
+              />
+            )}
             <NavTree
               title="Teams"
               titleActions={

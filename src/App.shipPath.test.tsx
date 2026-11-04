@@ -37,6 +37,16 @@ vi.mock('./relay/bridge', () => ({
     return held.filter((e) => kinds.includes(e.kind) && e.tags.some((t) => t[0] === 'd' && ds.includes(t[1])))
   },
   publish: async (): Promise<PublishResult> => ({ ok: true }) as PublishResult,
+  // The read of every topic (interop's readTopics): what the relay holds, filter by filter.
+  queryAll: async (filters: Record<string, unknown>[]) =>
+    held.filter((e) =>
+      filters.some(
+        (f) =>
+          (!f.kinds || (f.kinds as number[]).includes(e.kind)) &&
+          (!f.authors || (f.authors as string[]).includes(e.pubkey)) &&
+          Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1]))),
+      ),
+    ),
 }))
 
 const QA = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
@@ -155,10 +165,12 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     expect(ids.map((id) => `${window.location.origin}/issue/${slug}-${D}#block-${id}`)).toContain(copied[0])
   })
 
-  it("hands a Peek topic's address to Peek rather than showing Home", async () => {
+  it("opens a Peek topic's address as Leaf's own page for the topic (LTN-3), rather than Peek's or Home", async () => {
+    held = [event(30840, MIKY, [['d', TOPIC_D], ['title', 'Launch chat'], ['h', QA]])]
     window.history.replaceState(null, '', `/topic/${TOPIC_D}`)
     render(<App />)
-    expect(await screen.findByRole('button', { name: 'Open in Peek' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Launch chat' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Open in Peek' })).toBeNull()
     expect(screen.queryByRole('textbox', { name: 'Document' })).toBeNull()
     await waitFor(() => expect(window.location.pathname).toBe(`/topic/launch-chat-${TOPIC_D}`))
   })

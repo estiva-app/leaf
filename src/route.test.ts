@@ -29,7 +29,12 @@ describe("another app's path on Leaf's host", () => {
 
   it('is a file page for the word the manifests will name, not Home', () => {
     expect(routeOf(`/issue/plan-the-launch-${D}`)).toEqual({ page: 'path', word: 'issue', ref: `plan-the-launch-${D}` })
-    expect(routeOf(`/topic/${D}/`)).toEqual({ page: 'path', word: 'topic', ref: D })
+    expect(routeOf(`/project/${D}/`)).toEqual({ page: 'path', word: 'project', ref: D })
+  })
+
+  it("is Leaf's own topic page for a topic's path, read by its d whatever the slug (LTN-3)", () => {
+    expect(routeOf(`/topic/launch-chat-${D}`)).toEqual({ page: 'topic', d: D })
+    expect(routeOf(`/topic/${D}/`)).toEqual({ page: 'topic', d: D })
   })
 
   it("never takes Leaf's own pages for another app's word", () => {

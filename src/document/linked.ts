@@ -12,6 +12,7 @@ import { isDeleted, rereadReference, useFile } from './references'
 import { saveCardChoice } from './save'
 import { cardShapes } from './linkMemory'
 import { sharesText } from './writable'
+import { isTopicAddress, topicOpener } from '../topics/topicLinks'
 
 /*
   What a link in a page or a comment stands for, as the kit's chip, row and
@@ -57,11 +58,18 @@ function unreadOf(uri: string): { kind: LinkedKind; noun: string } {
 }
 
 /**
- * Where a link opens: the URL the page wrote, on a host an app serves (LTX-6),
- * else the address its own app gives it, https only — another app's address
- * comes from a manifest anyone may publish.
+ * Where a link opens: a topic's page here (LTN-3), unless it is a space or the
+ * link names one message; else the URL the page wrote, on a host an app serves
+ * (LTX-6), else the address its own app gives it, https only — another app's
+ * address comes from a manifest anyone may publish.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-opens-in-the-app-you-are-in-when-it-has-a-page-made-for-that-kind.md
  */
-function openerOf(object: { openUrl?: string }, written?: string): string {
+function openerOf(object: Pick<ForeignObject, 'openUrl' | 'address' | 'slots'>, written?: string): string {
+  return topicOpener(object, written) ?? awayOf(object, written)
+}
+
+/** Where a link opens in the app it names: as written, else its own app's address. */
+function awayOf(object: { openUrl?: string }, written?: string): string {
   return links.opener(written, object.openUrl, window.location.origin) ?? (object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : '')
 }
 
@@ -93,9 +101,12 @@ export function linkStateOf(
  * comments beside its page, so a file Leaf opens as a page (its own
  * documents, a file whose app shares its text) opens there with them shown
  * (`COMMENTS_HASH`). Any other file opens in its own app, as its title does:
- * Ship's count does the same for a file it does not own.
+ * Ship's count does the same for a file it does not own. A topic's opens in
+ * Peek even though its title opens its page here: that page shows no
+ * conversation (LTN-3).
  */
-function conversationOf(file: ForeignObject, opens: string): string {
+function conversationOf(file: ForeignObject, opens: string, written?: string): string {
+  if (isTopicAddress(file.address)) return awayOf(file, written) || opens
   if (!file.address || !sharesText(file) || (file.kind !== KIND.DOCUMENT && !file.naddr)) return opens
   const title = file.slots.title?.isPubkey ? undefined : file.slots.title?.value
   return `${pagePath({ kind: file.kind, address: file.address, naddr: file.naddr, title })}${COMMENTS_HASH}`
@@ -105,7 +116,7 @@ function conversationOf(file: ForeignObject, opens: string): string {
 function useConversation(read: ForeignObject | null | undefined, written?: string): LinkedFromOptions['conversation'] {
   const count = useCardConversation(read && !read.unreachable ? read.address : undefined)
   const opens = read ? openerOf(read, written) : ''
-  return read && count !== undefined && opens ? { count, href: conversationOf(read, opens) } : undefined
+  return read && count !== undefined && opens ? { count, href: conversationOf(read, opens, written) } : undefined
 }
 
 /** A link alone on its line, with its comment count, as a card has (Katerina, 30 Oct: the count on rows too). */

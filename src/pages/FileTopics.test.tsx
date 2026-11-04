@@ -1,11 +1,12 @@
 import type { PublishResult, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import type { TopicsRead } from '@estiva-app/interop'
 import type { TopicChoices, TopicOfFile } from '../document/fileTopics'
 
-/* TOP-6: a Leaf file's page says which topics list it, each opening in Peek, and adds it to a topic or removes it there. */
+/* TOP-6: a Leaf file's page says which topics list it, each opening its page in Leaf (LTN-3), and adds it to a topic or removes it there. */
 
 const ME = 'a'.repeat(64)
 const MIKY = 'b'.repeat(64)
@@ -69,11 +70,22 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('a file’s Topics row', () => {
-  it('names each topic that lists the file, linking to the topic in Peek', async () => {
+  it("names each topic that lists the file, linking to the topic's own page in Leaf (LTN-3)", async () => {
     show()
     const link = await screen.findByRole('link', { name: /Widgets/ })
-    expect(link.getAttribute('href')).toBe('https://peek.estiva.app/topic/widgets')
+    expect(link.getAttribute('href')).toBe('/topic/widgets-widgets')
     expect(within(await row()).getByRole('button', { name: 'Remove from Widgets' })).toBeTruthy()
+  })
+
+  it('links a space to Peek once the topics read knows it for one, even when that read lands after the row (D4)', async () => {
+    const { heldTopics } = await import('../document/fileTopics')
+    onTestFinished(() => heldTopics.clear())
+    show()
+    const link = await screen.findByRole('link', { name: /Widgets/ })
+    expect(link.getAttribute('href')).toBe('/topic/widgets-widgets')
+    const space = { address: WIDGETS.address, space: true, yours: true, folder: 'hq-folder', listed: [], object: {} }
+    await act(() => heldTopics.reload(async () => ({ me: ME, topics: [space], membership: {} }) as unknown as TopicsRead))
+    expect(screen.getByRole('link', { name: /Widgets/ }).getAttribute('href')).toBe('https://peek.estiva.app/topic/widgets')
   })
 
   it('says None when no topic lists the file, and still offers Add to topic', async () => {
