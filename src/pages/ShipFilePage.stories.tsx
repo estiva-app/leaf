@@ -99,8 +99,16 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A Ship issue: its key above the title, Ship's row under it (status, then assignee, the pickers its card has), its text in Leaf's editor, its comments beside it. */
-export const Issue: Story = { args: { file: shipIssue() } }
+/**
+ * A Ship issue: "Open" right after its name in the bar, and no ⋯, which is Ship's; its key above the title, Ship's row
+ * under it (status, then assignee, the pickers its card has), its text in Leaf's editor, its comments beside it.
+ */
+export const Issue: Story = {
+  args: { file: shipIssue() },
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText('Edited 2 hours ago by Katerina')).toBeVisible()
+  },
+}
 
 /** A Ship project: its key above the title, then status and lead, the pickers its card has; "Open" after the title in the bar. */
 export const Project: Story = { args: { file: shipProject() } }

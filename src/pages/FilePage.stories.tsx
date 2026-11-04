@@ -7,7 +7,7 @@ import { useThreads } from '../comments/useThreads'
 import { query, viewerPubkey } from '../relay/bridge'
 import { FilePage } from './FilePage'
 import { answer, factsOf } from './fixtures/relay'
-import { MIKY, PROFILES, shipIssue, threadsOn } from './fixtures/shipFiles'
+import { MIKY, PROFILES, threadsOn } from './fixtures/shipFiles'
 
 /*
   A page as Leaf draws it, its bar included (ONE-5, step 5): FilePage itself, not a copy of it. Only the relay's reads
@@ -70,14 +70,6 @@ type Story = StoryObj<typeof meta>
 
 /** A Leaf page: its name in the bar, when it was last edited and by whom, who is in it, and the page's own buttons; its comments beside it. */
 export const LeafPage: Story = {
-  play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByText('Edited 2 hours ago by Katerina')).toBeVisible()
-  },
-}
-
-/** A Ship issue opened in Leaf: "Open" right after its name in the bar, and no ⋯, which is Ship's. */
-export const AnotherAppsFile: Story = {
-  args: { file: shipIssue() },
   play: async ({ canvasElement }) => {
     await expect(await within(canvasElement).findByText('Edited 2 hours ago by Katerina')).toBeVisible()
   },
