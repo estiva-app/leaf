@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { IconDots } from '@tabler/icons-react'
+import { IconDotsVertical } from '@tabler/icons-react'
 import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, MoveDialog, ToolbarButton, useToast, type MovePlace } from '@estiva-app/ui'
 import { copyLink } from '../document/blockLink'
 import {
@@ -192,7 +192,7 @@ export function DocumentMenu({
       <Menu
         trigger={
           <ToolbarButton tooltip="More" aria-label="More">
-            <IconDots size={16} stroke={1.5} />
+            <IconDotsVertical size={16} stroke={1.5} />
           </ToolbarButton>
         }
         align="right"
