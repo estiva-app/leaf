@@ -1084,7 +1084,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   }
   // A refused resolve is said in the kit's dialog, which stays open; a refused reopen has no dialog, so a toast says it.
   const resolve = async (thread: Thread, next: boolean, note?: string): Promise<WriteResult> => {
-    if (!commented) return { ok: false, reason: 'this page is not in a Folder yet' }
+    if (!commented) return { ok: false, reason: 'this page is not in a team yet' }
     const result = await setResolved(commented, thread, next, note)
     if (!result.ok) return result
     if (next && active === thread.id) setActive(null)
