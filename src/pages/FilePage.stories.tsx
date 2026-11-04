@@ -1,23 +1,22 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, mocked, userEvent, within } from 'storybook/test'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
-import { descriptionTextToBlockDocument, serializeBlockDocument, type SignedEvent } from '@estiva-app/protocol'
+import { descriptionTextToBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { useThreads } from '../comments/useThreads'
 import { query, viewerPubkey } from '../relay/bridge'
 import { FilePage } from './FilePage'
-import { KATERINA, MIKY, PROFILES, shipIssue, threadsOn } from './fixtures/shipFiles'
+import { answer, factsOf } from './fixtures/relay'
+import { MIKY, PROFILES, shipIssue, threadsOn } from './fixtures/shipFiles'
 
 /*
   A page as Leaf draws it, its bar included (ONE-5, step 5): FilePage itself, not a copy of it. Only the relay's reads
-  are handed in: the page's own event, its changes and its comments, which say who is in it and its last edit, the
-  names on them, and its comments.
+  are handed in: the page's own event, its changes and its comments, which say who is in it and its last edit
+  (`fixtures/relay.ts`), the names on them, and its comments.
 */
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const ROOT = 'f'.repeat(64)
-const HOUR = 3_600_000
-const NOW = Date.now()
 
 /** A Leaf page: its title, its summary and its text. */
 function leafPage(): ForeignObject {
@@ -39,38 +38,6 @@ function leafPage(): ForeignObject {
       },
     },
   } as unknown as ForeignObject
-}
-
-let serial = 0
-function event(kind: number, pubkey: string, at: number, tags: string[][], content = ''): SignedEvent {
-  serial += 1
-  return { id: serial.toString(16).padStart(64, '0'), sig: '', kind, pubkey, created_at: Math.floor(at / 1000), tags, content }
-}
-
-/** What the relay holds for a file: Miky made it, Katerina edited its text two hours ago and was added, and she commented. */
-function factsOf(file: ForeignObject): SignedEvent[] {
-  const folder = file.folder ?? FOLDER
-  const address = file.address ?? ''
-  return [
-    { ...event(file.kind, MIKY, NOW - 50 * HOUR, [['d', address.split(':')[2] ?? ''], ['h', folder]]), id: file.eventId },
-    event(1851, KATERINA, NOW - 2 * HOUR, [['a', address], ['field', 'description'], ['value', 'Edited'], ['h', folder]]),
-    event(1851, MIKY, NOW - HOUR, [['a', address], ['field', `member:${KATERINA}`], ['value', 'true'], ['h', folder], ['p', KATERINA]]),
-    event(1111, KATERINA, NOW - 42 * 60_000, [['A', address], ['K', String(file.kind)], ['P', MIKY], ['h', folder]], 'A comment'),
-  ]
-}
-
-/** The relay's answer to each filter, as it matches: by id, by kind, by `a` and by `A`. */
-function answer(held: readonly SignedEvent[], filters: Record<string, unknown>[]): SignedEvent[] {
-  const has = (e: SignedEvent, tag: string, values: unknown) => !Array.isArray(values) || e.tags.some((t) => t[0] === tag && values.includes(t[1]))
-  return held.filter((e) =>
-    filters.some(
-      (f) =>
-        (!Array.isArray(f.ids) || f.ids.includes(e.id)) &&
-        (!Array.isArray(f.kinds) || f.kinds.includes(e.kind)) &&
-        has(e, 'a', f['#a']) &&
-        has(e, 'A', f['#A']),
-    ),
-  )
 }
 
 const meta = {
