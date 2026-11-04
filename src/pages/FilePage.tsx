@@ -36,7 +36,7 @@ import { viewerPubkey } from '../relay/bridge'
 /**
  * One file, opened from the tree or by its address. A document is written in place, and so is any file whose own
  * app shares its text — a Ship project or issue — with that app's row under its title. Any other file, such as a
- * Peek topic, says what it is and offers "Open in <its app>", the only place that app's name appears (PRO-24), with
+ * Peek topic, says what it is and offers `"Open in <its app>"`, the only place that app's name appears (PRO-24), with
  * no editor.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
