@@ -36,7 +36,7 @@ function said(by: string, body: string, minutesAgo: number, more: Partial<Commen
 
 const onWords = said(KATERINA, 'Ten feels small. Can we say which teams?', 42)
 const onWordsReply = said(MIKY, 'The ten from the pilot. I will list them under this.', 30)
-onWords.reactions = [{ id: 'f'.repeat(64), target: onWords.id, emoji: '👍', by: MIKY, at: NOW - 35 * 60_000 }]
+onWords.reactions = [{ emoji: '👍', count: 1, by: [MIKY] }]
 const onBlock = said(MIKY, 'Who reviews the post before it goes out?', 20, { edited: true, editedAt: NOW - 5 * 60_000 })
 const onPage = said(KATERINA, 'Looks ready to me once the dates are in.', 12)
 const resolvedOne = said(MIKY, 'Should Monday be Tuesday, for the time zones?', 90)
@@ -47,7 +47,9 @@ const THREADS: Thread[] = [
   { id: onBlock.id, blocks: [SECOND], root: onBlock, replies: [], resolved: false },
   { id: onPage.id, root: onPage, replies: [said(MIKY, 'Dates are in now.', 8)], resolved: false },
   // Deleted, its reply stays on the place it copied.
-  { id: 'd'.repeat(64), blocks: [FIRST], root: null, replies: [deletedReply], resolved: false },
+  { id: 'd'.repeat(64), gone: 'deleted', blocks: [FIRST], root: null, replies: [deletedReply], resolved: false },
+  // Not read, and nothing says it was deleted: it can't be shown, its reply stays on the place it copied.
+  { id: 'e'.repeat(64), gone: 'missing', blocks: [SECOND], root: null, replies: [said(MIKY, 'Who else is reviewing?', 25)], resolved: false },
   { id: resolvedOne.id, blocks: [FIRST], root: resolvedOne, replies: [], resolved: true, resolution: { by: KATERINA, note: 'Monday stays: the teams are all in Europe.', at: NOW - 70 * 60_000 } },
 ]
 

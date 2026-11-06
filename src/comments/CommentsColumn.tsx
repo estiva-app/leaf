@@ -10,14 +10,16 @@ import {
   draftKeys,
   embedsToEdit,
   embedsToSend,
-  groupReactions,
   namedBefore,
   offersEditAndDelete,
   openingWords,
   REACTION_EMOJI,
   REACTION_HORIZON,
   refusalReason,
+  ROW_BLOCK,
+  writtenUrlOf,
   type DraftStore,
+  type RowLine,
 } from '@estiva-app/conversation'
 import { contentFormatOf, decodeNevent, decodeNpub, encodeNaddr, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
 import {
@@ -27,6 +29,7 @@ import {
   ConversationLayout,
   EmptyState,
   FieldLine,
+  GONE_CLOSED,
   InlineChip,
   LinkChip,
   LinkRow,
@@ -67,7 +70,7 @@ import { CardActsProvider } from '../document/linked'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
 import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
-import { placeComment, referenceOfValue, ROW_BLOCK, writtenUrlOf, type RowLine } from './commentLines'
+import { placeComment, referenceOfValue } from './commentBody'
 import { linkReferenceOf, links, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { whenOf } from '../home/recent'
@@ -472,7 +475,7 @@ interface EntryProps {
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
  */
 function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, onReact, own, closed }: EntryProps): ConversationEntryProps {
-  const reactions = useMemo(() => groupReactions(comment.reactions, viewer)[comment.id] ?? [], [comment, viewer])
+  const reactions = comment.reactions
   // A refused delete keeps the question open and says why, under it (the kit's `deleteRefused`).
   const [deleteRefused, setDeleteRefused] = useState<string>()
   // A refused ✕ leaves the card and says why, as a refused reaction does.
@@ -820,26 +823,26 @@ function useThreadEntries({ thread, names, pictures, bots, now, people, page, vi
 /**
  * A thread's comment on the kit's `ConversationCard`, an item's `card` in the kit's layout (ONE-5, step 4): the layout
  * opens its thread from a press on it, its replies row or Reply, and marks it open. Resolve asks for a note (the kit's
- * dialog), and the card then says who resolved it and the note. Its comment deleted, it says so, still on its place,
- * with no reply and no Resolve, as in Peek (PER-24).
+ * dialog), and the card then says who resolved it and the note. Its comment gone — deleted, or not read — it says so,
+ * still on its place and still resolved when it was, with no reply, Resolve or Reopen, as in Peek and Ship (SPEC §6.5).
  */
 function ThreadComment(props: ThreadProps) {
   const { thread, where, editor, names, pictures, bots, now, people, onResolve, onReopen, closed } = props
   const { entry } = useThreadEntries(props)
   const [resolveRefused, setResolveRefused] = useState<string>()
-  // Its comment deleted, the thread has nothing to resolve, as in Peek (PER-24).
-  const deleted = !thread.root
+  // Its comment gone, the thread has nothing to resolve or reopen (SPEC §6.5).
+  const gone = !thread.root
   const named = (pubkey: string) => people.nameOf(pubkey) ?? names[pubkey] ?? 'Someone'
   const last = thread.replies.at(-1)
   // Who replied, once each, for the replies row's faces.
   const faces = [...new Set(thread.replies.map((r) => r.by))].map((by) => ({ name: names[by] ?? 'Someone', picture: pictures[by], bot: bots[by] }))
-  const resolution = !deleted ? thread.resolution : undefined
+  const resolution = thread.resolution
   const card: CommentCardProps = {
     about: aboutOf(thread, where, editor),
     replies: last ? { count: thread.replies.length, faces, last: whenOf(last.at, now) } : undefined,
     resolved: resolution && { by: named(resolution.by), note: resolution.note, at: inSentence(whenOf(resolution.at, now)) },
     onResolve:
-      !thread.resolved && !deleted && !closed
+      !thread.resolved && !gone && !closed
         ? async (note) => {
             setResolveRefused(undefined)
             const result = await onResolve(note)
@@ -848,12 +851,12 @@ function ThreadComment(props: ThreadProps) {
           }
         : undefined,
     resolveRefused,
-    onReopen: thread.resolved && !deleted && !closed ? onReopen : undefined,
+    onReopen: thread.resolved && !gone && !closed ? onReopen : undefined,
   }
   return thread.root ? (
     <LeafComment {...entry(thread.root)} card={card} />
   ) : (
-    <ConversationCard deleted author={{ name: '' }} time="" {...card}>
+    <ConversationCard deleted={thread.gone !== 'missing'} unseen={thread.gone === 'missing'} author={{ name: '' }} time="" {...card}>
       {null}
     </ConversationCard>
   )
@@ -861,15 +864,19 @@ function ThreadComment(props: ThreadProps) {
 
 /**
  * A thread open under its comment, an item's `thread` in the kit's layout: the kit's `Thread`, the replies on
- * `ReplyCard`, then Leaf's reply box. Resolved, deleted or archived, no reply box.
+ * `ReplyCard`, then Leaf's reply box. Resolved or archived, no reply box; its comment gone, the box says the kit's
+ * one sentence for it, as Peek's and Ship's do.
  */
 function ThreadReplies(props: ThreadProps) {
   const { thread, people, onReply, closed } = props
   const { scope, entry } = useThreadEntries(props)
-  // Its comment deleted, the thread takes no new replies, as in Peek (PER-24).
-  const takesReply = !thread.resolved && !!thread.root && !closed
+  const opensBox = !thread.resolved && !closed
+  // Its comment gone, the thread takes no new replies (SPEC §6.5).
+  const box = opensBox ? (
+    <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} {...(thread.root ? {} : { closed: GONE_CLOSED })} />
+  ) : undefined
   return (
-    <KitThread place="under" box={takesReply ? <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} /> : undefined}>
+    <KitThread place="under" box={box}>
       {thread.replies.map((reply) => (
         <LeafReply key={reply.id} id={reply.id} {...entry(reply)} />
       ))}
@@ -1003,7 +1010,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
 
   const all = useMemo(() => threads ?? [], [threads])
   // Authors and reactors: "who reacted" names them too.
-  const { names, pictures, bots } = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.map((r) => r.by)])))
+  const { names, pictures, bots } = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.flatMap((r) => r.by)])))
   const people = useMentionPeople()
   const page = useMemo(() => all.flatMap(commentsOf), [all])
   const pageScope = useMemo(() => ({ here: page, rest: [] }), [page])

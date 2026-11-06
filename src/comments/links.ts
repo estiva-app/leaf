@@ -15,7 +15,7 @@ import { linkReader } from '@estiva-app/interop'
 import type { LinkResolver } from '@estiva-app/protocol'
 import { query } from '../relay/bridge'
 import { declaredManifests } from '../relay/manifests'
-import { referenceOfValue } from './commentLines'
+import { referenceOfValue } from './commentBody'
 
 /** The tab's link reader. An empty manifest read is asked again, by `declaredManifests` and by the reader (interop 0.69). */
 export const links = linkReader({ query, manifests: declaredManifests })

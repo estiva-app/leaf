@@ -2,8 +2,9 @@ import {
   buildComment,
   buildReply,
   decorationsOf,
-  foldEmbeds,
+  foldThreads,
   groupThreads,
+  isAbout,
   isCommentOn,
   KIND_ASSERTION,
   KIND_COMMENT,
@@ -13,20 +14,19 @@ import {
   mentionTagsFor,
   placeOf,
   urgentTagsFor,
-  type ReactionEvent,
+  type Message,
+  type Reaction,
+  type RootState,
+  type Thread as FoldedThread,
 } from '@estiva-app/conversation'
 import {
-  blockRunOf,
   blockRunTag,
   buildDeletion,
   buildEdit,
   buildReaction,
   buildResolution,
-  embedsOf,
   embedTagsOf,
-  imetaOf,
   imetaTag,
-  quoteOf,
   quoteTag,
   toRenderTree,
   withCard,
@@ -61,21 +61,26 @@ export interface CommentItem {
   /** Its cards now (`embed`, §13.6.2): its own, replaced by the latest edit carrying any, as Peek and Ship fold them. */
   cards: Embed[]
   event: SignedEvent
-  /** Its reactions, one per person and emoji, oldest first (SPEC §6.6). */
-  reactions: ReactionEvent[]
+  /** Its reactions by emoji, each person once and known by their key, the viewer's own marked `mine` (SPEC §6.6). */
+  reactions: Reaction[]
 }
 
 /** A top-level comment and its replies: one card in the column. */
 export interface Thread {
   id: string
   /**
+   * Its comment is gone (SPEC §6.5): `deleted`, its author's deletion read, or `missing`, not returned and with no sign
+   * it was deleted. Either is drawn in the comment's place, its replies under it. Absent while the comment is there.
+   */
+  gone?: Exclude<RootState, 'present'>
+  /**
    * The run of blocks it is on (SPEC §13.6), or absent: the whole document —
-   * or, for a deleted comment, a place none of its replies remembers.
+   * or, for a comment that is gone, a place none of its replies remembers.
    */
   blocks?: string[]
   /** The words it quotes, when it is on a selection (LEAF-7) rather than whole blocks. */
   quote?: Quote
-  /** The top-level comment; `null` once it was deleted and its replies stay (SPEC §6.5). */
+  /** The top-level comment while `present`, else `null`: its replies stay (SPEC §6.5). */
   root: CommentItem | null
   replies: CommentItem[]
   /** The last resolution says resolved. */
@@ -107,97 +112,82 @@ export interface Threads {
   reactionsOmitted: number
   /** The reaction read came back at the relay's page ceiling, so some may be missing. */
   reactionsCut: boolean
+  /** What a live resolution, reaction or take-back names by `e`: every comment, reply, gone comment and reaction read. */
+  watched: string[]
 }
 
 /**
  * Every thread on a document, oldest first: its comments (`1111` naming it by
- * `A`, roots and replies alike), grouped by NIP-22, each root's resolutions
- * (`9101`), and every comment's and reply's reactions (`7`), read as Peek
- * reads them. Whatever Folder a comment was filed in, it is this document's:
- * reads go by anchor and are never bounded by Folder. Each one shows its
- * latest edit (SPEC §6.8).
+ * `A`, roots and replies alike), and what is read by `#e` on them — edits,
+ * resolutions (`9101`) and reactions (`7`), as Peek reads them — folded by the
+ * one shared fold (`foldThreads`, SPEC §6.3–§6.8), as Peek and Ship fold them.
+ * Whatever Folder a comment was filed in, it is this document's: reads go by
+ * anchor and are never bounded by Folder.
  *
- * A reply whose top-level comment is gone keeps its card only when the relay
- * holds a deletion of that comment by its author (SPEC §6.5): the comment is
- * then `null`, and the thread is placed by its earliest reply that copied the
- * comment's place. Gone with no deletion, it is outside this read, and has no
- * card.
+ * A thread whose top-level comment the read did not return asks the relay for
+ * its `kind:5`: with its author's, it is `deleted`; with none, `missing`. Either
+ * way it keeps its replies and its resolution, placed by its earliest reply that
+ * copied the comment's place (SPEC §6.5).
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-conversation-is-one-shared-thing-and-only-its-colours-are-the-apps.md
  */
 export async function readThreads(doc: Commented): Promise<Threads> {
-  const events = await query([{ kinds: [KIND_COMMENT], '#A': [doc.address], limit: 500 }])
-  const { roots, replies, missingRoots } = groupThreads(events.filter((e) => e.kind === KIND_COMMENT))
+  const comments = (await query([{ kinds: [KIND_COMMENT], '#A': [doc.address], limit: 500 }])).filter((e) => e.kind === KIND_COMMENT)
+  const { roots, replies, missingRoots } = groupThreads(comments)
+  // A comment that names this document by `A` but is about another (§6.4) is not this column's, nor are its replies.
   const on = roots.filter((e) => isCommentOn(e, doc.address))
-  const deleted = missingRoots.length ? await deletedRoots(missingRoots, replies) : []
-  const all = [...on, ...[...on.map((root) => root.id), ...deleted].flatMap((id) => replies[id] ?? [])]
-  // The body lets an edit that changed nothing stay unmarked. A deleted comment is a target too, for its thread's resolution.
-  const targets = [
-    ...all.map((e) => ({ id: e.id, at: e.created_at, body: e.content })),
-    ...deleted.map((id) => ({ id, at: replies[id]?.[0]?.created_at ?? 0 })),
-  ]
-  // The edits that read fetches carry the cards an edit re-chose too (✕ on a sent card), so they are kept on the way past, as Peek does.
-  const edits: SignedEvent[] = []
+  // A reply under a comment not returned is kept only when it is itself about this document, as a root must be.
+  const kept = [...on, ...on.flatMap((root) => replies[root.id] ?? []), ...missingRoots.flatMap((id) => (replies[id] ?? []).filter((e) => isAbout(e, doc.address)))]
+  // Everything the reads by `#e` return goes to the fold with the comments.
+  const read: SignedEvent[] = []
   const recording: typeof query = async (filters) => {
     const answer = await query(filters)
-    for (const event of answer) if (event.kind === KIND_EDIT) edits.push(event)
+    read.push(...answer)
     return answer
   }
+  if (missingRoots.length) await recording([{ kinds: [KIND_DELETION], '#e': missingRoots, limit: 500 }]).catch(() => [])
+  // A gone comment is a target too, for its thread's resolution.
+  const targets = [...kept.map((e) => ({ id: e.id, at: e.created_at })), ...missingRoots.map((id) => ({ id, at: replies[id]?.[0]?.created_at ?? 0 }))]
   const decorations = targets.length ? await decorationsOf(targets, recording) : null
-  const editedCards = foldEmbeds(edits)
-  const item = (event: SignedEvent): CommentItem => {
-    const edit = decorations?.byId[event.id]?.edit
-    return {
-      id: event.id,
-      by: event.pubkey,
-      at: event.created_at * 1000,
-      body: edit?.body ?? event.content,
-      edited: edit?.edited ?? false,
-      ...(edit?.editedAt !== undefined ? { editedAt: edit.editedAt } : {}),
-      files: edit?.attachments ?? imetaOf(event),
-      cards: editedCards[event.id] ?? embedsOf(event),
-      event,
-      reactions: decorations?.byId[event.id]?.reactions ?? [],
-    }
-  }
-  const thread = (id: string, root: SignedEvent | null): Thread => {
-    const answers = replies[id] ?? []
-    // Its comment's place while it is readable, else the earliest reply's that copied it.
-    const placed = root ?? answers.find((e) => blockRunOf(e))
-    const blocks = placed ? blockRunOf(placed) : undefined
-    const quote = placed && blocks ? quoteOf(placed) : undefined
-    // A resolved thread stays resolved when its comment is deleted.
-    const last = decorations?.byId[id]?.resolutions.at(-1)
-    const resolved = last?.action === 'resolved'
-    return {
-      id,
-      ...(blocks ? { blocks } : {}),
-      ...(quote ? { quote } : {}),
-      root: root ? item(root) : null,
-      replies: answers.map(item),
-      resolved,
-      // Whoever wrote it, in Leaf, Peek or Ship: the relay's seconds as ms, as every moment a card takes.
-      ...(resolved ? { resolution: { by: last.by, ...(last.message ? { note: last.message } : {}), at: last.at * 1000 } } : {}),
-    }
-  }
-  const threads = [...on.map((root) => thread(root.id, root)), ...deleted.map((id) => thread(id, null))]
-  return { threads, reactionsOmitted: decorations?.reactionTargetsOmitted ?? 0, reactionsCut: decorations?.reactionEventsCut ?? false }
+  const viewer = viewerPubkey() ?? undefined
+  const threads = foldThreads([...kept, ...read], viewer ? { viewer } : {}).map(threadOf)
+  const watched = [...kept.map((e) => e.id), ...missingRoots, ...read.filter((e) => e.kind === KIND_REACTION).map((e) => e.id)]
+  return { threads, reactionsOmitted: decorations?.reactionTargetsOmitted ?? 0, reactionsCut: decorations?.reactionEventsCut ?? false, watched }
 }
 
-/**
- * Of the top-level comments replies point at and the read did not return, the
- * ones the relay holds a `kind:5` for, signed by the comment's author as its
- * replies name them (their first `p`, before any mention's); a deletion by
- * anyone else deletes nothing. Replies that name no author take any deletion
- * as the proof.
- */
-async function deletedRoots(missing: string[], replies: Record<string, SignedEvent[]>): Promise<string[]> {
-  const deletions = await query([{ kinds: [KIND_DELETION], '#e': missing, limit: 500 }]).catch(() => [])
-  return missing.filter((id) => {
-    const authors = new Set((replies[id] ?? []).flatMap((r) => r.tags.find((t) => t[0] === 'p' && t[1])?.[1] ?? []))
-    return deletions.some((d) => d.tags.some((t) => t[0] === 'e' && t[1] === id) && (authors.size === 0 || authors.has(d.pubkey)))
-  })
+/** A message of the shared fold, as the column draws it. */
+function itemOf(message: Message): CommentItem {
+  return {
+    id: message.id,
+    by: message.author,
+    at: message.at,
+    body: message.body,
+    edited: message.edited,
+    ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
+    files: message.files,
+    cards: message.cards,
+    event: message.event,
+    reactions: message.reactions,
+  }
+}
+
+/** A thread of the shared fold, as the column draws it: on its comment's place, else its earliest reply's copy of it. */
+function threadOf(thread: FoldedThread): Thread {
+  const anchor = thread.root ? thread.root.anchor : thread.replies.find((r) => r.anchor)?.anchor
+  const resolution = thread.resolution
+  const resolved = resolution?.action === 'resolved'
+  return {
+    id: thread.id,
+    ...(thread.state !== 'present' ? { gone: thread.state } : {}),
+    ...(anchor ? { blocks: anchor.blocks, ...(anchor.quote ? { quote: anchor.quote } : {}) } : {}),
+    root: thread.root ? itemOf(thread.root) : null,
+    replies: thread.replies.map(itemOf),
+    resolved,
+    // Whoever wrote it, in Leaf, Peek or Ship, at the moment it sorts by (§6.3), in ms as every moment a card takes.
+    ...(resolved ? { resolution: { by: resolution.by, ...(resolution.message ? { note: resolution.message } : {}), at: resolution.orderMs } } : {}),
+  }
 }
 
 /** Publish `unsigned`, or answer signed out when there is none. A refusal is handed on as the relay said it; the console keeps it too. */

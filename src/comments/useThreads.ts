@@ -56,8 +56,7 @@ export function useThreads(doc: Partial<Commented>): ThreadsState {
   // What the watch matches by `e`: a resolution or a reaction names a comment or a reply by its id, and a take-back names the reaction's.
   const ids = useRef(new Set<string>())
   useEffect(() => {
-    const comments = read?.threads.flatMap((t) => [...(t.root ? [t.root] : []), ...t.replies]) ?? []
-    ids.current = new Set(comments.flatMap((c) => [c.id, ...c.reactions.map((r) => r.id)]))
+    ids.current = new Set(read?.watched ?? [])
   }, [read])
 
   useEffect(() => {

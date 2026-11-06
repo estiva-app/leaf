@@ -364,7 +364,7 @@ describe("a document's threads", () => {
     const onLast = event(7, [['e', replies[99].id]], '🎉', ME)
     relay.events = [root, ...replies, onLast]
     const { threads, reactionsOmitted } = await readThreads(DOC)
-    expect(threads[0].replies[99].reactions.map((r) => [r.emoji, r.by])).toEqual([['🎉', ME]])
+    expect(threads[0].replies[99].reactions.map((r) => [r.emoji, r.by, r.mine])).toEqual([['🎉', [ME], onLast.id]])
     // 101 comments: the oldest, the root, is the one not asked about.
     expect(reactionsOmitted).toBe(1)
   })
@@ -407,8 +407,8 @@ describe("a document's threads", () => {
     // The relay no longer returns the comment; its deletion by its author it does.
     relay.events = [first, second, event(5, [['e', root.id]], '', AUTHOR)]
     const { threads } = await readThreads(DOC)
-    expect(threads.map((t) => [t.id, t.root, t.blocks, t.quote, t.replies.map((r) => r.body), t.resolved])).toEqual([
-      [root.id, null, ['b1', 'b2'], { start: 'the plan' }, ['Cut it', 'Agreed'], false],
+    expect(threads.map((t) => [t.id, t.gone, t.root, t.blocks, t.quote, t.replies.map((r) => r.body), t.resolved])).toEqual([
+      [root.id, 'deleted', null, ['b1', 'b2'], { start: 'the plan' }, ['Cut it', 'Agreed'], false],
     ])
   })
 
@@ -443,7 +443,7 @@ describe("a document's threads", () => {
       event(5, [['e', root.id]], '', AUTHOR),
     ]
     const { threads } = await readThreads(DOC)
-    expect(threads.map((t) => [t.root, t.blocks, t.resolved])).toEqual([[null, ['b1'], true]])
+    expect(threads.map((t) => [t.gone, t.root, t.blocks, t.resolved])).toEqual([['deleted', null, ['b1'], true]])
   })
 
   it('keeps a deleted comment whose replies copied no place, with no place', async () => {
@@ -453,12 +453,31 @@ describe("a document's threads", () => {
     expect(threads.map((t) => [t.root, t.blocks, t.replies.map((r) => r.body)])).toEqual([[null, undefined, ['Cut it']]])
   })
 
-  it('draws no card for replies whose comment is only out of the read, or "deleted" by someone else', async () => {
+  it('keeps replies whose comment was not read, or was "deleted" by someone else, under a comment that can\'t be shown, never a deleted one', async () => {
     const root = comment([['block', 'b1']], 'Too long?')
+    const shown = async () => (await readThreads(DOC)).threads.map((t) => [t.id, t.gone, t.root, t.blocks, t.replies.map((r) => r.body)])
     relay.events = [reply(root, [['block', 'b1']], 'Cut it')]
-    expect((await readThreads(DOC)).threads).toEqual([])
+    expect(await shown()).toEqual([[root.id, 'missing', null, ['b1'], ['Cut it']]])
     relay.events = [reply(root, [['block', 'b1']], 'Cut it'), event(5, [['e', root.id]], '', 'c'.repeat(64))]
+    expect(await shown()).toEqual([[root.id, 'missing', null, ['b1'], ['Cut it']]])
+  })
+
+  it('keeps out a reply under a comment not read when the reply names two files, which §6.4 ignores under every file', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    const crossed = event(1111, [['A', ADDRESS], ['A', `30842:${AUTHOR}:another-page`], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['p', AUTHOR], ['block', 'b1'], ['h', FOLDER]], 'Elsewhere', ME)
+    relay.events = [crossed]
     expect((await readThreads(DOC)).threads).toEqual([])
+    relay.events = [crossed, reply(root, [['block', 'b1']], 'Cut it')]
+    expect((await readThreads(DOC)).threads.map((t) => [t.gone, t.replies.map((r) => r.body)])).toEqual([['missing', ['Cut it']]])
+  })
+
+  it('files a reply to a reply under its thread, not as a thread of its own (SPEC §6.4)', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    const answer = reply(root, [['block', 'b1']], 'Cut it')
+    const nested = event(1111, [['A', ADDRESS], ['K', '30842'], ['P', AUTHOR], ['E', root.id], ['e', answer.id], ['k', '1111'], ['h', FOLDER]], 'By half?', 'c'.repeat(64))
+    relay.events = [root, answer, nested]
+    const { threads } = await readThreads(DOC)
+    expect(threads.map((t) => [t.id, t.replies.map((r) => r.body)])).toEqual([[root.id, ['Cut it', 'By half?']]])
   })
 
   it("resolves a thread filed in another Folder in that Folder, its comment's own", async () => {
