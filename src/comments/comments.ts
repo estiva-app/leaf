@@ -4,6 +4,7 @@ import {
   decorationsOf,
   foldThreads,
   groupThreads,
+  isAbout,
   isCommentOn,
   KIND_ASSERTION,
   KIND_COMMENT,
@@ -137,7 +138,8 @@ export async function readThreads(doc: Commented): Promise<Threads> {
   const { roots, replies, missingRoots } = groupThreads(comments)
   // A comment that names this document by `A` but is about another (§6.4) is not this column's, nor are its replies.
   const on = roots.filter((e) => isCommentOn(e, doc.address))
-  const kept = [...on, ...[...on.map((root) => root.id), ...missingRoots].flatMap((id) => replies[id] ?? [])]
+  // A reply under a comment not returned is kept only when it is itself about this document, as a root must be.
+  const kept = [...on, ...on.flatMap((root) => replies[root.id] ?? []), ...missingRoots.flatMap((id) => (replies[id] ?? []).filter((e) => isAbout(e, doc.address)))]
   // Everything the reads by `#e` return goes to the fold with the comments.
   const read: SignedEvent[] = []
   const recording: typeof query = async (filters) => {

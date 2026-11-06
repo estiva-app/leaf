@@ -462,6 +462,15 @@ describe("a document's threads", () => {
     expect(await shown()).toEqual([[root.id, 'missing', null, ['b1'], ['Cut it']]])
   })
 
+  it('keeps out a reply under a comment not read when the reply names two files, which §6.4 ignores under every file', async () => {
+    const root = comment([['block', 'b1']], 'Too long?')
+    const crossed = event(1111, [['A', ADDRESS], ['A', `30842:${AUTHOR}:another-page`], ['K', '30842'], ['P', AUTHOR], ['e', root.id], ['k', '1111'], ['p', AUTHOR], ['block', 'b1'], ['h', FOLDER]], 'Elsewhere', ME)
+    relay.events = [crossed]
+    expect((await readThreads(DOC)).threads).toEqual([])
+    relay.events = [crossed, reply(root, [['block', 'b1']], 'Cut it')]
+    expect((await readThreads(DOC)).threads.map((t) => [t.gone, t.replies.map((r) => r.body)])).toEqual([['missing', ['Cut it']]])
+  })
+
   it('files a reply to a reply under its thread, not as a thread of its own (SPEC §6.4)', async () => {
     const root = comment([['block', 'b1']], 'Too long?')
     const answer = reply(root, [['block', 'b1']], 'Cut it')
