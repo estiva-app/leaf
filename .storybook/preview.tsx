@@ -10,6 +10,10 @@ sb.mock(import('../src/comments/useThreads.ts'), { spy: true })
 // file in Leaf / Newer Save, drawn by FilePage itself). A story that sets them puts them back when it is left.
 sb.mock(import('../src/relay/client.ts'), { spy: true })
 sb.mock(import('../src/document/save.ts'), { spy: true })
+// Topics level-up's prototype (Prototype/Topics level-up): a topic's page read from fixtures, and the app's own
+// navigate and replace kept inside the story, so a click or a topic page's link fix never moves the iframe.
+sb.mock(import('../src/topics/useTopicPage.ts'), { spy: true })
+sb.mock(import('../src/route.ts'), { spy: true })
 
 // The app's one theme, selected the way the app selects it: on <html>.
 document.documentElement.dataset.theme = "leaf"
