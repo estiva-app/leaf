@@ -856,7 +856,7 @@ function ThreadComment(props: ThreadProps) {
   return thread.root ? (
     <LeafComment {...entry(thread.root)} card={card} />
   ) : (
-    <ConversationCard deleted={thread.gone === 'deleted'} unseen={thread.gone !== 'deleted'} author={{ name: '' }} time="" {...card}>
+    <ConversationCard deleted={thread.gone !== 'missing'} unseen={thread.gone === 'missing'} author={{ name: '' }} time="" {...card}>
       {null}
     </ConversationCard>
   )

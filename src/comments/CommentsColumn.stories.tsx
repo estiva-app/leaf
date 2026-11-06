@@ -48,6 +48,8 @@ const THREADS: Thread[] = [
   { id: onPage.id, root: onPage, replies: [said(MIKY, 'Dates are in now.', 8)], resolved: false },
   // Deleted, its reply stays on the place it copied.
   { id: 'd'.repeat(64), gone: 'deleted', blocks: [FIRST], root: null, replies: [deletedReply], resolved: false },
+  // Not read, and nothing says it was deleted: it can't be shown, its reply stays on the place it copied.
+  { id: 'e'.repeat(64), gone: 'missing', blocks: [SECOND], root: null, replies: [said(MIKY, 'Who else is reviewing?', 25)], resolved: false },
   { id: resolvedOne.id, blocks: [FIRST], root: resolvedOne, replies: [], resolved: true, resolution: { by: KATERINA, note: 'Monday stays: the teams are all in Europe.', at: NOW - 70 * 60_000 } },
 ]
 
