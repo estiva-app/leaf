@@ -1093,6 +1093,37 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     expect(within(card).getByText('Cut it')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
   })
+
+  it('keeps a resolved comment its author deleted resolved, with who resolved it and the note, and offers no Reopen (SPEC §6.5)', async () => {
+    const own = mine([['block', PARAGRAPH]], 'Too long?')
+    const theirs = replyTo(own, 'Cut it', QA2, [['block', PARAGRAPH]])
+    const resolution: SignedEvent = { id: 'e'.repeat(64), pubkey: ME, created_at: 1_760_000_200, kind: 9101, tags: [['h', FOLDER], ['e', own.id], ['t', 'resolution'], ['action', 'resolved']], content: 'Cut to one line.', sig: '' }
+    const deletion: SignedEvent = { id: '7'.repeat(64), pubkey: ME, created_at: 1_760_000_300, kind: 5, tags: [['e', own.id]], content: '', sig: '' }
+    // The relay no longer returns the comment; its reply, its resolution and its author's deletion it does.
+    await open([roster, profile(ME, 'QA-1'), theirs, resolution, deletion])
+    await waitFor(() => expect(under('Resolved', own.id)).toBe(true))
+    const card = item(own.id)!
+    await waitFor(() => expect(within(card).getByText('This comment was deleted.')).toBeTruthy())
+    expect(within(card).getByText('Cut to one line.')).toBeTruthy()
+    expect(within(card).getByText('QA-1')).toBeTruthy()
+    expect(within(card).queryByRole('button', { name: /Reopen|Resolve|Reply/ })).toBeNull()
+  })
+
+  it("says a comment that wasn't read and wasn't deleted can't be shown, never deleted, with its reply under it and no Reply or Resolve", async () => {
+    const unread = comment([['block', PARAGRAPH]], 'Too long?')
+    const theirs = replyTo(unread, 'Cut it', QA2, [['block', PARAGRAPH]])
+    await open([theirs])
+    const card = await found(() => item(unread.id))
+    await waitFor(() => expect(within(card).getByText('This comment can’t be shown.')).toBeTruthy())
+    expect(within(card).queryByText('This comment was deleted.')).toBeNull()
+    expect(within(card).getByText('On the paragraph')).toBeTruthy()
+    expect(within(card).queryByRole('button', { name: /^(Resolve|Reply)$/ })).toBeNull()
+    act(() => void page().editor.emit('commentSelect', { id: unread.id }))
+    await waitFor(() => expect(card.getAttribute('data-open')).toBe('true'))
+    expect(within(card).getByText('Cut it')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
+    expect(screen.getByText('This thread takes no new replies.')).toBeTruthy()
+  })
 })
 
 describe('attaching a file to a comment (COMM-6)', () => {

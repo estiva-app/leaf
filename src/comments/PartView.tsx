@@ -8,7 +8,7 @@ import { readDocument } from '../document/save'
 import { titleOf } from '../folders/tree'
 import { useOwnerBlockLinker } from '../pages/usePathAddress'
 import { query } from '../relay/bridge'
-import { referenceOfValue } from './commentLines'
+import { referenceOfValue } from './commentBody'
 
 /**
  * How often a shown part is read again while the tab is visible, as Peek's

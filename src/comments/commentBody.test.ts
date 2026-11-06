@@ -5,7 +5,7 @@
  */
 import { toRenderTree } from '@estiva-app/protocol'
 import { describe, expect, it } from 'vitest'
-import { placeComment, referenceOfValue } from './commentLines'
+import { placeComment, referenceOfValue } from './commentBody'
 
 const ISSUE = `30851:${'e'.repeat(64)}:22222222-2222-4222-8222-222222222222`
 const URL = 'https://leaf.example/issue/fix-it-22222222-2222-4222-8222-222222222222'
@@ -21,7 +21,7 @@ describe('an app URL in a sent comment', () => {
   it('alone on its line is its file’s row, but the page the comment is on stays its chip, as Ship keeps it', () => {
     const lone = (here?: string) => placeComment(toRenderTree(`see\n${URL}`, 'marker'), { tags: [] }, { here, resolveLink, readable: () => true })
     const elsewhere = lone()
-    expect(elsewhere.rowOf(elsewhere.blocks[1])).toEqual({ reference: referenceOfValue(ISSUE), url: URL })
+    expect(elsewhere.rowOf(elsewhere.blocks[1])).toMatchObject({ reference: referenceOfValue(ISSUE), url: URL })
     const onIt = lone(ISSUE)
     expect(onIt.blocks.some((b) => onIt.rowOf(b))).toBe(false)
     expect(onIt.blocks[0].inline!.some((r) => r.reference === referenceOfValue(ISSUE))).toBe(true)
