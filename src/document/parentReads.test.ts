@@ -33,7 +33,7 @@ const listed = (filter: Record<string, unknown>) =>
       return [root, ...newest.values()]
     })
 const { query } = vi.hoisted(() => ({ query: vi.fn() }))
-vi.mock('../relay/bridge', () => ({ query, publish: vi.fn(async () => ({ ok: true })), viewerPubkey: () => 'a'.repeat(64) }))
+vi.mock('../relay/bridge', () => ({ query, queryAll: query, publish: vi.fn(async () => ({ ok: true })), viewerPubkey: () => 'a'.repeat(64) }))
 // A build with a relay, so its NIP-11 is asked.
 vi.mock('../config', async (importOriginal) => ({ ...(await importOriginal<typeof import('../config')>()), RELAY_URL: 'https://relay.test' }))
 
@@ -95,6 +95,14 @@ afterEach(() => {
 /** `save`, imported afresh so the relay's NIP-11 is asked again for each test. */
 const fresh = () => import('./save')
 
+/** A topic under C, as the sidebar's Topics reads it: archived with A only by walking B and A. */
+const topicUnderC = () => {
+  const topic = signed({ kind: 30840, pubkey: LEAF, created_at: 1_760_000_200, tags: [['d', 'plans'], ['title', 'Plans'], ['a', addr('C')], ['h', FOLDER]], content: '' })
+  relay.events.push(topic)
+  return `30840:${LEAF}:plans`
+}
+const sidebarTopics = async () => (await import('./fileTopics')).loadTopics()
+
 describe('where the relay offers the list read, with the switch off', () => {
   beforeEach(() => relayInfo('list'))
 
@@ -111,6 +119,14 @@ describe('where the relay offers the list read, with the switch off', () => {
     expect(read[naddrOf('C')]?.archived?.with).toBe(addr('A'))
     expect(historyAbove()).toEqual([])
   })
+
+  it('the sidebar’s topics are archived with the page above them, without reading every change above it', async () => {
+    const topic = topicUnderC()
+    const read = await sidebarTopics()
+
+    expect(read.topics.find((t) => t.address === topic)?.object.archived?.with).toBe(addr('A'))
+    expect(historyAbove()).toEqual([])
+  })
 })
 
 describe('where the relay does not offer the list read', () => {
@@ -120,6 +136,14 @@ describe('where the relay does not offer the list read', () => {
     const c = await (await fresh()).readDocument(naddrOf('C'))
 
     expect(c?.archived?.with).toBe(addr('A'))
+    expect(historyAbove().length).toBeGreaterThan(0)
+  })
+
+  it('the sidebar’s topics are still archived with the page above them, by the changes above as before', async () => {
+    const topic = topicUnderC()
+    const read = await sidebarTopics()
+
+    expect(read.topics.find((t) => t.address === topic)?.object.archived?.with).toBe(addr('A'))
     expect(historyAbove().length).toBeGreaterThan(0)
   })
 })
