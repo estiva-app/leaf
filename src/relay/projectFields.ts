@@ -32,6 +32,25 @@ function relayReads(): Promise<RelayFileReads | undefined> {
 }
 
 /**
+ * Forget the relay's NIP-11, so the next question asks it again: the relay refused a change as one that must name the
+ * change it follows, so it has made the switch since this tab read it (ALO-8). Every later read and write is switched.
+ */
+export function readRelayAgain(): void {
+  held = undefined
+  switchedHere = true
+}
+
+let switchedHere = false
+
+/**
+ * Whether this tab switched while open (ALO-8): what it shows was read the old way, so it holds no change for the text
+ * it loaded, and a save follows the text's current change with the loaded text as the merge's base.
+ */
+export function switchedSinceLoad(): boolean {
+  return switchedHere
+}
+
+/**
  * Whether Leaf reads and writes projects by their fields (ALO-6, SPEC §6.13): Ship's switch, protocol's one rule for
  * the three apps — the relay announces it, or this tab opted in. The relay's NIP-11 is read once per page; signed out
  * it is asked again next time. Undefined is off: read and write as before.
