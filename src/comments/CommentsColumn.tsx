@@ -16,6 +16,7 @@ import {
   REACTION_EMOJI,
   REACTION_HORIZON,
   refusalReason,
+  ownFileOf,
   ROW_BLOCK,
   withoutOwnFileLines,
   writtenUrlOf,
@@ -71,7 +72,7 @@ import { CardActsProvider } from '../document/linked'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
 import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
-import { ownFileOf, placeComment, referenceOfValue } from './commentBody'
+import { placeComment, referenceOfValue } from './commentBody'
 import { linkReferenceOf, links, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { whenOf } from '../home/recent'
