@@ -3,8 +3,10 @@ import {
   KIND_CHANNEL_METADATA,
   createPeopleCache,
   fieldsSetBy,
+  isSwitchRefusal,
   openFile,
   prevOf,
+  prevsAfterSwitch,
   resolveForeignObject,
   resolveForeignObjects,
   resolveManifest,
@@ -17,7 +19,7 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, t
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
-import { PROJECT_KIND, archivedWithOptions, byFields, isProject, openReadOption, projectFields } from '../relay/projectFields'
+import { PROJECT_KIND, archivedWithOptions, byFields, isProject, openReadOption, projectFields, readRelayAgain } from '../relay/projectFields'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 import { documentPath } from '../route'
 
@@ -246,7 +248,15 @@ type Writable = Pick<ForeignObject, 'address' | 'folder'> & Partial<Pick<Foreign
  * or wrote it, else the record's id for its first.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/merging-two-changes-to-one-text-never-loses-words.md
  */
-async function writeInOrder(pubkey: string, file: Writable & { address: string; folder: string }, field: string, value: string, prev: string, contentFormat?: string): Promise<WriteChangeResult> {
+async function writeInOrder(
+  pubkey: string,
+  file: Writable & { address: string; folder: string },
+  field: string,
+  value: string,
+  prev: string,
+  contentFormat?: string,
+  base?: { value: string; format?: string },
+): Promise<WriteChangeResult> {
   const [, owner, ...d] = file.address.split(':')
   const fields = await projectFields()
   try {
@@ -255,6 +265,7 @@ async function writeInOrder(pubkey: string, file: Writable & { address: string; 
       value,
       ...(contentFormat ? { format: contentFormat } : {}),
       prev,
+      ...(base ? { base } : {}),
       build: (input) => buildChange(pubkey, input.createdAtMs, { target: file.address, field, value: input.value, folder: file.folder, contentFormat: input.format, prev: input.prev }),
       sign: changeWriter.sign,
       publish: changeWriter.publish,
@@ -275,8 +286,29 @@ function prevFor(file: Writable, field: string): string | undefined {
   return mine ?? (file.eventId ? prevOf({ prevs: file.prevs, eventId: file.eventId }, field) : undefined)
 }
 
-/** Save a document's title, summary or text. `ok: false` carries what to tell the person. */
-export async function saveField(file: Writable, field: DocumentField, value: string, contentFormat?: string): Promise<SaveResult> {
+/**
+ * A project change written the old way, with no `prev`, that the relay refused because it has made the switch since
+ * this tab read its NIP-11 (ALO-8): read NIP-11 again, so every later read and write in this tab is switched too, and
+ * answer the change `field`'s next change follows — its current one, or the first record's. The caller writes the
+ * change again, once, through its switched path; the person sees nothing. Undefined for any other refusal, or when
+ * projects are still not switched: the refusal is shown as any is.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
+ */
+async function prevAfterSwitch(address: string, field: string, refused: PublishResult): Promise<string | undefined> {
+  if (refused.ok || !isProject(address) || !isSwitchRefusal(refused.reason)) return undefined
+  readRelayAgain()
+  if (!(await byFields(address))) return undefined
+  const [, owner, ...d] = address.split(':')
+  const prevs = await prevsAfterSwitch(query, { kind: PROJECT_KIND, pubkey: owner!, d: d.join(':') }, [field]).catch(() => undefined)
+  return prevs?.[field]
+}
+
+/**
+ * Save a document's title, summary or text. `ok: false` carries what to tell the person. `editedFrom` is the text the
+ * person edited, for the text: a project's text refused at the switch is written again only onto it (ALO-8), so words
+ * saved since it loaded are merged, never written over.
+ */
+export async function saveField(file: Writable, field: DocumentField, value: string, contentFormat?: string, editedFrom?: FileText): Promise<SaveResult> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to save.' }
   const { address, folder } = file
@@ -291,6 +323,12 @@ export async function saveField(file: Writable, field: DocumentField, value: str
   if (result.ok) {
     for (const listener of saved) listener()
     return { ok: true }
+  }
+  const text = field === TEXT_FIELD
+  const prev = !text || typeof editedFrom?.content === 'string' ? await prevAfterSwitch(address, field, result) : undefined
+  if (prev) {
+    const at = { ...file, address, folder }
+    return text ? saveTextInOrder(pubkey, at, { content: value, format: contentFormat }, editedFrom!, prev) : answered(await writeInOrder(pubkey, at, field, value, prev))
   }
   // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] save refused', result)
@@ -311,14 +349,23 @@ function answered(result: WriteChangeResult): SaveResult {
  * The text of a project read by its fields, saved after the change holding the text it was edited from (ALO-6). A
  * text that someone changed since is merged onto theirs; a block both changed asks with the kit's ask, nothing saved
  * (protocol's `textAsksOf`, Ship's). A text edited from one this tab never held is not saved: merging it would start
- * from the wrong base.
+ * from the wrong base. `switched` is the text's current change when it is written again after the switch (ALO-8): this
+ * tab holds no change for the text it loaded, so it follows the current one with the text it was edited from as the
+ * merge's base, and words saved since are kept.
  */
-async function saveTextInOrder(pubkey: string, file: Writable & { address: string; folder: string }, text: FileText & { content: string }, editedFrom: FileText): Promise<SaveResult> {
+async function saveTextInOrder(
+  pubkey: string,
+  file: Writable & { address: string; folder: string },
+  text: FileText & { content: string },
+  editedFrom: FileText,
+  switched?: string,
+): Promise<SaveResult> {
   const one = heldOf(file.address)
   const from = typeof editedFrom.content === 'string' ? editedFrom.content : undefined
-  const prev = from === undefined ? undefined : one.texts.get(from)
+  const prev = switched ?? (from === undefined ? undefined : one.texts.get(from))
   if (!prev) return { ok: false, reason: 'Someone changed it while you were editing. Copy your text, then reload.' }
-  const result = await writeInOrder(pubkey, file, TEXT_FIELD, text.content, prev, text.format)
+  const base = { value: from ?? '', ...(editedFrom.format ? { format: editedFrom.format } : {}) }
+  const result = await writeInOrder(pubkey, file, TEXT_FIELD, text.content, prev, text.format, switched ? base : undefined)
   if (result.ok) {
     // What the relay now holds: mine, or mine merged onto theirs — the text the editor is handed back next.
     const kept = 'event' in result ? textOf(result.event)?.value : textOf(result.mergedOnto)?.value
@@ -328,7 +375,6 @@ async function saveTextInOrder(pubkey: string, file: Writable & { address: strin
   if (result.ok || 'refused' in result) return answered(result)
   const theirs = textOf(result.theirs) ?? { value: '' }
   one.texts.set(theirs.value, result.theirs.id)
-  const base = { value: from ?? '', ...(editedFrom.format ? { format: editedFrom.format } : {}) }
   const mine = { value: text.content, ...(text.format ? { format: text.format } : {}) }
   return { ok: false, reason: 'asks', asks: textAsksOf(base, theirs, mine, result.asks) }
 }
@@ -386,6 +432,9 @@ export async function saveCardChoice(
   }
   const result = await publish(buildChange(pubkey, Date.now(), { target: file.address, field: action.field!, value, folder: file.folder }))
   if (result.ok) return { ok: true }
+  // Refused because the relay switched since this tab read it: once more, in order (ALO-8).
+  const prev = await prevAfterSwitch(file.address, action.field!, result)
+  if (prev && (await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev)).ok) return { ok: true }
   console.warn('[relay] change refused', result)
   return { ok: false, reason: 'Could not change it.' }
 }
@@ -407,7 +456,7 @@ export async function saveText(
 ): Promise<{ ok: true; refused: string[] } | { ok: false; reason: string; asks?: DocumentAsks }> {
   const pubkey = viewerPubkey()
   const { address, folder } = file
-  const result = pubkey && address && folder && (await byFields(address)) ? await saveTextInOrder(pubkey, { ...file, address, folder }, saved, editedFrom) : await saveField(file, 'description', saved.content, saved.format)
+  const result = pubkey && address && folder && (await byFields(address)) ? await saveTextInOrder(pubkey, { ...file, address, folder }, saved, editedFrom) : await saveField(file, 'description', saved.content, saved.format, editedFrom)
   if (!result.ok || !pubkey || !address || !folder) return result.ok ? { ok: true, refused: [] } : result
   const named = peopleNamedInText(saved)
   const people = [...new Set([...newlyNamedPeople(saved, editedFrom), ...unadded.filter((person) => named.has(person))])]
