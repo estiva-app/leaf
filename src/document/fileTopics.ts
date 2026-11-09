@@ -16,7 +16,7 @@ import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
 import { publish, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
-import { archivedRootsOptions } from '../relay/projectFields'
+import { archivedRootsOptions, listReadOffered } from '../relay/projectFields'
 
 /** A topic that lists a file, as the file's Topics row draws it. */
 export interface TopicOfFile {
@@ -98,11 +98,16 @@ export function resetTopicChoicesForTests(): void {
   listedHere = new Map()
 }
 
-/** Every topic the reader can read, read once more; throws, saying why, when nobody is signed in. */
-export function loadTopics(): Promise<TopicsRead> {
+/**
+ * Every topic the reader can read, read once more; throws, saying why, when nobody is signed in. Where the relay
+ * offers the list read, the project each topic sits under costs its current values, not every change (ALO-15).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ */
+export async function loadTopics(): Promise<TopicsRead> {
   const me = viewerPubkey()
-  if (!me) return Promise.reject(new Error('Sign in to read your topics.'))
-  return readTopics(queryAll, me, { cache: manifests })
+  if (!me) throw new Error('Sign in to read your topics.')
+  return readTopics(queryAll, me, { cache: manifests, parentsListRead: await listReadOffered() })
 }
 
 function choicesOf(read: TopicsRead, folders: ReadonlySet<string>): TopicChoices {

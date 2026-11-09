@@ -56,10 +56,14 @@ export async function listReadOffered(): Promise<boolean> {
 /**
  * `resolveForeignRoots`' `{ archivedWith: true }`, with its `listRead` once switched. There `listRead` reads the files
  * themselves by the list read too (no text, a deleted one left out), not only the parents walked, so it waits for the
- * switch as Peek's root reads do.
+ * switch as Peek's root reads do. The parents walked for an archive are read by the list read as soon as the relay
+ * offers it, switched or not (`parentsListRead`, ALO-15).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
  */
-export async function archivedRootsOptions(): Promise<{ archivedWith: true; listRead?: true }> {
-  return (await projectFields()) ? { archivedWith: true, listRead: true } : { archivedWith: true }
+export async function archivedRootsOptions(): Promise<{ archivedWith: true; listRead?: true; parentsListRead?: true }> {
+  if (await projectFields()) return { archivedWith: true, listRead: true }
+  return (await listReadOffered()) ? { archivedWith: true, parentsListRead: true } : { archivedWith: true }
 }
 
 /** `{ archivedWith: true }`, with interop's `listRead` once the relay offers it: each parent walked costs its current values. */
