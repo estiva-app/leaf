@@ -4,6 +4,7 @@ import { isDocument, isListed, titleOf } from '../folders/tree'
 import { timeOf } from '../home/recent'
 import { query } from '../relay/bridge'
 import { projections as manifests, resolveQuery } from '../relay/manifests'
+import { archivedRootsOptions } from '../relay/projectFields'
 
 /** The kinds a topic lists that Leaf opens: its pages, and Ship's projects and issues. */
 const OPENS = new Set<number>([KIND.DOCUMENT, 30850, 30851])
@@ -44,7 +45,7 @@ export async function readListedFiles(addresses: readonly string[], inTree: (add
   const outside = addresses.filter((address) => !inTree(address))
   const resolved = new Map<string, ForeignObject>()
   if (outside.length > 0)
-    for (const file of await resolveForeignRoots(outside, resolveQuery, manifests, { archivedWith: true }))
+    for (const file of await resolveForeignRoots(outside, resolveQuery, manifests, await archivedRootsOptions()))
       if (file.address && isListed(file)) resolved.set(file.address, file)
   return (address) => inTree(address) ?? resolved.get(address) ?? null
 }

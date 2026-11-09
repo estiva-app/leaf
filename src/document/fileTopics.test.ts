@@ -160,14 +160,15 @@ describe('what Add to topic offers', () => {
     expect([...choices.yours, ...choices.others].map((t) => t.title)).toEqual(['Open'])
   })
 
-  it('counts a topic as yours once you have written in its conversation', async () => {
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/writing-in-a-place-never-follows-it.md
+  it('does not count a topic as yours because you have written in its conversation', async () => {
     folderState(HQ)
     const zeta = rootOf(MIKY, 'zeta', 'Zeta')
     held.push(sign({ kind: 1111, pubkey: ME, created_at: 1_700_000_300, tags: [['A', zeta], ['a', zeta], ['h', HQ]], content: 'On it.' }))
 
     const choices = await readTopicChoices()
-    expect(choices.yours.map((t) => t.title)).toEqual(['Zeta'])
-    expect(choices.others).toEqual([])
+    expect(choices.yours).toEqual([])
+    expect(choices.others.map((t) => t.title)).toEqual(['Zeta'])
   })
 
   it('opened again, gives the held choices at once, and a topic made or archived since once the fresh read lands', async () => {

@@ -16,6 +16,7 @@ import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
 import { publish, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
+import { archivedRootsOptions } from '../relay/projectFields'
 
 /** A topic that lists a file, as the file's Topics row draws it. */
 export interface TopicOfFile {
@@ -54,7 +55,7 @@ export async function readFileTopics(file: string): Promise<TopicOfFile[]> {
   const listing = await topicsOfFile(query, file)
   if (listing.length === 0) return []
   const roots = new Map(listing.map((topic) => [topic.address, topic.root]))
-  const objects = await resolveForeignRoots([...roots.keys()], query, manifests, { archivedWith: true })
+  const objects = await resolveForeignRoots([...roots.keys()], query, manifests, await archivedRootsOptions())
   return objects
     .flatMap((object) => {
       const root = object.address ? roots.get(object.address) : undefined

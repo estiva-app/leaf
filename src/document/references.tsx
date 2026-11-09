@@ -4,6 +4,7 @@ import { createPeopleCache, resolveForeignObjects, type ForeignObject } from '@e
 import { readAbsence, referenceToPointer } from '@estiva-app/protocol'
 import { query } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
+import { archivedWithOptions } from '../relay/projectFields'
 import { unavailableLinks } from './linkMemory'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
@@ -86,7 +87,8 @@ function readQuietly(): void {
   quiet = setTimeout(() => {
     quiet = undefined
     const uris = [...failing]
-    void resolveForeignObjects(uris, query, people.viaRelay(query), manifests, { archivedWith: true })
+    void archivedWithOptions()
+      .then((options) => resolveForeignObjects(uris, query, people.viaRelay(query), manifests, options))
       .then((found) => {
         answered(uris, found)
         for (const listener of listeners) listener()
@@ -103,7 +105,7 @@ function readQuietly(): void {
  */
 export async function rereadReference(uri: string): Promise<void> {
   try {
-    answered([uri], await resolveForeignObjects([uri], query, people.viaRelay(query), manifests, { archivedWith: true }))
+    answered([uri], await resolveForeignObjects([uri], query, people.viaRelay(query), manifests, await archivedWithOptions()))
   } catch {
     return
   }
@@ -139,7 +141,9 @@ export function useReferences(uris: readonly string[]): Resolved {
     if (missing.length === 0) return () => void (live = false)
     for (const uri of missing) known[uri] = undefined
     // With its parent's archive too: an issue in an archived project is read-only, so its card offers no pickers.
-    const read = resolveForeignObjects(missing, query, people.viaRelay(query), manifests, { archivedWith: true })
+    // Each parent by the list read once the relay offers it: its current values, not every change (ALO-15).
+    const read = archivedWithOptions()
+      .then((options) => resolveForeignObjects(missing, query, people.viaRelay(query), manifests, options))
       .then((found) => answered(missing, found))
       .catch(() => {
         // Read again rather than say "cannot be read" for a dropped connection: a row or a card waits on it, not only a chip.

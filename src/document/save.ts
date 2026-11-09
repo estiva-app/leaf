@@ -17,7 +17,7 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, t
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
-import { PROJECT_KIND, byFields, isProject, openReadOption, projectFields } from '../relay/projectFields'
+import { PROJECT_KIND, archivedWithOptions, byFields, isProject, openReadOption, projectFields } from '../relay/projectFields'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 import { documentPath } from '../route'
 
@@ -35,14 +35,14 @@ const people = createPeopleCache()
  * is read-only as every app draws it.
  */
 export async function readDocument(naddr: string): Promise<ForeignObject | null> {
-  const file = await resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { archivedWith: true, ...(await openReadOption()) })
+  const file = await resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { ...(await archivedWithOptions()), ...(await openReadOption()) })
   if (file) noteRead(file)
   return file
 }
 
 /** Several files read as {@link readDocument} reads one, in one request: keyed by the `naddr` given. */
 export async function readDocuments(naddrs: readonly string[]): Promise<Record<string, ForeignObject | null>> {
-  const read = await resolveForeignObjects(naddrs, query, people.viaRelay(query), manifests, { archivedWith: true, ...(await openReadOption()) })
+  const read = await resolveForeignObjects(naddrs, query, people.viaRelay(query), manifests, { ...(await archivedWithOptions()), ...(await openReadOption()) })
   for (const file of Object.values(read)) if (file) noteRead(file)
   return read
 }
