@@ -1094,6 +1094,33 @@ describe('editing and deleting your own comment (COMM-5)', () => {
     expect(screen.queryByRole('textbox', { name: 'Reply…' })).toBeNull()
   })
 
+  it('keeps a comment deleted while you reply to it as "This comment was deleted." with your text, and says why Send is refused (ONE-10)', async () => {
+    const theirs = comment([['block', PARAGRAPH]], 'Too long?')
+    await open([roster, profile(AUTHOR, 'QA-1'), theirs])
+    await waitFor(() => expect(item(theirs.id)).not.toBeNull())
+    act(() => void page().editor.emit('commentSelect', { id: theirs.id }))
+    await waitFor(() => expect(box('Reply…')).toBeTruthy())
+    write('Reply…', 'Shorter now')
+    // Its author deletes it: the relay no longer returns it, and the deletion arrives live.
+    const deletion: SignedEvent = { id: '7'.repeat(64), pubkey: AUTHOR, created_at: 1_760_000_300, kind: 5, tags: [['e', theirs.id]], content: '', sig: '' }
+    relay.events = [roster, profile(AUTHOR, 'QA-1'), deletion]
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => live.listeners.forEach((l) => l(FOLDER, deletion)))
+      await act(() => vi.advanceTimersByTimeAsync(300))
+    } finally {
+      vi.useRealTimers()
+    }
+    const card = await found(() => item(theirs.id))
+    await waitFor(() => expect(within(card).getByText('This comment was deleted.')).toBeTruthy())
+    expect(within(card).queryByText('Too long?')).toBeNull()
+    expect(box('Reply…').editor.getText()).toBe('Shorter now')
+    publish.mockResolvedValueOnce({ ok: false, reason: 'invalid: reply parent not found in this team' })
+    sendWithEnter('Reply…')
+    await waitFor(() => expect(screen.getByText('Not sent: this message was deleted, or you can no longer write here. Your text is back in the box.')).toBeTruthy())
+    expect(box('Reply…').editor.getText()).toBe('Shorter now')
+  })
+
   it('keeps a resolved comment its author deleted resolved, with who resolved it and the note, and offers no Reopen (SPEC §6.5)', async () => {
     const own = mine([['block', PARAGRAPH]], 'Too long?')
     const theirs = replyTo(own, 'Cut it', QA2, [['block', PARAGRAPH]])
