@@ -144,9 +144,10 @@ describe('a tab open across the switch saves a project by itself (ALO-8)', () =>
   it('writes a card choice refused at the switch again after its current change', async () => {
     const status = theirs('status', 'todo')
     relay.switched = true
-    const card = { ...FILE, archived: undefined, parentField: undefined, actions: [{ id: 'status', field: 'status', control: 'select', options: [{ value: 'todo' }, { value: 'done' }] }] }
-    expect(await save.saveCardChoice(card as never, 'status', 'done')).toEqual({ ok: true })
+    const card = { ...FILE, archived: undefined, parentField: undefined, actions: [{ id: 'set-status', field: 'status', control: 'select', options: [{ value: 'todo' }, { value: 'done' }] }] }
+    expect(await save.saveCardChoice(card as never, 'set-status', 'done')).toEqual({ ok: true })
     expect(relay.sent).toHaveLength(2)
+    expect(tagOf(relay.sent[1], 'field')).toBe('status')
     expect(tagOf(relay.sent[1], 'prev')).toBe(status.id)
     expect(tagOf(newest(ADDRESS, 'status')!, 'value')).toBe('done')
   })
