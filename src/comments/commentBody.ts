@@ -12,7 +12,7 @@ import {
   type PartPointer,
   type RenderBlock,
 } from '@estiva-app/protocol'
-import { MAX_PARTS, placeLines, writtenUrlOf, type PlacedLines } from '@estiva-app/conversation'
+import { MAX_PARTS, ownFileOf, placeLines, writtenUrlOf, type PlacedLines } from '@estiva-app/conversation'
 
 /** The `nostr:` reference a file's address is written as, for its chip and card; undefined for anything that is not an address. */
 export function referenceOfValue(value: string): string | undefined {
@@ -112,6 +112,10 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
   })
   // The page the comment is on stays its chip: a row of the page you are reading says nothing.
   const stayChip = here ? (value: string) => value.toLowerCase() === here.toLowerCase() : undefined
-  const lines = placeLines(blocks, { cards: carried, parts, ...(resolveLink ? { resolveLink } : {}), ...(stayChip ? { stayChip } : {}) })
+  // A line that is only a link to the file the comment is on draws nothing (ONE-11; why:
+  // https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-draws-no-line-for-the-file-it-is-on.md).
+  // Leaf reads comments only (`kind:1111`, comments.ts), so the event is one.
+  const ownFile = ownFileOf({ kind: 1111, tags: event.tags })
+  const lines = placeLines(blocks, { cards: carried, parts, ...(resolveLink ? { resolveLink } : {}), ...(stayChip ? { stayChip } : {}), ...(ownFile.length ? { ownFile } : {}) })
   return { ...lines, cards, parts }
 }

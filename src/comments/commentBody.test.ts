@@ -38,3 +38,20 @@ describe('an app URL in a sent comment', () => {
     expect(runs(false).map((r) => r.text).join('')).toBe(`see ${URL} now`)
   })
 })
+
+// ONE-11 (Miky, 2026-11-09): Ship ended every issue comment with a line linking its own issue, which Leaf drew.
+describe('a comment’s line that only links the file it is on', () => {
+  const NADDR = referenceOfValue(ISSUE)!
+  const onIssue = { tags: [['A', ISSUE], ['K', '30851']] }
+  const text = (placed: ReturnType<typeof placeComment>) => placed.blocks.map((b) => (placed.rowOf(b) ? 'row' : b.inline?.map((r) => r.text).join('')))
+
+  it('draws nothing, as a nostr: link or as an app URL', () => {
+    expect(text(placeComment(toRenderTree(`Looks right.\n\n${NADDR}`, 'marker'), onIssue, { here: ISSUE, resolveLink, readable: () => true }))).toEqual(['Looks right.'])
+    expect(text(placeComment(toRenderTree(`Looks right.\n${URL}`, 'marker'), onIssue, { here: ISSUE, resolveLink, readable: () => true }))).toEqual(['Looks right.'])
+  })
+
+  it('is still a row on a comment on another file', () => {
+    const elsewhere = { tags: [['A', `30851:${'e'.repeat(64)}:another-issue`]] }
+    expect(text(placeComment(toRenderTree(`Looks right.\n\n${NADDR}`, 'marker'), elsewhere, { resolveLink, readable: () => true }))).toEqual(['Looks right.', 'row'])
+  })
+})
