@@ -127,6 +127,16 @@ describe('where the relay offers the list read, with the switch off', () => {
     expect(read.topics.find((t) => t.address === topic)?.object.archived?.with).toBe(addr('A'))
     expect(historyAbove()).toEqual([])
   })
+
+  it('a page’s Topics row shows a topic archived with the page above it, without reading every change above it', async () => {
+    const topic = topicUnderC()
+    const { planListInTopic } = await import('@estiva-app/interop')
+    relay.events.push(signed(planListInTopic(LEAF, 1_760_000_300_000, { topic: { address: topic, folder: FOLDER }, file: 'doc-1' })[0]))
+    const rows = await (await import('./fileTopics')).readFileTopics('doc-1')
+
+    expect(rows.find((row) => row.address === topic)?.archived).toBe(true)
+    expect(historyAbove()).toEqual([])
+  })
 })
 
 describe('where the relay does not offer the list read', () => {
