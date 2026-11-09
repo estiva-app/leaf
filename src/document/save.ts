@@ -19,7 +19,7 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, t
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
-import { PROJECT_KIND, archivedWithOptions, byFields, isProject, openReadOption, projectFields, readRelayAgain } from '../relay/projectFields'
+import { PROJECT_KIND, archivedWithOptions, byFields, isProject, openReadOption, projectFields, readRelayAgain, switchedSinceLoad } from '../relay/projectFields'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 import { documentPath } from '../route'
 
@@ -298,6 +298,11 @@ async function prevAfterSwitch(address: string, field: string, refused: PublishR
   if (refused.ok || !isProject(address) || !isSwitchRefusal(refused.reason)) return undefined
   readRelayAgain()
   if (!(await byFields(address))) return undefined
+  return currentChange(address, field)
+}
+
+/** The change `field`'s next change follows on the relay now: its current one, or the first record's (ALO-8). */
+async function currentChange(address: string, field: string): Promise<string | undefined> {
   const [, owner, ...d] = address.split(':')
   const prevs = await prevsAfterSwitch(query, { kind: PROJECT_KIND, pubkey: owner!, d: d.join(':') }, [field]).catch(() => undefined)
   return prevs?.[field]
@@ -362,7 +367,10 @@ async function saveTextInOrder(
 ): Promise<SaveResult> {
   const one = heldOf(file.address)
   const from = typeof editedFrom.content === 'string' ? editedFrom.content : undefined
-  const prev = switched ?? (from === undefined ? undefined : one.texts.get(from))
+  const heldPrev = from === undefined ? undefined : one.texts.get(from)
+  // A tab switched while open read its text the old way: it follows the current text, merged from the loaded one (ALO-8).
+  switched ??= heldPrev === undefined && from !== undefined && switchedSinceLoad() ? await currentChange(file.address, TEXT_FIELD) : undefined
+  const prev = switched ?? heldPrev
   if (!prev) return { ok: false, reason: 'Someone changed it while you were editing. Copy your text, then reload.' }
   const base = { value: from ?? '', ...(editedFrom.format ? { format: editedFrom.format } : {}) }
   const result = await writeInOrder(pubkey, file, TEXT_FIELD, text.content, prev, text.format, switched ? base : undefined)

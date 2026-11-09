@@ -126,6 +126,21 @@ describe('a tab open across the switch saves a project by itself (ALO-8)', () =>
     expect(tagOf(again, 'value')).toContain('TWO')
   })
 
+  it('saves the text after a title already switched the tab, keeping the words someone saved since it loaded', async () => {
+    const loaded = doc(['b1', 'one'], ['b2', 'two'])
+    const their = theirs('description', doc(['b1', 'ONE'], ['b2', 'two']), FORMAT)
+    relay.switched = true
+    expect(await save.saveField(FILE, 'title', 'After')).toEqual({ ok: true })
+    relay.sent = []
+
+    const result = await save.saveText(FILE, { content: doc(['b1', 'one'], ['b2', 'TWO']), format: FORMAT }, { content: loaded, format: FORMAT })
+    expect(result).toEqual({ ok: true, refused: [] })
+    expect(relay.sent).toHaveLength(1)
+    expect(tagOf(relay.sent[0], 'prev')).toBe(their.id)
+    expect(tagOf(relay.sent[0], 'value')).toContain('ONE')
+    expect(tagOf(relay.sent[0], 'value')).toContain('TWO')
+  })
+
   it('writes a card choice refused at the switch again after its current change', async () => {
     const status = theirs('status', 'todo')
     relay.switched = true

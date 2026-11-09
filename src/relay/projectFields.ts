@@ -37,6 +37,17 @@ function relayReads(): Promise<RelayFileReads | undefined> {
  */
 export function readRelayAgain(): void {
   held = undefined
+  switchedHere = true
+}
+
+let switchedHere = false
+
+/**
+ * Whether this tab switched while open (ALO-8): what it shows was read the old way, so it holds no change for the text
+ * it loaded, and a save follows the text's current change with the loaded text as the merge's base.
+ */
+export function switchedSinceLoad(): boolean {
+  return switchedHere
 }
 
 /**
