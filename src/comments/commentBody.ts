@@ -39,6 +39,11 @@ export interface PlacedComment extends PlacedLines {
   parts: PartPointer[]
 }
 
+/** The values naming the file a comment is on: its NIP-22 `A` and its `O` id (SPEC §6.4). */
+export function ownFileOf(event: { tags: readonly (readonly string[])[] }): string[] {
+  return event.tags.filter((t) => (t[0] === 'A' || t[0] === 'O') && t[1]).map((t) => t[1])
+}
+
 /** What a reader needs beyond the comment: the page it is on, and what an app link names, as answered so far (§7.7). */
 export interface PlaceContext {
   here?: string
@@ -112,6 +117,9 @@ export function placeComment(body: readonly RenderBlock[], event: { tags: readon
   })
   // The page the comment is on stays its chip: a row of the page you are reading says nothing.
   const stayChip = here ? (value: string) => value.toLowerCase() === here.toLowerCase() : undefined
-  const lines = placeLines(blocks, { cards: carried, parts, ...(resolveLink ? { resolveLink } : {}), ...(stayChip ? { stayChip } : {}) })
+  // A line that is only a link to the file the comment is on draws nothing (ONE-11; why:
+  // https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-draws-no-line-for-the-file-it-is-on.md).
+  const ownFile = ownFileOf(event)
+  const lines = placeLines(blocks, { cards: carried, parts, ...(resolveLink ? { resolveLink } : {}), ...(stayChip ? { stayChip } : {}), ...(ownFile.length ? { ownFile } : {}) })
   return { ...lines, cards, parts }
 }

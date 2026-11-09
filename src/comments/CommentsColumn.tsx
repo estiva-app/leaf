@@ -17,6 +17,7 @@ import {
   REACTION_HORIZON,
   refusalReason,
   ROW_BLOCK,
+  withoutOwnFileLines,
   writtenUrlOf,
   type DraftStore,
   type RowLine,
@@ -70,7 +71,7 @@ import { CardActsProvider } from '../document/linked'
 import { PageLink } from '../document/PageLink'
 import { CommentCard } from './CommentCard'
 import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
-import { placeComment, referenceOfValue } from './commentBody'
+import { ownFileOf, placeComment, referenceOfValue } from './commentBody'
 import { linkReferenceOf, links, useKnownLinks } from './links'
 import { PartView } from './PartView'
 import { whenOf } from '../home/recent'
@@ -332,7 +333,8 @@ function Box({
   }
   // The words an edit opens with are the comment's as the edit began: a re-read while editing does not reset them.
   const [opened] = useState(() =>
-    editing ? (editing.typed?.() ?? (composerDocument(editing.comment.body, { personLabel: knownName }, urgentOf(editing.comment)) as JSONContent)) : undefined,
+    // Without the line linking its own file, which Ship once appended and no reader draws (ONE-11).
+    editing ? (editing.typed?.() ?? (composerDocument(withoutOwnFileLines(editing.comment.body, ownFileOf(editing.comment.event)), { personLabel: knownName }, urgentOf(editing.comment)) as JSONContent)) : undefined,
   )
   // The package's edit mode keeps no draft: this tells the column each change, for the ending to hold.
   const [extensions] = useState(() => {
