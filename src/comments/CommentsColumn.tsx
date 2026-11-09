@@ -200,6 +200,9 @@ function draftStore(): DraftStore {
   return drafts
 }
 
+/** The reply box of this thread holds text (its draft keeps every change). */
+const replyHoldsText = (threadId: string) => !!draftStore().read(draftKeys.thread(threadId))?.trim()
+
 /** The page the column's comments are on: its file gets no card under a comment, and its blocks no part (Miky, 2026-10-19). */
 const PageHere = createContext<string | undefined>(undefined)
 
@@ -276,7 +279,10 @@ function Box({
   editing,
   closed,
   about,
+  reply,
 }: {
+  /** A reply box: a send refused because its comment was deleted meanwhile says so (ONE-10). */
+  reply?: boolean
   /** Said in the empty box, and its accessible name. */
   placeholder: string
   draftKey?: string
@@ -359,6 +365,7 @@ function Box({
       <CommentBox
         label={placeholder}
         placeholder={<span>{placeholder}</span>}
+        reply={reply}
         people={people.people}
         references={(typed) => commentReferenceSections(scope, typed, people.nameOf)}
         referencesChanged={subscribeReferences}
@@ -871,9 +878,11 @@ function ThreadReplies(props: ThreadProps) {
   const { thread, people, onReply, closed } = props
   const { scope, entry } = useThreadEntries(props)
   const opensBox = !thread.resolved && !closed
-  // Its comment gone, the thread takes no new replies (SPEC §6.5).
+  // Its comment gone, the thread takes no new replies (SPEC §6.5); deleted while a reply to it is written, the box keeps
+  // the text, and Send says why it is refused (ONE-10, Decided 9 November).
+  const takesNoReply = !thread.root && !replyHoldsText(thread.id)
   const box = opensBox ? (
-    <Box key={thread.id} placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} {...(thread.root ? {} : { closed: GONE_CLOSED })} />
+    <Box key={thread.id} reply placeholder="Reply…" draftKey={draftKeys.thread(thread.id)} scope={scope} people={people} onSend={onReply} {...(takesNoReply ? { closed: GONE_CLOSED } : {})} />
   ) : undefined
   return (
     <KitThread place="under" box={box}>
@@ -1008,7 +1017,16 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
     }
   }, [editor])
 
-  const all = useMemo(() => threads ?? [], [threads])
+  /*
+    The open thread as last read. A comment with no replies leaves the read the moment it is deleted; while its reply
+    box holds text it stays on its place, as "This comment was deleted." with the box, so the text is not lost and Send
+    says why it is refused (ONE-10, Decided 9 November). Emptied, closed or sent, it goes.
+  */
+  const [last, setLast] = useState<Thread>()
+  const live = threads?.find((t) => t.id === active)
+  if (live && live !== last) setLast(live)
+  const kept = threads !== null && !live && last && last.id === active && replyHoldsText(last.id) ? last : undefined
+  const all = useMemo(() => (kept ? [...(threads ?? []), { ...kept, root: null, replies: [], gone: 'deleted' as const }] : (threads ?? [])), [threads, kept])
   // Authors and reactors: "who reacted" names them too.
   const { names, pictures, bots } = useNames(all.flatMap((t) => commentsOf(t).flatMap((c) => [c.by, ...c.reactions.flatMap((r) => r.by)])))
   const people = useMentionPeople()

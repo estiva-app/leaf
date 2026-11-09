@@ -263,8 +263,9 @@ export async function postComment(doc: Commented, written: Written, anchor?: Anc
 export async function postReply(doc: Commented, thread: Thread, written: Written): Promise<WriteResult> {
   const pubkey = viewerPubkey()
   const root = thread.root
-  // A send on a deleted message says "you can no longer write here" (ui 0.106): "deleted" is an edit's or a reaction's.
-  if (!root) return { ok: false, reason: { cause: 'no-access' } }
+  // Its comment gone (deleted while the reply was written): refused here as the relay would, and the reply box says the
+  // message was deleted (ONE-10, Decided 9 November).
+  if (!root) return { ok: false, reason: { cause: 'gone' } }
   if (!pubkey) return send(null)
   const tags = [...(await earnedTags(written, { file: doc.address, parent: thread.id })), ...embedTagsOf(written.cards ?? [])]
   const folder = root.event.tags.find((t) => t[0] === 'h')?.[1] ?? doc.folder
