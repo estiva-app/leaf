@@ -1,0 +1,46 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './CommentCard.stories'
+
+<Meta of={Stories} />
+
+# CommentCard
+
+One file drawn as its card, the way Peek's and Ship's `MessageCard` draw it:
+the package's card for a `nostr:` reference, with its title, its status and
+owner where the file has them, and its comments' count.
+
+## When
+
+- Under a comment that names one file (`CommentsColumn`), and under the comment
+  box while a comment is written: with ✕ for the comment's author.
+- On a topic's page, for a file the topic shows as a card, or whose own app
+  draws it as one when nobody chose (`TopicPage`, TOPI-5).
+
+## When not
+
+- Not for a link inside a document's text: that is the editor's chip,
+  **PageLink**.
+- Not for a file uploaded to a comment: that is **FileCard**.
+- Not for a file the topic shows as a row: Leaf draws the package's **Card** as
+  a row there, as its sidebar does.
+
+## How
+
+```tsx
+import { CommentCard } from './CommentCard'
+
+<CommentCard uri={`nostr:${file.naddr}`} opensAt={new URL(href, window.location.origin).href} />
+```
+
+- `opensAt` is where its title opens. Only a whole `https` URL on an app's host
+  counts, so a path in Leaf goes in absolute.
+- `compact` draws an old comment's card as the file's one-line row.
+- Inside `ReferencesProvider` it takes the file from the page's read; outside
+  one it reads the file itself.
+- Inside `CardActsProvider value={false}` its status and owner only show.
+
+## What it owns
+
+- **The read of its file and its comments**, through `useCardLinkState`, when
+  no page read hands it the file.
+- **Its ✕**: drawn only with `onRemove`.
