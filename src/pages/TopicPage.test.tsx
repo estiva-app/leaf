@@ -77,6 +77,7 @@ function file(kind: 30842 | 30851, title: string, archived = false, widget: stri
     // As its app draws it where nothing is chosen: a row here, so a case reads the row's link unless it says otherwise.
     widget,
     slots: { title: { value: title }, ...(shared ? { [BODY_SLOT]: { field: 'description' } } : {}) },
+    meta: [],
     actions: shared ? [{ control: 'text', field: 'description', format: BLOCK_DOCUMENT_FORMAT }] : [],
     ...(archived ? { archived: { at: 1 } } : {}),
   } as unknown as ForeignObject
@@ -153,11 +154,23 @@ describe("a topic's page in Leaf", () => {
       }),
     )
     show(d)
-    // The issue stays a row, a link to it; the page is its card, not a row link.
-    expect(await screen.findByRole('link', { name: /Write the brief/ })).toBeTruthy()
-    const files = [...document.querySelectorAll('[data-topic-page] [data-card], [data-topic-page] a[href^="/f/"]')]
-    expect(files.map((el) => el.getAttribute('data-card') ?? 'row')).toEqual(['row', 'detailed'])
-    expect(screen.queryByRole('link', { name: /^Launch plan$/ })).toBeNull()
+    // The issue stays a row, a link named by its title; the page is its card, whose title opens it in Leaf.
+    const brief = await screen.findByRole('link', { name: /^Write the brief/ })
+    const card = await screen.findByRole('link', { name: 'Launch plan' })
+    expect(card.getAttribute('href')).toBe(`https://leaf.estiva.app/document/launch-plan-${planD}`)
+    expect(document.querySelector(`[data-topic-page] a[href="/document/launch-plan-${planD}"]`)).toBeNull()
+    expect(brief.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('draws a file nobody set as its own app says: a page as a card, an issue as a row (TOPI-5)', async () => {
+    const plan = file(30842, 'Launch plan', false, 'card')
+    const issue = file(30851, 'Write the brief')
+    outside = { [plan.address!]: plan, [issue.address!]: issue }
+    show(topic('Widgets', [plan, issue]))
+    const planD = plan.address!.split(':')[2]!
+    expect((await screen.findByRole('link', { name: /^Write the brief/ })).getAttribute('href')).toBe(`/f/${issue.naddr}`)
+    expect((await screen.findByRole('link', { name: 'Launch plan' })).getAttribute('href')).toBe(`https://leaf.estiva.app/document/launch-plan-${planD}`)
+    expect(document.querySelector(`[data-topic-page] a[href="/document/launch-plan-${planD}"]`)).toBeNull()
   })
 
   it('takes a listed file the tree already read from the tree, with the title the tree has now', async () => {

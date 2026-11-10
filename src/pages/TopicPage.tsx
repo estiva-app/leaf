@@ -8,6 +8,8 @@ import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
 import { lookOf, useTopicPage } from '../topics/useTopicPage'
 import { CommentCard } from '../comments/CommentCard'
+import { CardActsProvider } from '../document/linked'
+import { ReferencesProvider } from '../document/references'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -86,7 +88,7 @@ export function TopicPage({
                 ) : (
                   <>
                     {files.live.length > 0 ? (
-                      <Rows files={files.live} looks={files.looks} />
+                      <Rows files={files.live} looks={files.looks} readOnly={!!page.archived} />
                     ) : (
                       <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />
                     )}
@@ -94,7 +96,7 @@ export function TopicPage({
                       (showArchived || files.live.length === 0 ? (
                         <section className="flex flex-col gap-2">
                           <SectionLabel tone="muted">Archived</SectionLabel>
-                          <Rows files={files.archived} looks={files.looks} />
+                          <Rows files={files.archived} looks={files.looks} readOnly={!!page.archived} />
                         </section>
                       ) : (
                         // A button, not the story's link: it opens nothing, it shows the rows below (as Ship's topic page).
@@ -114,16 +116,31 @@ export function TopicPage({
 }
 
 /** What a topic lists, in its order: a row as Leaf's sidebar draws one (its icon, its title and, for another app's file, its type), or its card. */
-function Rows({ files, looks }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook> }) {
+function Rows({ files, looks, readOnly }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook>; readOnly: boolean }) {
+  // The cards take the files as the page read them, not one read each; on an archived topic their status and owner only show.
+  const read = Object.fromEntries(files.flatMap((file) => (file.naddr ? [[`nostr:${file.naddr}`, file]] : [])))
+  return (
+    <ReferencesProvider value={read}>
+      <CardActsProvider value={!readOnly}>
+        <RowList files={files} looks={looks} />
+      </CardActsProvider>
+    </ReferencesProvider>
+  )
+}
+
+/** The rows and cards themselves. */
+function RowList({ files, looks }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook> }) {
   return (
     <div className="flex flex-col gap-px">
       {files.map((file) => {
         const row = rowOf(file)
         // Its card where the topic shows it as one, or its own app draws it so (TOPI-5): the kit's card, as under a comment.
+        // It opens where the row did. A written link counts only as a whole https URL on an app's host, so the row's
+        // path goes in absolute; else the card would open at the address a manifest gives, which anyone may publish.
         if (file.naddr && lookOf(file, file.address ? looks.get(file.address) : undefined) === 'card')
           return (
             <div key={row.id} data-topic-file={file.address} className="py-1.5">
-              <CommentCard uri={`nostr:${file.naddr}`} opensAt={row.href} />
+              <CommentCard uri={`nostr:${file.naddr}`} opensAt={new URL(row.href, window.location.origin).href} />
             </div>
           )
         return (
