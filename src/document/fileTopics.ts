@@ -6,15 +6,18 @@ import {
   planListInTopic,
   planRemoveFromTopic,
   readTopics,
+  readYourTopics,
   resolveForeignRoots,
   topicsOfFile,
   type ForeignObject,
   type ReadTopic,
   type TopicsRead,
+  type YourTopicsRead,
 } from '@estiva-app/interop'
 import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
-import { publish, queryAll, viewerPubkey } from '../relay/bridge'
+import { nip44 } from '../auth/nip44'
+import { publish, query as relayQuery, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 import { archivedRootsOptions, listReadOffered } from '../relay/projectFields'
 
@@ -91,9 +94,46 @@ export const listedInTab = {
   },
 }
 
-/** Test seam: forget the held topics. */
+/**
+ * Only your topics, newest activity first, with your mute list (ALO-20, Ship's ALO-17): interop's lean read, what the
+ * sidebar draws its five from on every page, unless you joined or left a topic since it was read. Your spaces come with
+ * it, marked, so a link to one you are in goes to Peek from any page; the sidebar leaves them out itself.
+ */
+export const heldYourTopics = createRetryingRead<YourTopicsRead>({ retryable: () => false })
+
+/** The mute list last opened, so an unchanged one costs no `/nip44/decrypt` on the next read; a failure is not kept. */
+let opened: { ciphertext: string; plaintext: string } | undefined
+
+async function decryptOnce(ciphertext: string): Promise<string | undefined> {
+  if (opened?.ciphertext === ciphertext) return opened.plaintext
+  try {
+    const plaintext = await nip44.decrypt(ciphertext)
+    opened = { ciphertext, plaintext }
+    return plaintext
+  } catch {
+    // Estiva ID refused or was busy (a 429): nothing is left out as muted, as before.
+    return undefined
+  }
+}
+
+/**
+ * Your topics, read once more: one request a call, never paged by `queryAll`, which would ask each filter for a thousand
+ * events and keep interop's rounds from ending on a short page. Throws, saying why, when nobody is signed in.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ */
+export async function loadYourTopics(): Promise<YourTopicsRead> {
+  const me = viewerPubkey()
+  if (!me) throw new Error('Sign in to read your topics.')
+  const listRead = await listReadOffered()
+  return readYourTopics(relayQuery, me, { cache: manifests, decrypt: decryptOnce, spaces: true, ...(listRead ? { listRead } : {}) })
+}
+
+/** Test seam: forget the held topics, yours and every one. */
 export function resetTopicChoicesForTests(): void {
   heldTopics.clear()
+  heldYourTopics.clear()
+  opened = undefined
   addableIn = undefined
   listedHere = new Map()
 }
