@@ -1,6 +1,6 @@
 import { byActivity, isArchived, resolveForeignRoots, type ForeignObject, type ReadTopic, type TopicsRead } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
-import { isDocument, isListed, titleOf } from '../folders/tree'
+import { isListed } from '../folders/tree'
 import { projections as manifests, resolveQuery } from '../relay/manifests'
 import { archivedRootsOptions } from '../relay/projectFields'
 
@@ -11,15 +11,11 @@ const OPENS = new Set<number>([KIND.DOCUMENT, 30850, 30851])
 export interface SidebarTopic {
   address: string
   title: string
-  /** Pages, then projects, then issues; each A–Z. Empty when it lists nothing Leaf opens. */
+  /** In the topic's one order, as every app lists them (TOPI-5). Empty when it lists nothing Leaf opens. */
   files: ForeignObject[]
 }
 
 const kindOf = (address: string) => Number(address.split(':')[0])
-
-/** Pages first, then projects, then issues: Leaf's own files lead. */
-const rank = (file: ForeignObject) => (isDocument(file) ? 0 : file.kind === 30850 ? 1 : 2)
-export const byKindThenTitle = (a: ForeignObject, b: ForeignObject) => rank(a) - rank(b) || titleOf(a).localeCompare(titleOf(b))
 
 /** A topic's title as Leaf draws it everywhere. */
 export const topicTitleOf = (topic: ReadTopic) => topic.object.slots.title?.value?.trim() || 'Untitled topic'
@@ -27,7 +23,13 @@ export const topicTitleOf = (topic: ReadTopic) => topic.object.slots.title?.valu
 /** This tab's own adds and removes since the read, by topic, then file address. */
 export type ListedHere = ReadonlyMap<string, ReadonlyMap<string, boolean>>
 
-/** The addresses a topic lists that Leaf opens, with this tab's own adds and removes over the read. */
+/**
+ * The addresses a topic lists that Leaf opens, with this tab's own adds and removes over the read: in the topic's one
+ * order, which interop reads with the list (placed files by their place, then the rest oldest listed first), and a file
+ * added in this tab last, where its first place is too.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md
+ */
 export function listedThatLeafOpens(topic: ReadTopic, listedHere: ListedHere = new Map()): string[] {
   const here = listedHere.get(topic.address) ?? new Map<string, boolean>()
   const addresses = new Set(topic.listed.flatMap((l) => (l.address && here.get(l.address) !== false ? [l.address] : [])))
@@ -80,8 +82,7 @@ export function fiveNewest(read: TopicsRead, at: ReadonlyMap<string, number>, mu
 
 /**
  * The sidebar's topics (LTN-2, TOPI-4), in the order given, each with the files it lists that Leaf opens and that are
- * not archived: pages, then projects, then issues, each A–Z. A topic listing nothing Leaf opens is still drawn, with no
- * files.
+ * not archived, in the topic's one order (TOPI-5). A topic listing nothing Leaf opens is still drawn, with no files.
  *
  * A listed file the tree has read is taken from `inTree`, archived or not; the rest are resolved in one batched read,
  * and an archived one is left out either way.
@@ -99,11 +100,9 @@ export async function readSidebarTopics(
   return topics.map((topic) => ({
     address: topic.address,
     title: topicTitleOf(topic),
-    files: listedOf(topic)
-      .flatMap((address) => {
-        const file = fileAt(address)
-        return file && !isArchived(file) ? [file] : []
-      })
-      .sort(byKindThenTitle),
+    files: listedOf(topic).flatMap((address) => {
+      const file = fileAt(address)
+      return file && !isArchived(file) ? [file] : []
+    }),
   }))
 }

@@ -143,7 +143,7 @@ describe('when the sidebar’s five move', () => {
 })
 
 describe('the files each of your topics folds to', () => {
-  it('folds to its pages, then projects, then issues, each A–Z, a file outside the tree included', async () => {
+  it('folds to its files in the topic’s one order, as every app lists them, not by kind or title, a file outside the tree included (TOPI-5)', async () => {
     const issue = file(30851, 'An issue')
     const project = file(30850, 'Website')
     const second = file(30842, 'Notes')
@@ -153,7 +153,7 @@ describe('the files each of your topics folds to', () => {
     topic(ME, 'Launch', [issue, project, second, first])
 
     const [launch] = await read()
-    expect(launch.files.map((f) => f.slots.title?.value)).toEqual(['Agenda', 'Notes', 'Website', 'An issue'])
+    expect(launch.files.map((f) => f.slots.title?.value)).toEqual(['An issue', 'Website', 'Notes', 'Agenda'])
   })
 
   it('leaves out an archived or unreadable file, and shows a topic listing only those with no files', async () => {

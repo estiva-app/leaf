@@ -1,4 +1,4 @@
-import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import type { FileLook, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { Button, Card, EmptyState, KindIcon, Link, NoAccessNotice, PageHeader, Panel, SectionLabel, SkeletonList } from '@estiva-app/ui'
 import { IconArchive, IconExternalLink } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
@@ -6,7 +6,8 @@ import { rowOf } from '../folders/tree'
 import { replace } from '../route'
 import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
-import { useTopicPage } from '../topics/useTopicPage'
+import { lookOf, useTopicPage } from '../topics/useTopicPage'
+import { CommentCard } from '../comments/CommentCard'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -85,7 +86,7 @@ export function TopicPage({
                 ) : (
                   <>
                     {files.live.length > 0 ? (
-                      <Rows files={files.live} />
+                      <Rows files={files.live} looks={files.looks} />
                     ) : (
                       <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />
                     )}
@@ -93,7 +94,7 @@ export function TopicPage({
                       (showArchived || files.live.length === 0 ? (
                         <section className="flex flex-col gap-2">
                           <SectionLabel tone="muted">Archived</SectionLabel>
-                          <Rows files={files.archived} />
+                          <Rows files={files.archived} looks={files.looks} />
                         </section>
                       ) : (
                         // A button, not the story's link: it opens nothing, it shows the rows below (as Ship's topic page).
@@ -112,12 +113,19 @@ export function TopicPage({
   )
 }
 
-/** What a topic lists, one row each, as Leaf's sidebar draws them: its icon, its title and, for another app's file, its type. */
-function Rows({ files }: { files: readonly ForeignObject[] }) {
+/** What a topic lists, in its order: a row as Leaf's sidebar draws one (its icon, its title and, for another app's file, its type), or its card. */
+function Rows({ files, looks }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook> }) {
   return (
     <div className="flex flex-col gap-px">
       {files.map((file) => {
         const row = rowOf(file)
+        // Its card where the topic shows it as one, or its own app draws it so (TOPI-5): the kit's card, as under a comment.
+        if (file.naddr && lookOf(file, file.address ? looks.get(file.address) : undefined) === 'card')
+          return (
+            <div key={row.id} data-topic-file={file.address} className="py-1.5">
+              <CommentCard uri={`nostr:${file.naddr}`} opensAt={row.href} />
+            </div>
+          )
         return (
           <Card key={row.id} href={row.href} hover="fill" quietUntilHover className="flex items-center gap-3 px-3 py-2">
             <span className="flex shrink-0">{row.icon}</span>

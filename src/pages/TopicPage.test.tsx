@@ -2,7 +2,7 @@
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, planListInTopic } from '@estiva-app/interop'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
-import { TooltipProvider } from '@estiva-app/ui'
+import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
@@ -34,7 +34,13 @@ vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, query
 // A fresh cache, as Leaf's own: Peek's manifest names where the topic's conversation is.
 vi.mock('../relay/manifests', async () => {
   const { createProjectionCache } = await import('@estiva-app/interop')
-  return { resolveQuery: async (filters: Filter[]) => relay(filters), projections: createProjectionCache() }
+  return {
+    resolveQuery: async (filters: Filter[]) => relay(filters),
+    projections: createProjectionCache(),
+    // A card's link reads the declared manifests too: none here.
+    declaredManifests: async () => [],
+    withDeclaredManifests: (read: unknown) => read,
+  }
 })
 // A listed file outside the tree is drawn through its app's manifest; what that answers is stood in for here.
 let outside: Record<string, ForeignObject> = {}
@@ -57,7 +63,7 @@ const sign = (e: UnsignedEvent): SignedEvent => ({ ...e, id: `e${++n}`.padStart(
 const uuid = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
 
 /* A file Leaf opens, as its app's manifest draws it. */
-function file(kind: 30842 | 30851, title: string, archived = false): ForeignObject {
+function file(kind: 30842 | 30851, title: string, archived = false, widget: string = 'row'): ForeignObject {
   const d = uuid(++n)
   const address = `${kind}:${MIKY}:${d}`
   held.push(sign({ kind, pubkey: MIKY, created_at: 1_700_000_000, tags: [['d', d], ['title', title], ['h', HQ]], content: '' }))
@@ -68,6 +74,8 @@ function file(kind: 30842 | 30851, title: string, archived = false): ForeignObje
     kind,
     ref: address,
     naddr: `naddr-${d}`,
+    // As its app draws it where nothing is chosen: a row here, so a case reads the row's link unless it says otherwise.
+    widget,
     slots: { title: { value: title }, ...(shared ? { [BODY_SLOT]: { field: 'description' } } : {}) },
     actions: shared ? [{ control: 'text', field: 'description', format: BLOCK_DOCUMENT_FORMAT }] : [],
     ...(archived ? { archived: { at: 1 } } : {}),
@@ -84,7 +92,9 @@ function topic(title: string, files: ForeignObject[], summary?: string): string 
 const folders: FolderSummary[] = [{ id: HQ, name: 'Estiva HQ', hasState: true }]
 const page = (d: string, tree: ForeignObject[], treeRead: boolean) => (
   <TooltipProvider>
-    <TopicPage d={d} folders={folders} inTree={(a) => tree.find((f) => f.address === a) ?? null} treeRead={treeRead} />
+    <ToastProvider>
+      <TopicPage d={d} folders={folders} inTree={(a) => tree.find((f) => f.address === a) ?? null} treeRead={treeRead} />
+    </ToastProvider>
   </TooltipProvider>
 )
 const show = (d: string, tree: ForeignObject[] = []) => render(page(d, tree, true))
@@ -119,11 +129,35 @@ describe("a topic's page in Leaf", () => {
     expect(screen.getByText('Estiva HQ')).toBeTruthy()
     expect(screen.getByText('Everything about the widgets.')).toBeTruthy()
     expect(screen.getByRole('link', { name: /Conversation in Peek/ }).getAttribute('href')).toBe(`https://peek.estiva.app/topic/widgets-${d}`)
-    // Pages first, then Ship's files; each a link inside Leaf.
+    // In the topic's one order, as it lists them (the issue first here), not pages first (TOPI-5); each a link inside Leaf.
     const plans = await screen.findByRole('link', { name: /Launch plan/ })
     expect(plans.getAttribute('href')).toBe(`/document/launch-plan-${plan.address!.split(':')[2]}`)
     expect(screen.getByRole('link', { name: /Write the brief/ }).getAttribute('href')).toBe(`/f/${issue.naddr}`)
-    expect(plans.compareDocumentPosition(screen.getByRole('link', { name: /Write the brief/ })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Write the brief/ }).compareDocumentPosition(plans) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('draws a file as its card where the topic shows it as one, and the rest as rows (TOPI-5)', async () => {
+    const plan = file(30842, 'Launch plan')
+    const issue = file(30851, 'Write the brief')
+    outside = { [plan.address!]: plan, [issue.address!]: issue }
+    const d = topic('Widgets', [issue, plan])
+    const root = held.find((e) => e.kind === 30840 && e.tags.some((t) => t[0] === 'd' && t[1] === d))!
+    const planD = plan.address!.split(':')[2]!
+    held.push(
+      sign({
+        kind: 1851,
+        pubkey: MIKY,
+        created_at: 1_700_000_100,
+        tags: [['a', `30840:${MIKY}:${d}`], ['O', d], ['field', `look:${planD}`], ['value', 'card'], ['h', HQ], ['ts', '1700000100000'], ['prev', root.id], ['o', planD]],
+        content: '',
+      }),
+    )
+    show(d)
+    // The issue stays a row, a link to it; the page is its card, not a row link.
+    expect(await screen.findByRole('link', { name: /Write the brief/ })).toBeTruthy()
+    const files = [...document.querySelectorAll('[data-topic-page] [data-card], [data-topic-page] a[href^="/f/"]')]
+    expect(files.map((el) => el.getAttribute('data-card') ?? 'row')).toEqual(['row', 'detailed'])
+    expect(screen.queryByRole('link', { name: /^Launch plan$/ })).toBeNull()
   })
 
   it('takes a listed file the tree already read from the tree, with the title the tree has now', async () => {
