@@ -306,7 +306,7 @@ export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced, retry:
   // has no words for (TEA-9), which the same move would meet again.
   const retry = again !== false && !stillWhy && (!!still || !!unplaced)
   const first = still ? (stillWhy ? `${still}: ${stillWhy}` : `${still}.`) : stillWhy
-  if (!first) return unplaced ? `Moved to ${to}, but not all of it: ${unplaced}. Try moving it again.` : ''
+  if (!first) return unplaced ? `Moved to ${to}, but not all of it: ${unplaced}.${again === false ? '' : ' Try moving it again.'}` : ''
   return [`Moved to ${to}, but ${first}`, unplaced && `${unplaced[0].toUpperCase()}${unplaced.slice(1)}.`, retry && 'Try moving it again.'].filter(Boolean).join(' ')
 }
 

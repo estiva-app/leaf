@@ -208,7 +208,7 @@ describe('moving a Leaf page', () => {
     expect(published.map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'h')])).toEqual([[1851, 'parent', `30842:${ME}:c`, FOLDER]])
   })
 
-  it('sends nothing more when the relay refuses the move for a reason Leaf has no words for, and says nothing was moved', async () => {
+  it('sends nothing more when the relay refuses the move with no reason code and no words Leaf knows (a relay before reason codes), and says nothing was moved, try again', async () => {
     answers = [refused('invalid: rate-limited')]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
     expect(result).toEqual({ ok: false, reason: 'Nothing was moved. Try again.' })
@@ -252,12 +252,32 @@ describe('moving a Leaf page', () => {
     },
   )
 
-  it.each(['invalid: frozen: the team is archived', 'invalid: leaves-by-moving: a topic leaves a team only by a move'])(
-    'listed in two Folders: the second refused with a reason code Leaf says nothing for names the Folder still listing it, and never asks to move it again: %s',
-    async (relaySaid) => {
-      answers = [{ ok: true }, refused(relaySaid)]
-      const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE, parent: '' }, async () => [page('a', 'p')])
-      expect(halfMovedWords('Steer', result as MovedInPart)).toBe('Moved to Steer, but Ops still lists it too.')
+  /*
+    TEA-9: after a partial move, a code Leaf says nothing for never asks to move it again — whether the page takes a
+    new place under another (sent after the refusal), keeps its place (nothing more sent), or its new place is refused.
+  */
+  it.each([
+    ['invalid: frozen: the team is archived', 'a new place', '', [{ ok: true }], 'Moved to Steer, but Ops still lists it too.'],
+    ['invalid: leaves-by-moving: a topic leaves a team only by a move', 'a new place', '', [{ ok: true }], 'Moved to Steer, but Ops still lists it too.'],
+    ['invalid: frozen: the team is archived', 'the same place', undefined, [], 'Moved to Steer, but Ops still lists it too.'],
+    [
+      'invalid: frozen: the team is archived',
+      'a new place the relay refuses',
+      '',
+      [refused('invalid: rate-limited')],
+      'Moved to Steer, but Ops still lists it too. It is not in its new place yet.',
+    ],
+  ] as const)(
+    'listed in two Folders: the second refused with a reason code Leaf says nothing for names the Folder still listing it, and never asks to move it again: %s, %s',
+    async (relaySaid, _case, parent, afterwards, leafSays) => {
+      answers = [{ ok: true }, refused(relaySaid), ...afterwards]
+      const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE, ...(parent === undefined ? {} : { parent }) }, async () => [page('a', 'p')])
+      expect(published.map((e) => [e.kind, tag(e, 'op'), tag(e, 'from')])).toEqual([
+        [1852, 'move', FOLDER],
+        [1852, 'move', ALSO.id],
+        ...(parent === undefined ? [] : [[1851, undefined, undefined]]),
+      ])
+      expect(halfMovedWords('Steer', result as MovedInPart)).toBe(leafSays)
     },
   )
 
