@@ -353,8 +353,9 @@ export async function moveDocument(
     const refusal = readMoveRefusal(plan.events, index, own ? undefined : result.reason)
     const why = own ?? refusalWhy[refusal.why]
     const changed = !own && refusal.why === 'changed-meanwhile'
-    if (refusal.nothingMoved)
-      return { ok: false, reason: own ?? (why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.'), ...(changed ? { changed } : {}) }
+    // A code Leaf does not know says only that nothing moved, never "Try again"; a refusal with no code keeps it.
+    const plain = refusal.why === 'refused' ? 'Nothing was moved. Try again.' : 'Nothing was moved.'
+    if (refusal.nothingMoved) return { ok: false, reason: own ?? (why ? `Nothing was moved: ${why}` : plain), ...(changed ? { changed } : {}) }
     // The earlier moves did arrive. The Folders after the refused one were never asked, so they still list it; the
     // refused one does too, unless the Folders changed — then it no longer lists it as read, and is not named.
     const refused = tagOf(event, 'from')
@@ -397,6 +398,10 @@ const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string | und
   'team-archived': 'one of the teams is archived.',
   'not-a-member': 'you need to be a member of both teams to move this.',
   'changed-meanwhile': 'the teams changed since you opened this. Try again.',
+  'not-home': 'it is in no team yet, so it can go only to the team it was started in, or to the Company team.',
+  // Leaf never removes a live topic, so this is a code it has no words for: like `unexplained`, only "Nothing was moved."
+  'leaves-by-moving': undefined,
+  unexplained: undefined,
   refused: undefined,
 }
 

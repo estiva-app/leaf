@@ -219,6 +219,13 @@ describe('moving a Leaf page', () => {
     ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the teams is archived.'],
     ['invalid: channel is archived', 'Nothing was moved: one of the teams is archived.'],
     ["invalid: only the team's members mark or unmark its spaces", 'Nothing was moved: you need to be a member of both teams to move this.'],
+    // TEA-9: a refusal is read by its reason code; a code Leaf does not know says only that nothing moved.
+    [
+      "invalid: not-home: a topic on no team's list goes only to its home or the Company team",
+      'Nothing was moved: it is in no team yet, so it can go only to the team it was started in, or to the Company team.',
+    ],
+    ['invalid: frozen: the team is frozen until Monday', 'Nothing was moved.'],
+    ['invalid: leaves-by-moving: a topic leaves a team only by a move', 'Nothing was moved.'],
   ])('a refused move says why in Leaf’s words, never the relay’s: %s', async (relaySaid, leafSays) => {
     answers = [refused(relaySaid)]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
