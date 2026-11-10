@@ -3,7 +3,7 @@ import { parseMutedBlob } from '@estiva-app/conversation'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HQ, ME, MIKY, archive, file, markSpace, muteList, relay, said, topic } from '../topics/fixtures/topicsRelay'
+import { HQ, ME, MIKY, archive, file, markSpace, muteList, nip44, relay, said, topic } from '../topics/fixtures/topicsRelay'
 
 /* TOPI-4: Explore topics as a person sees it — its tabs, search and rows — and Join as the relay receives it. */
 
@@ -35,6 +35,7 @@ let topics: Record<string, string> = {}
 let mutedPage = ''
 beforeEach(() => {
   relay.reset()
+  nip44.refuseDecrypt = false
   resetTopicChoicesForTests()
   resetTopicReadsForTests()
   resetMutedForTests()
@@ -60,11 +61,12 @@ describe('Explore topics', () => {
   it('opens on Your topics, newest first; Other topics and All A–Z; Archived apart, with no Join; never a space; each tab counted', async () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
-    expect(tab(/Your topics/).textContent).toContain('2')
+    // The count is the tab's last word: exactly it, so 15 never passes for 5.
+    expect(tab(/Your topics/).textContent).toMatch(/^Your topics\D*2$/)
     // A topic you muted is not yours: it is with the others, to join again.
-    expect(tab(/Other topics/).textContent).toContain('3')
-    expect(tab(/^All/).textContent).toContain('5')
-    expect(tab(/Archived/).textContent).toContain('1')
+    expect(tab(/Other topics/).textContent).toMatch(/^Other topics\D*3$/)
+    expect(tab(/^All/).textContent).toMatch(/^All\D*5$/)
+    expect(tab(/Archived/).textContent).toMatch(/^Archived\D*1$/)
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
 
     fireEvent.click(tab(/Other topics/))
@@ -136,7 +138,32 @@ describe('Join on Explore topics', () => {
     fireEvent.click(within(rowOf('Apple roadmap')).getByRole('button', { name: 'Join' }))
 
     expect((await screen.findAllByText('Nothing changed: “Apple roadmap” could not be joined. blocked: you are not in this team')).length).toBeGreaterThan(0)
+    // Only the follow was tried: after a refusal nothing else goes out.
+    expect(relay.attempted.map((event) => event.kind)).toEqual([1851])
     expect(relay.sent).toEqual([])
     expect(within(rowOf('Apple roadmap')).getByRole('button', { name: 'Join' })).toBeTruthy()
+  })
+
+  it('joins a muted topic but never writes the mute list over when Estiva ID will not decrypt it, and says it is still muted', async () => {
+    open()
+    await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
+    nip44.refuseDecrypt = true
+    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(within(rowOf('Quiet')).getByRole('button', { name: 'Join' }))
+
+    expect((await screen.findAllByText('Joined “Quiet”, but it is still muted. Join again to unmute it.')).length).toBeGreaterThan(0)
+    expect(relay.attempted.map((event) => event.kind)).toEqual([1851])
+  })
+
+  it('joins a muted topic and says it is still muted when the relay refuses the new mute list', async () => {
+    relay.refuseKinds = [30078]
+    open()
+    await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
+    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(within(rowOf('Quiet')).getByRole('button', { name: 'Join' }))
+
+    expect((await screen.findAllByText('Joined “Quiet”, but it is still muted. Join again to unmute it.')).length).toBeGreaterThan(0)
+    expect(relay.sent.map((event) => event.kind)).toEqual([1851])
+    expect(relay.attempted.map((event) => event.kind)).toEqual([1851, 30078])
   })
 })

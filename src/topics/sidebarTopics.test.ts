@@ -27,8 +27,9 @@ vi.mock('@estiva-app/interop', async (original) => {
 
 const { readSidebarTopics } = await import('./sidebarTopics')
 const { useSidebarTopics } = await import('./useSidebarTopics')
-// The tab's per-topic answers and last mute list stay between tests: every test's topics and events are new ones.
 const { resetTopicChoicesForTests, setListedInTopic } = await import('../document/fileTopics')
+const { resetTopicReadsForTests } = await import('./topicReads')
+const { resetMutedForTests } = await import('./muted')
 
 /* The tree holds `tree`; anything else is outside it. */
 let tree: ForeignObject[] = []
@@ -40,10 +41,14 @@ beforeEach(() => {
   relay.reset()
   nip44.decrypting = undefined
   nip44.decrypts = 0
+  nip44.refuseDecrypt = false
   tree = []
   outside = {}
   resolvedOutside = []
   resetTopicChoicesForTests()
+  // Each test starts from an empty tab: no per-topic answer or decrypted mute list carries over.
+  resetTopicReadsForTests()
+  resetMutedForTests()
 })
 afterEach(() => {
   cleanup()

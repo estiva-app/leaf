@@ -16,17 +16,23 @@ type Filter = { ids?: string[]; kinds?: number[]; authors?: string[]; [key: stri
 
 export const relay = {
   held: [] as SignedEvent[],
-  /** Every event this tab sent, as it was handed to be signed. */
+  /** Every event this tab sent and the relay took, as it was handed to be signed. */
   sent: [] as UnsignedEvent[],
+  /** Every event this tab tried to send, taken or refused. */
+  attempted: [] as UnsignedEvent[],
   /** The filters of every read, in order. */
   reads: [] as Filter[][],
   /** When set, the relay refuses every write with this reason. */
   refuse: undefined as string | undefined,
+  /** When set, the relay refuses writes of these kinds only. */
+  refuseKinds: [] as number[],
   reset() {
     this.held = []
     this.sent = []
+    this.attempted = []
     this.reads = []
     this.refuse = undefined
+    this.refuseKinds = []
   },
 }
 
@@ -55,7 +61,9 @@ export const bridge = {
     return answer(filters)
   },
   publish: async (event: UnsignedEvent) => {
+    relay.attempted.push(event)
     if (relay.refuse) return { ok: false, reason: relay.refuse }
+    if (relay.refuseKinds.includes(event.kind)) return { ok: false, reason: 'blocked: refused here' }
     relay.sent.push(event)
     relay.held.push(sign(event))
     return { ok: true }
@@ -74,9 +82,12 @@ export const readsMuted = (filters: Filter[]) => filters.some((f) => f.kinds?.in
 export const nip44 = {
   decrypting: undefined as Promise<void> | undefined,
   decrypts: 0,
+  /** When set, Estiva ID refuses every decrypt (a 429, say). */
+  refuseDecrypt: false,
   async decrypt(ciphertext: string): Promise<string> {
     this.decrypts += 1
     await this.decrypting
+    if (this.refuseDecrypt) throw new Error('POST /nip44/decrypt failed: 429')
     return ciphertext.replace(/^enc:/, '')
   },
   async encrypt(plaintext: string): Promise<string> {

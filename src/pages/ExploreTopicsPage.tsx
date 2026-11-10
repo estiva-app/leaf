@@ -14,7 +14,7 @@ const TABS: Record<TopicsTab, string> = { all: 'All', yours: 'Your topics', othe
 /** What an empty tab says; with no topic shown at all, every open tab says the first. */
 const EMPTY: Record<TopicsTab, string> = {
   all: 'No topics yet.',
-  yours: 'You are in no topic yet.',
+  yours: 'You’re in no topics yet.',
   others: 'No other topics.',
   archived: 'No archived topics.',
 }
