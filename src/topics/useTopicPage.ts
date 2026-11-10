@@ -1,8 +1,8 @@
-import { isArchived, type ForeignObject, type ReadTopic, type TopicsRead } from '@estiva-app/interop'
+import { isArchived, type FileLook, type ForeignObject, type ReadTopic, type TopicsRead } from '@estiva-app/interop'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { heldTopics, listedInTab, loadTopics } from '../document/fileTopics'
 import { dOf } from '../route'
-import { byKindThenTitle, listedThatLeafOpens, readListedFiles, topicTitleOf } from './sidebarTopics'
+import { listedThatLeafOpens, readListedFiles, topicTitleOf } from './sidebarTopics'
 import { topicInPeek } from './topicLinks'
 
 /** A topic's page as Leaf draws it (LTN-3): its title, summary, team, where its conversation is, and what it lists. */
@@ -17,8 +17,22 @@ export interface TopicPageData {
   space: boolean
   /** "Conversation in Peek": the topic's path on Peek's host. */
   peekUrl?: string
-  /** What it lists that Leaf opens, pages then projects then issues, each A–Z; the archived ones apart. */
-  files: { live: ForeignObject[]; archived: ForeignObject[] } | 'loading' | 'failed'
+  /**
+   * What it lists that Leaf opens, in the topic's one order (TOPI-5); the archived ones apart. Each with the look
+   * somebody chose for it on this topic, by address: absent, it is drawn as its own app says ({@link lookOf}).
+   */
+  files: { live: ForeignObject[]; archived: ForeignObject[]; looks: ReadonlyMap<string, FileLook> } | 'loading' | 'failed'
+}
+
+/**
+ * How a file shows on a topic's page (TOPI-5): the look chosen on the topic, else as its own app says, the first row
+ * or card in its manifest's widget chain (a page and a project as cards, an issue as a row; Miky, 9 Nov), else a card.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md
+ */
+export function lookOf(file: ForeignObject, chosen: FileLook | undefined): FileLook {
+  if (chosen) return chosen
+  return [file.widget].flat().find((widget): widget is FileLook => widget === 'row' || widget === 'card') ?? 'card'
 }
 
 export type TopicPageState = TopicPageData | 'loading' | 'failed' | 'unavailable'
@@ -81,8 +95,9 @@ export function useTopicPage(
     const addresses = listedThatLeafOpens(topic, listedHere)
     readListedFiles(addresses, (address) => lookup.current(address))
       .then((fileAt) => {
-        const all = addresses.flatMap((address) => fileAt(address) ?? []).sort(byKindThenTitle)
-        const shown = { live: all.filter((file) => !isArchived(file)), archived: all.filter(isArchived) }
+        const all = addresses.flatMap((address) => fileAt(address) ?? [])
+        const looks = new Map(topic.listed.flatMap((entry) => (entry.address && entry.look ? [[entry.address, entry.look] as const] : [])))
+        const shown = { live: all.filter((file) => !isArchived(file)), archived: all.filter(isArchived), looks }
         if (live) setFiles({ topic, listedHere, attempt, files: shown })
       })
       .catch(() => live && setFiles({ topic, listedHere, attempt, files: 'failed' }))
