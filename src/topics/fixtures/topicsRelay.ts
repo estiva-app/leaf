@@ -22,6 +22,8 @@ export const relay = {
   attempted: [] as UnsignedEvent[],
   /** The filters of every read, in order. */
   reads: [] as Filter[][],
+  /** The filters of every paged read (`queryAll`): a read that must be whole, as a read of every topic is (ALO-20). */
+  pagedReads: [] as Filter[][],
   /** When set, the relay refuses every write with this reason. */
   refuse: undefined as string | undefined,
   /** When set, the relay refuses writes of these kinds only. */
@@ -31,6 +33,7 @@ export const relay = {
     this.sent = []
     this.attempted = []
     this.reads = []
+    this.pagedReads = []
     this.refuse = undefined
     this.refuseKinds = []
   },
@@ -58,6 +61,7 @@ export const bridge = {
   },
   queryAll: async (filters: Filter[]) => {
     relay.reads.push(filters)
+    relay.pagedReads.push(filters)
     return answer(filters)
   },
   publish: async (event: UnsignedEvent) => {

@@ -30,6 +30,8 @@ const { useSidebarTopics } = await import('./useSidebarTopics')
 const { resetTopicChoicesForTests, setListedInTopic } = await import('../document/fileTopics')
 const { resetTopicReadsForTests } = await import('./topicReads')
 const { resetMutedForTests } = await import('./muted')
+const { heldTopics, loadTopics } = await import('../document/fileTopics')
+const { isKnownSpace } = await import('./topicLinks')
 
 /* The tree holds `tree`; anything else is outside it. */
 let tree: ForeignObject[] = []
@@ -181,6 +183,82 @@ describe('the files each of your topics folds to', () => {
     const [going] = await read()
     expect(going.files.map((f) => f.slots.title?.value)).toEqual(['Live page'])
     expect(resolvedOutside).toEqual([])
+  })
+})
+
+describe('what the sidebar reads, by page (ALO-20)', () => {
+  /** Reads of your topics alone: every topic's root, asked once and not paged, which only the read of every topic is. */
+  const readsOfYours = () => relay.reads.filter((r) => readsTopics(r) && !relay.pagedReads.includes(r))
+
+  it('away from Explore and a topic’s page, draws your five newest in order from a read of only your topics, and never reads every topic', async () => {
+    const page = file(30842, 'Launch plan')
+    tree = [page]
+    for (let i = 1; i <= 6; i++) said(topic(ME, `T${i}`, [page]), 1_700_001_000 + i * 100)
+    const muted = topic(ME, 'Muted', [page])
+    said(muted, 1_700_009_000)
+    muteList([muted])
+    const space = topic(ME, 'bugs', [page])
+    said(space, 1_700_009_100)
+    markSpace(space)
+    said(topic(MIKY, 'Miky’s alone', [page]), 1_700_009_300)
+
+    const { result } = renderHook(() => useSidebarTopics(true, inTree))
+    await waitFor(() => expect(drawn(result.current)).toEqual(['T6', 'T5', 'T4', 'T3', 'T2']))
+    // A read of every topic is paged to the end; the read of yours never is.
+    expect(relay.pagedReads).toEqual([])
+    // A link to the space you are in is known for one from that read alone, so it goes to Peek from any page.
+    expect(isKnownSpace(space)).toBe(true)
+  })
+
+  it('on Explore topics, draws the five from the page’s read of every topic, and does not read yours as well', async () => {
+    const page = file(30842, 'Launch plan')
+    tree = [page]
+    said(topic(ME, 'First', [page]), 1_700_000_900)
+    said(topic(ME, 'Second', [page]), 1_700_000_800)
+
+    const { result } = renderHook(() => useSidebarTopics(true, inTree, true))
+    await waitFor(() => expect(drawn(result.current)).toEqual(['First', 'Second']))
+    expect(relay.pagedReads.length).toBeGreaterThan(0)
+    expect(readsOfYours()).toEqual([])
+  })
+
+  it('moving from Home to Explore keeps the five as drawn, and the sidebar reads nothing of its own there', async () => {
+    const page = file(30842, 'Launch plan')
+    tree = [page]
+    said(topic(ME, 'First', [page]), 1_700_000_900)
+    const second = topic(ME, 'Second', [page])
+    said(second, 1_700_000_800)
+    const { result, rerender } = renderHook(({ every }) => useSidebarTopics(true, inTree, every), { initialProps: { every: false } })
+    await waitFor(() => expect(drawn(result.current)).toEqual(['First', 'Second']))
+
+    // Something happens in Second; you open Explore, which reads every topic.
+    said(second, 1_700_001_000)
+    const before = relay.reads.length
+    rerender({ every: true })
+    await act(() => heldTopics.reload(loadTopics))
+    // Only the page's paged read went out: no mute list or activity of the sidebar's own, and the five did not move.
+    expect(relay.reads.slice(before).filter((r) => !relay.pagedReads.includes(r))).toEqual([])
+    expect(drawn(result.current)).toEqual(['First', 'Second'])
+  })
+
+  it('a topic you joined on Explore is in the five, there and back on another page', async () => {
+    const page = file(30842, 'Launch plan')
+    tree = [page]
+    said(topic(ME, 'First', [page]), 1_700_000_900)
+    const { result, rerender } = renderHook(({ every }) => useSidebarTopics(true, inTree, every), { initialProps: { every: false } })
+    await waitFor(() => expect(drawn(result.current)).toEqual(['First']))
+    expect(readsOfYours()).toHaveLength(1)
+
+    // On Explore, you join a topic with more going on; Explore reads every topic again.
+    said(topic(ME, 'Joined', [page]), 1_700_001_000)
+    rerender({ every: true })
+    await act(() => heldTopics.reload(loadTopics))
+    await waitFor(() => expect(drawn(result.current)).toEqual(['Joined', 'First']))
+    // Yours, read before the join, is read again rather than drawn as it was.
+    await waitFor(() => expect(readsOfYours()).toHaveLength(2))
+
+    rerender({ every: false })
+    await waitFor(() => expect(drawn(result.current)).toEqual(['Joined', 'First']))
   })
 })
 

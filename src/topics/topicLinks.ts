@@ -1,5 +1,5 @@
 import { KIND_BARE_FILE, objectRef, type ForeignObject } from '@estiva-app/interop'
-import { heldTopics } from '../document/fileTopics'
+import { heldTopics, heldYourTopics } from '../document/fileTopics'
 import { dOf } from '../route'
 
 /**
@@ -49,9 +49,13 @@ export function isSiblingHost(url: string, here: string): boolean {
   return host !== here && host.endsWith(`.${parent}`) && host.split('.').length === here.split('.').length
 }
 
-/** Whether the tab's topics read knows this topic for a space; `false` before any read, and the page sends one on. */
+/**
+ * Whether the tab's topics reads know this topic for a space: the read of every topic, or the sidebar's of yours (ALO-20);
+ * `false` before any read, and the page sends one on.
+ */
 export function isKnownSpace(address: string): boolean {
-  return !!heldTopics.snapshot().value?.topics.some((topic) => topic.address === address && topic.space)
+  const isIt = (topic: { address: string; space?: boolean }) => topic.address === address && !!topic.space
+  return !!(heldTopics.snapshot().value?.topics.some(isIt) || heldYourTopics.snapshot().value?.topics.some(isIt))
 }
 
 /**

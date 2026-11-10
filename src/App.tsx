@@ -109,7 +109,8 @@ function Frame() {
   const inTree = (address: string) => findFileAt(folders, children, address)?.file ?? null
   // Topics also takes the files the tree read archived, so it does not read them again only to leave them out.
   const readByTree = (address: string) => inTree(address) ?? findArchivedAt(folders, address)
-  const topics = useSidebarTopics(signedIn && (!reading || workspace.failed), readByTree)
+  // Explore topics and a topic's page read every topic themselves; every other page, only yours (ALO-20).
+  const topics = useSidebarTopics(signedIn && (!reading || workspace.failed), readByTree, route.page === 'topics' || route.page === 'topic')
   const listedDocument = route.page === 'document' ? findDocument(folders, children, route.d) : null
   // Another app's address for a file, with Leaf's host (`/issue/<slug>-<d>`): the manifests say which file it names.
   // A document's own link is read by its `d` at once, beside the tree, so its text shows before the tree is read

@@ -6,16 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const ME = 'a'.repeat(64)
 let reads = 0
 let down = false
-vi.mock('../relay/bridge', () => ({
-  viewerPubkey: () => ME,
-  query: async () => [],
-  queryAll: async () => {
-    reads += 1
-    if (down) throw new Error('The relay could not be reached.')
-    return []
-  },
-  publish: async () => ({ ok: true }),
-}))
+const answer = async () => {
+  reads += 1
+  if (down) throw new Error('The relay could not be reached.')
+  return []
+}
+vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, queryAll: answer, publish: async () => ({ ok: true }) }))
 vi.mock('../relay/manifests', () => ({ resolveQuery: async () => [], projections: undefined }))
 
 const { resetTopicChoicesForTests } = await import('../document/fileTopics')
