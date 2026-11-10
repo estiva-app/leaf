@@ -302,6 +302,8 @@ export type MoveOutcome =
       stillWhy?: string
       /** Why it did not take its new place, when the Folder change landed and that did not. */
       unplaced?: string
+      /** `false`: refused with a reason code Leaf has no words for, which a retry would meet again (TEA-9). */
+      retry?: false
     }
 
 /** A source's files, archived ones included, so an archived page under the document moves with it. Throws when unread. */
@@ -339,6 +341,7 @@ export async function moveDocument(
   let moved = false
   let stillIn: MoveFolder[] = []
   let stillWhy: string | undefined
+  let retry: { retry: false } | undefined
   // One move per source, each changing both lists or neither, in order; the first refusal stops the rest.
   for (const [index, event] of plan.events.entries()) {
     const result = await publish(event)
@@ -354,8 +357,10 @@ export async function moveDocument(
     const why = own ?? refusalWhy[refusal.why]
     const changed = !own && refusal.why === 'changed-meanwhile'
     // A code Leaf does not know says only that nothing moved, never "Try again"; a refusal with no code keeps it.
-    const plain = refusal.why === 'refused' ? 'Nothing was moved. Try again.' : 'Nothing was moved.'
-    if (refusal.nothingMoved) return { ok: false, reason: own ?? (why ? `Nothing was moved: ${why}` : plain), ...(changed ? { changed } : {}) }
+    const unexplained = !why && refusal.why !== 'refused'
+    if (refusal.nothingMoved)
+      return { ok: false, reason: own ?? (why ? `Nothing was moved: ${why}` : unexplained ? 'Nothing was moved.' : 'Nothing was moved. Try again.'), ...(changed ? { changed } : {}) }
+    if (unexplained) retry = { retry: false }
     // The earlier moves did arrive. The Folders after the refused one were never asked, so they still list it; the
     // refused one does too, unless the Folders changed — then it no longer lists it as read, and is not named.
     const refused = tagOf(event, 'from')
@@ -365,7 +370,7 @@ export async function moveDocument(
     if (own) return { ok: true, stillIn, stillWhy, ...(placing ? { unplaced: 'it is not in its new place yet' } : {}) }
     break
   }
-  if (!placing) return { ok: true, stillIn, stillWhy }
+  if (!placing) return { ok: true, stillIn, stillWhy, ...retry }
   const built = buildActionEvent({
     manifest: OWN_MANIFEST,
     kind: file.kind,
@@ -379,18 +384,21 @@ export async function moveDocument(
   })
   if (typeof built === 'string') console.warn('[leaf] move under not built', built)
   const placed = typeof built === 'string' ? null : await publish(built as UnsignedEvent)
-  if (placed?.ok) return { ok: true, stillIn, stillWhy }
+  if (placed?.ok) return { ok: true, stillIn, stillWhy, ...retry }
   if (placed && !ownFailure(placed)) console.warn('[relay] move under refused', placed)
-  if (moved) return { ok: true, stillIn, stillWhy, unplaced: 'it is not in its new place yet' }
+  if (moved) return { ok: true, stillIn, stillWhy, unplaced: 'it is not in its new place yet', ...retry }
   return { ok: false, reason: (placed && ownFailure(placed)) ?? 'Nothing was moved. Try again.' }
 }
+
+/** Where a topic no team lists may go (TEA-9's decided words), said the same whether Leaf or the relay stops the move. */
+const NOT_HOME = 'in no team yet, so it can go only to the team it was started in, or to the Company team.'
 
 /** The planner's refusals in Peek's words (`moveFileAsViewer`). */
 const refusalWords: Record<MoveRefusal, string> = {
   'source-has-no-state': 'Files can’t be moved out of this team yet: it has no list of its own, so moving one would hide the rest.',
   'target-has-no-state': 'That team has no list of its own yet, so moving a file into it would hide what is already there.',
   'target-is-private': 'Can’t move this into a private team: it would stay readable by everyone who can read it now.',
-  'target-is-not-home': 'This is in no team yet, so it can go only to the one it was started in or to the Company team.',
+  'target-is-not-home': `This is ${NOT_HOME}`,
 }
 
 /** Why the relay refused a move, in Peek's words (`moveFileAsViewer`), never the relay's text. */
@@ -398,7 +406,7 @@ const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string | und
   'team-archived': 'one of the teams is archived.',
   'not-a-member': 'you need to be a member of both teams to move this.',
   'changed-meanwhile': 'the teams changed since you opened this. Try again.',
-  'not-home': 'it is in no team yet, so it can go only to the team it was started in, or to the Company team.',
+  'not-home': `it is ${NOT_HOME}`,
   // Leaf never removes a live topic, so this is a code it has no words for: like `unexplained`, only "Nothing was moved."
   'leaves-by-moving': undefined,
   unexplained: undefined,

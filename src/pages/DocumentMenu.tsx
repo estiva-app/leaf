@@ -299,11 +299,12 @@ export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeleteP
  * A move that landed in part, in words, each part that did not follow said once: "Moved to Steer, but QA still lists
  * it too: one of the Folders is archived. It is not in its new place yet." Empty when all of it landed.
  */
-export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced }: Extract<MoveOutcome, { ok: true }>): string {
+export function halfMovedWords(to: string, { stillIn, stillWhy, unplaced, retry: again }: Extract<MoveOutcome, { ok: true }>): string {
   const names = stillIn.map((folder) => folder.name).join(' and ')
   const still = names && `${names} still ${stillIn.length === 1 ? 'lists' : 'list'} it too`
-  // "Try moving it again" only once, last, and only when no why says a retry cannot succeed.
-  const retry = !stillWhy && (!!still || !!unplaced)
+  // "Try moving it again" only once, last, and only when no why says a retry cannot succeed, nor a reason code Leaf
+  // has no words for (TEA-9), which the same move would meet again.
+  const retry = again !== false && !stillWhy && (!!still || !!unplaced)
   const first = still ? (stillWhy ? `${still}: ${stillWhy}` : `${still}.`) : stillWhy
   if (!first) return unplaced ? `Moved to ${to}, but not all of it: ${unplaced}. Try moving it again.` : ''
   return [`Moved to ${to}, but ${first}`, unplaced && `${unplaced[0].toUpperCase()}${unplaced.slice(1)}.`, retry && 'Try moving it again.'].filter(Boolean).join(' ')
