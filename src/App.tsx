@@ -28,6 +28,7 @@ import { FilePage } from './pages/FilePage'
 import { useSidebarFold } from './frame/folds'
 import { useFileByAddress } from './pages/useFileByAddress'
 import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
+import { ExploreTopicsPage } from './pages/ExploreTopicsPage'
 import { HomePage } from './pages/HomePage'
 import { TopicPage } from './pages/TopicPage'
 import { viewerPubkey } from './relay/bridge'
@@ -154,7 +155,7 @@ function Frame() {
   */
   const current = open ? fileKey(open.file) : onPage ? fileKey(onPage) : route.page === 'file' ? route.naddr : undefined
   const under = onPage?.parentRef ? findFileAt(folders, children, onPage.parentRef) : null
-  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
+  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore topics' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
@@ -228,6 +229,8 @@ function Frame() {
         recent={workspace.failed ? 'failed' : recent}
         onNew={takers.length ? () => setMaking(true) : undefined}
       />
+    ) : route.page === 'topics' ? (
+      <ExploreTopicsPage folders={workspace.folders || workspace.failed ? summaries : undefined} />
     ) : route.page === 'topic' ? (
       <TopicPage
         key={route.d}
@@ -270,6 +273,7 @@ function Frame() {
                 topics={topics}
                 current={current}
                 topicNow={route.page === 'topic' ? route.d : undefined}
+                exploreNow={route.page === 'topics'}
                 fileNow={(file) => (file.address && inTree(file.address)) || file}
               />
             )}

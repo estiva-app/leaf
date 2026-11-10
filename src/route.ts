@@ -3,8 +3,9 @@ import { identifierFromRef, objectRef } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
 
 /**
- * Leaf's places: Home at `/`, a document at `/document/<slug>-<d>`, and any
- * other file at `/f/<naddr>`. A document's link is the shape Leaf's manifest
+ * Leaf's places: Home at `/`, a document at `/document/<slug>-<d>`, any
+ * other file at `/f/<naddr>`, a topic at `/topic/<slug>-<d>` and Explore
+ * topics at `/topics`. A document's link is the shape Leaf's manifest
  * declares in `urls` (SPEC §7.7), so every app reads it as the page's chip and
  * `#block-<id>` as one of its blocks; the word is Miky's (the issue
  * conversation, 2026-10-19). The `/f/` link of a document still opens it, and
@@ -23,6 +24,10 @@ export type Route =
   | { page: 'document'; d: string }
   | { page: 'path'; word: string; ref: string }
   | { page: 'topic'; d: string }
+  | { page: 'topics' }
+
+/** Where Explore topics opens (TOPI-4): the path Ship's Topics page is at. */
+export const EXPLORE_TOPICS_PATH = '/topics'
 
 /**
  * Leaf's own first segments, which are never another app's word. Not `topic`: it is Peek's word, which Leaf matches
@@ -47,6 +52,7 @@ export function routeOf(pathname: string): Route {
   const topic = /^\/topic\/([^/]+)\/?$/.exec(pathname)
   const topicD = topic ? identifierFromRef(decodeRef(topic[1])) : null
   if (topicD) return { page: 'topic', d: topicD }
+  if (/^\/topics\/?$/.test(pathname)) return { page: 'topics' }
   const other = /^\/([^/]+)\/([^/]+)\/?$/.exec(pathname)
   if (other && isOtherAppsWord(other[1])) return { page: 'path', word: other[1], ref: decodeRef(other[2]) }
   return { page: 'home' }

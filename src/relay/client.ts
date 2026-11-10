@@ -8,11 +8,13 @@ import { ID_CONFIG, RELAY_URL } from '../config'
  * The event kinds that are Leaf's own: documents (`kind:30842`, the file type
  * Leaf owns through its manifest — never a topic's `30840`), the Folder command
  * that lists one, a change to a document's title or text, a comment on it, a
- * deletion, and resolving a comment's thread (`9101`, as Peek does). Ship reads
- * seven of its own, Peek its own. Each one here is in Leaf's ceiling in the
- * Estiva ID seed too, or its first save is refused at /sign.
+ * deletion, resolving a comment's thread (`9101`, as Peek does), and your mute
+ * list (`30078`, `estiva:muted:v1`), which Explore topics' Join takes a topic
+ * off (TOPI-4; estiva-id#96 grants it). Ship reads seven of its own, Peek its
+ * own. Each one here is in Leaf's ceiling in the Estiva ID seed too, or its
+ * first save is refused at /sign.
  */
-export const KINDS: number[] = [KIND.DOCUMENT, 1852, 1851, 1111, 5, 9101]
+export const KINDS: number[] = [KIND.DOCUMENT, 1852, 1851, 1111, 5, 9101, 30078]
 
 /**
  * The tab's one relay client. `@estiva-app/platform` hands out a holder and

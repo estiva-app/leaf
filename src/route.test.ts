@@ -37,6 +37,11 @@ describe("another app's path on Leaf's host", () => {
     expect(routeOf(`/topic/${D}/`)).toEqual({ page: 'topic', d: D })
   })
 
+  it('is Explore topics at /topics, the path Ship’s Topics is at (TOPI-4)', () => {
+    expect(routeOf('/topics')).toEqual({ page: 'topics' })
+    expect(routeOf('/topics/')).toEqual({ page: 'topics' })
+  })
+
   it("never takes Leaf's own pages for another app's word", () => {
     expect(routeOf('/document/no-identity')).toEqual({ page: 'home' })
     expect(routeOf(`/app/${D}`)).toEqual({ page: 'home' })
