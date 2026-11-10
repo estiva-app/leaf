@@ -208,7 +208,7 @@ describe('moving a Leaf page', () => {
     expect(published.map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'h')])).toEqual([[1851, 'parent', `30842:${ME}:c`, FOLDER]])
   })
 
-  it('sends nothing more when the relay refuses the move for a reason Leaf has no words for, and says nothing was moved', async () => {
+  it('sends nothing more when the relay refuses the move with no reason code and no words Leaf knows (a relay before reason codes), and says nothing was moved, try again', async () => {
     answers = [refused('invalid: rate-limited')]
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
     expect(result).toEqual({ ok: false, reason: 'Nothing was moved. Try again.' })
@@ -224,6 +224,62 @@ describe('moving a Leaf page', () => {
     const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
     expect(result).toEqual({ ok: false, reason: leafSays })
   })
+
+  // TEA-9: a refusal carrying a reason code Leaf knows is said in Leaf's words for the code, never the words after it.
+  it.each([
+    [
+      "invalid: not-home: a topic on no team's list goes only to its home or the Company team",
+      'Nothing was moved: it is in no team yet, so it can go only to the team it was started in, or to the Company team.',
+    ],
+    ['restricted: not-member: you are not a member of this team', 'Nothing was moved: you need to be a member of both teams to move this.'],
+  ])('a refusal with a reason code Leaf knows is said in Leaf’s words for the code: %s', async (relaySaid, leafSays) => {
+    answers = [refused(relaySaid)]
+    const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
+    expect(result).toEqual({ ok: false, reason: leafSays })
+  })
+
+  /*
+    TEA-9: a code Leaf has no words for (and `leaves-by-moving`, since Leaf never takes a live topic off a list) says
+    only that nothing moved, never to try again, since the same move would be refused the same way; the words after
+    the code (here "archived") are never read.
+  */
+  it.each(['invalid: frozen: the team is archived', 'invalid: leaves-by-moving: a topic leaves a team only by a move'])(
+    'a refusal with a reason code Leaf says nothing for says only that nothing was moved, never to try again: %s',
+    async (relaySaid) => {
+      answers = [refused(relaySaid)]
+      const result = await moveDocument(page('a', 'p'), { from: [HERE], to: THERE, parent: '' }, async () => [page('a', 'p')])
+      expect(result).toEqual({ ok: false, reason: 'Nothing was moved.' })
+    },
+  )
+
+  /*
+    TEA-9: after a partial move, a code Leaf says nothing for never asks to move it again — whether the page takes a
+    new place under another (sent after the refusal), keeps its place (nothing more sent), or its new place is refused.
+  */
+  it.each([
+    ['invalid: frozen: the team is archived', 'a new place', '', [{ ok: true }], 'Moved to Steer, but Ops still lists it too.'],
+    ['invalid: leaves-by-moving: a topic leaves a team only by a move', 'a new place', '', [{ ok: true }], 'Moved to Steer, but Ops still lists it too.'],
+    ['invalid: frozen: the team is archived', 'the same place', undefined, [], 'Moved to Steer, but Ops still lists it too.'],
+    [
+      'invalid: frozen: the team is archived',
+      'a new place the relay refuses',
+      '',
+      [refused('invalid: rate-limited')],
+      'Moved to Steer, but Ops still lists it too. It is not in its new place yet.',
+    ],
+  ] as const)(
+    'listed in two Folders: the second refused with a reason code Leaf says nothing for names the Folder still listing it, and never asks to move it again: %s, %s',
+    async (relaySaid, _case, parent, afterwards, leafSays) => {
+      answers = [{ ok: true }, refused(relaySaid), ...afterwards]
+      const result = await moveDocument(page('a', 'p'), { from: [HERE, ALSO], to: THERE, ...(parent === undefined ? {} : { parent }) }, async () => [page('a', 'p')])
+      expect(published.map((e) => [e.kind, tag(e, 'op'), tag(e, 'from')])).toEqual([
+        [1852, 'move', FOLDER],
+        [1852, 'move', ALSO.id],
+        ...(parent === undefined ? [] : [[1851, undefined, undefined]]),
+      ])
+      expect(halfMovedWords('Steer', result as MovedInPart)).toBe(leafSays)
+    },
+  )
 
   it.each([`invalid: the team a move leaves does not list 30842:${ME}:a`, 'invalid: the team a move leaves lists none of its files'])(
     'a move refused because the Folders changed says so, and asks for the Folders to be read again before a retry: %s',
