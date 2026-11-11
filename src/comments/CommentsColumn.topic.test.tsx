@@ -16,7 +16,7 @@ const MIKY = 'b'.repeat(64)
 const TEAM = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const TOPIC = `30840:${MIKY}:11111111-1111-4111-8111-111111111111`
 
-const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], published: [] as UnsignedEvent[], signed: [] as UnsignedEvent[] }))
+const relay = vi.hoisted(() => ({ events: [] as SignedEvent[], published: [] as UnsignedEvent[], signed: [] as UnsignedEvent[], me: 'a'.repeat(64) }))
 const matches = (e: SignedEvent, f: Record<string, unknown>) =>
   (!f.kinds || (f.kinds as number[]).includes(e.kind)) &&
   (!f.authors || (f.authors as string[]).includes(e.pubkey)) &&
@@ -36,14 +36,15 @@ vi.mock('../relay/bridge', () => ({
     },
     publish: async (event: SignedEvent) => ({ ok: true, eventId: event.id }),
   },
-  viewerPubkey: () => ME,
+  viewerPubkey: () => relay.me,
   relaySigner: () => null,
 }))
 // Self-encryption, stood in for: Estiva ID's `/nip44/*` is `nip44.test.ts`'s contract. Here the blob is read back as written.
-vi.mock('../auth/nip44', () => ({ nip44: { encrypt: async (text: string) => `enc:${text}`, decrypt: async (text: string) => text.slice(4) } }))
+const decrypt = vi.hoisted(() => vi.fn(async (text: string) => text.slice(4)))
+vi.mock('../auth/nip44', () => ({ nip44: { encrypt: async (text: string) => `enc:${text}`, decrypt } }))
 
 const { CommentsColumn } = await import('./CommentsColumn')
-const { resetReadStateForTests, READ_DWELL_MS, PUBLISH_DEBOUNCE_MS } = await import('../relay/readState')
+const { resetReadStateForTests, markRead, READ_DWELL_MS, PUBLISH_DEBOUNCE_MS } = await import('../relay/readState')
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {}
@@ -58,6 +59,8 @@ beforeEach(() => {
   relay.events = []
   relay.published = []
   relay.signed = []
+  relay.me = ME
+  decrypt.mockClear()
   resetReadStateForTests()
 })
 afterEach(() => {
@@ -137,6 +140,52 @@ describe("a topic's conversation in Leaf", () => {
     act(() => void fireEvent.click(within(item(first.id)!).getByRole('button', { name: /^1 reply, open the thread$/ })))
     await pass()
     expect(lastMarks()).toEqual({ [fileContext(TOPIC)!]: 1_790_000_100, [threadContext(first.id)!]: 1_790_000_200 })
+  })
+
+  it("reads back only Leaf's own slot before writing it: another app's slot is neither decrypted nor written over", async () => {
+    // Peek's slot for this person: Leaf's write needs nothing of it, and each decrypt is a round trip from a shared quota.
+    const peeks = `{"v":1,"client_id":"peek-1234","contexts":{"${fileContext(TOPIC)}":1790000000}}`
+    relay.events = [{ id: '9'.repeat(64), pubkey: ME, created_at: 1_790_000_000, kind: 30078, tags: [['d', `read-state:${'0'.repeat(32)}`], ['t', 'read-state']], content: `enc:${peeks}`, sig: '' }]
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    markRead([fileContext(TOPIC)], 1_790_000_500_000)
+    await pass()
+    expect(decrypt).not.toHaveBeenCalled()
+    const [blob] = relay.signed
+    expect(blob.tags.find((t) => t[0] === 'd')?.[1]).not.toBe(`read-state:${'0'.repeat(32)}`)
+    expect(parseReadStateBlob(blob.content.slice(4))).toMatchObject({ client_id: expect.stringMatching(/^leaf-/), contexts: { [fileContext(TOPIC)!]: 1_790_000_500 } })
+  })
+
+  it("never publishes over Leaf's own slot while it will not decrypt (a 429), and keeps its markers once it does", async () => {
+    const slotId = '1'.repeat(32)
+    localStorage.setItem('leaf.readstate.slot', JSON.stringify({ slotId, clientId: 'leaf-test' }))
+    const earlier = `30840:${MIKY}:33333333-3333-4333-8333-333333333333`
+    const own = `{"v":1,"client_id":"leaf-test","contexts":{"${fileContext(earlier)}":1790000000}}`
+    relay.events = [{ id: '8'.repeat(64), pubkey: ME, created_at: 1_790_000_000, kind: 30078, tags: [['d', `read-state:${slotId}`], ['t', 'read-state']], content: `enc:${own}`, sig: '' }]
+    decrypt.mockRejectedValueOnce(new Error('POST /nip44/decrypt failed: 429'))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    markRead([fileContext(TOPIC)], 1_790_000_500_000)
+    await pass()
+    // Refused: a blob of only this mark would have wiped what Leaf read before.
+    expect(relay.signed).toEqual([])
+    // The retry, once the quota is back: the earlier marker and the new one, in Leaf's own slot.
+    await act(() => vi.advanceTimersByTimeAsync(2 * PUBLISH_DEBOUNCE_MS + 10))
+    expect(relay.signed).toHaveLength(1)
+    expect(relay.signed[0].tags).toContainEqual(['d', `read-state:${slotId}`])
+    expect(parseReadStateBlob(relay.signed[0].content.slice(4))?.contexts).toEqual({ [fileContext(earlier)!]: 1_790_000_000, [fileContext(TOPIC)!]: 1_790_000_500 })
+  })
+
+  it("publishes nothing one person read into the next person's slot when they sign in to the same tab", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    markRead([fileContext(TOPIC)], 1_790_000_500_000)
+    // The session ends before the publish, and someone else signs in.
+    relay.me = 'e'.repeat(64)
+    await pass()
+    expect(relay.signed).toEqual([])
+    const theirs = `30840:${MIKY}:22222222-2222-4222-8222-222222222222`
+    markRead([fileContext(theirs)], 1_790_000_600_000)
+    await pass()
+    expect(relay.signed).toHaveLength(1)
+    expect(parseReadStateBlob(relay.signed[0].content.slice(4))?.contexts).toEqual({ [fileContext(theirs)!]: 1_790_000_600 })
   })
 
   it('marks nothing while the column is hidden: a conversation not shown is not read', async () => {

@@ -57,6 +57,7 @@ vi.mock('@estiva-app/interop', async (original) => {
 const { TopicPage } = await import('./TopicPage')
 const { resetTopicChoicesForTests } = await import('../document/fileTopics')
 const { projections } = await import('../relay/manifests')
+const { resetReadStateForTests } = await import('../relay/readState')
 
 let n = 0
 const sign = (e: UnsignedEvent): SignedEvent => ({ ...e, id: `e${++n}`.padStart(64, '0'), sig: '' }) as SignedEvent
@@ -117,7 +118,11 @@ beforeEach(() => {
   // Each case publishes its own manifests: what an earlier case's read remembered about them is forgotten.
   projections.clear()
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // The page marks its conversation read: no publish left waiting to fire inside another case.
+  resetReadStateForTests()
+})
 
 describe("a topic's page in Leaf", () => {
   it('shows its title, team and summary, its conversation beside it, and what it lists, each opening in Leaf', async () => {
@@ -136,9 +141,9 @@ describe("a topic's page in Leaf", () => {
     expect(await screen.findByText('Said in the topic')).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'Start a conversation…' })).toBeTruthy()
     // Hidden and shown as a document's comments are.
-    fireEvent.click(screen.getByRole('button', { name: 'Hide comments' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hide conversation' }))
     expect(document.querySelector('[data-comments-column]')!.closest('[hidden]')).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Show comments' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show conversation' }))
     expect(document.querySelector('[data-comments-column]')!.closest('[hidden]')).toBeNull()
     // In the topic's one order, as it lists them (the issue first here), not pages first (TOPI-5); each a link inside Leaf.
     const plans = await screen.findByRole('link', { name: /Launch plan/ })

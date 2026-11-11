@@ -61,8 +61,9 @@ export function TopicPage({
   const toggle = (
     <Toolbar aria-label="Topic actions" surface={false}>
       <ToolbarButton
-        tooltip={comments.open ? 'Hide comments' : 'Show comments'}
-        aria-label={comments.open ? 'Hide comments' : 'Show comments'}
+        // Ship's words on a topic's page: a topic has a conversation, not comments.
+        tooltip={comments.open ? 'Hide conversation' : 'Show conversation'}
+        aria-label={comments.open ? 'Hide conversation' : 'Show conversation'}
         onClick={() => comments.onOpenChange(!comments.open)}
       >
         {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}

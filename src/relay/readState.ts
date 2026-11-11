@@ -14,20 +14,17 @@
  */
 import {
   REPLY_FLOOR_CONTEXT,
-  READ_STATE_HORIZON_DAYS,
   advanceContexts as advance,
-  createSlotCache,
-  fetchReadState,
   loadSlotIdentity as loadSlot,
+  parseReadStateBlob,
   publishReadState,
+  readStateDTag,
   rotateSlotId,
   toContextSeconds,
-  type Nip44,
-  type QueryFn,
   type SlotIdentity,
 } from '@estiva-app/conversation'
 import { nip44 } from '../auth/nip44'
-import { changeWriter, query as bridgeQuery, viewerPubkey } from './bridge'
+import { changeWriter, query, viewerPubkey } from './bridge'
 
 /** Leaf's slot, kept apart from anything else this app stores. Changing it gives every Leaf user a fresh slot. */
 export const SLOT_STORAGE_KEY = 'leaf.readstate.slot'
@@ -51,10 +48,12 @@ function safeStorage(): Storage | undefined {
   }
 }
 
-const query: QueryFn = (filters) => bridgeQuery(filters as Record<string, unknown>[])
+/** NIP-78's application data, which a read-state slot is (`d` = `read-state:<slot>`). */
+const KIND_READ_STATE = 30078
 
 let identity: SlotIdentity | undefined
-let slotCache = createSlotCache()
+/** Whose read state this tab holds. */
+let owner: string | undefined
 /** Everything this slot holds: its own blob from the relay, plus what was marked here. */
 let known: Record<string, number> = {}
 /** Marked but not yet in an accepted publish. */
@@ -62,7 +61,6 @@ let pending: Record<string, number> = {}
 /** What the relay is believed to hold, so an unchanged blob is not published again. */
 let published: Record<string, number> | undefined
 let hydrated = false
-let hydratedFor: string | undefined
 let hydrating: Promise<void> | undefined
 let timer: ReturnType<typeof setTimeout> | undefined
 let retryMs = 0
@@ -84,35 +82,41 @@ const sameContexts = (a: Record<string, number>, b: Record<string, number>): boo
   return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
 }
 
-/** Read this installation's own blob back, once per person, before the first write. */
+/** Another person in this tab: nothing of the last one's — what they read, what waits to be published — carries over. */
+function forPerson(pubkey: string): void {
+  if (owner === pubkey) return
+  owner = pubkey
+  known = {}
+  pending = {}
+  published = undefined
+  hydrated = false
+}
+
+/**
+ * Read this installation's own blob back, once per person, before the first write. Only our own coordinate: the write
+ * needs nothing of the other slots, and each one would cost a `/nip44/decrypt` from the quota the mute list shares.
+ */
 async function hydrate(pubkey: string): Promise<void> {
-  if (hydrated && hydratedFor === pubkey) return
-  if (hydratedFor !== pubkey) {
-    // Another person in this tab: nothing of the last one's carries over.
-    hydrated = false
-    published = undefined
-    slotCache = createSlotCache()
-  }
+  if (hydrated) return
   hydrating ??= (async () => {
-    const decrypt: Pick<Nip44, 'decrypt'> = { decrypt: (ciphertext) => nip44.decrypt(ciphertext) }
-    const state = await fetchReadState(query, pubkey, decrypt, currentIdentity(), Date.now(), READ_STATE_HORIZON_DAYS, slotCache)
-    // Unreachable is not empty: publishing then would drop every marker this slot held.
-    if (!state.reachable) return
-    // Our slot is there and would not decrypt (a 429 above all): writing over it would lose it. Try again later.
-    if (state.ownUndecryptable) {
-      console.warn('[read-state] own slot could not be decrypted; not publishing over it')
-      return
-    }
-    // Another installation's blob at our coordinate (a copied profile): take a new slot id and start it empty.
-    if (state.coordinateConflicted) identity = rotateSlotId(currentIdentity(), { storage: safeStorage(), storageKey: SLOT_STORAGE_KEY, random })
+    const slot = currentIdentity()
+    // Unreachable is not empty: publishing then would drop every marker this slot held. The throw keeps us unhydrated.
+    const events = await query([{ kinds: [KIND_READ_STATE], authors: [pubkey], '#d': [readStateDTag(slot.slotId)] }])
+    const newest = events.filter((e) => e.pubkey === pubkey).sort((a, b) => b.created_at - a.created_at)[0]
+    // Our slot is there and would not decrypt (a 429 above all): this throws, and writing over it would lose it.
+    const blob = newest ? parseReadStateBlob(await nip44.decrypt(newest.content)) : undefined
+    let own: Record<string, number> = {}
+    if (newest && blob?.client_id === slot.clientId) own = blob.contexts
+    // Another installation's blob at our coordinate (a copied profile), or one we cannot read as a blob: take a new
+    // slot id and start it empty, never writing over theirs.
+    else if (newest) identity = rotateSlotId(slot, { storage: safeStorage(), storageKey: SLOT_STORAGE_KEY, random })
+    if (owner !== pubkey) return
     // Seeded from our own slot, never the merge: a slot is this installation's account of what it read (Ship's note).
-    const own = state.own?.contexts ?? {}
     const { [REPLY_FLOOR_CONTEXT]: floor, ...marked } = known
     const held = floor === undefined ? own : { ...own, [REPLY_FLOOR_CONTEXT]: Math.max(floor, own[REPLY_FLOOR_CONTEXT] ?? 0) }
     known = advanceContexts(held, marked)
-    published = state.own?.contexts ?? {}
+    published = own
     hydrated = true
-    hydratedFor = pubkey
   })().finally(() => {
     hydrating = undefined
   })
@@ -139,6 +143,9 @@ export function flushReadState(): Promise<void> {
     if (Object.keys(pending).length === 0) return
     const pubkey = viewerPubkey()
     if (!pubkey) return retryLater()
+    // Marked by someone else who has since left this tab: theirs, never this person's.
+    forPerson(pubkey)
+    if (Object.keys(pending).length === 0) return
     try {
       await hydrate(pubkey)
     } catch (error) {
@@ -168,6 +175,9 @@ export function flushReadState(): Promise<void> {
 
 /** Mark these contexts read at `atMs`; the publish follows, debounced. Contexts come from the conversation package's builders. */
 export function markRead(contexts: readonly (string | undefined)[], atMs: number = Date.now()): void {
+  const pubkey = viewerPubkey()
+  if (!pubkey) return
+  forPerson(pubkey)
   let moved = false
   for (const context of contexts) {
     if (!context) continue
@@ -201,12 +211,11 @@ export function resetReadStateForTests(): void {
   if (timer !== undefined) clearTimeout(timer)
   timer = undefined
   identity = undefined
-  slotCache = createSlotCache()
+  owner = undefined
   known = {}
   pending = {}
   published = undefined
   hydrated = false
-  hydratedFor = undefined
   hydrating = undefined
   retryMs = 0
   inFlight = Promise.resolve()

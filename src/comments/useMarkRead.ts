@@ -7,18 +7,19 @@ import { markRead, READ_DWELL_MS } from '../relay/readState'
  *
  * `contexts` are built by `@estiva-app/conversation` (`fileContext`, `threadContext`), so a page cannot mark the wrong
  * thing read. `newestAtMs` is the newest message drawn for them: when it moves the dwell runs again, so a message that
- * arrives while they are on screen is read too, and the mark never runs past it or past the clock.
+ * arrives while they are on screen is read too, and the mark never runs past it or past the clock. With none drawn
+ * (an empty topic), the clock, as Ship's.
  */
-export function useMarkRead(contexts: readonly (string | undefined)[], newestAtMs: number | undefined): void {
+export function useMarkRead(contexts: readonly (string | undefined)[], newestAtMs?: number): void {
   // Joined, so the dwell restarts when the set changes and not on every render.
   const key = contexts.filter(Boolean).sort().join('|')
   useEffect(() => {
-    if (key.length === 0 || newestAtMs === undefined) return
+    if (key.length === 0) return
     let t: ReturnType<typeof setTimeout> | undefined
     const fire = () => {
       const now = Date.now()
-      markRead(key.split('|'), Math.min(newestAtMs, now))
-      if (newestAtMs > now) t = setTimeout(fire, newestAtMs - now)
+      markRead(key.split('|'), newestAtMs === undefined ? now : Math.min(newestAtMs, now))
+      if (newestAtMs !== undefined && newestAtMs > now) t = setTimeout(fire, newestAtMs - now)
     }
     const arm = () => {
       clearTimeout(t)
