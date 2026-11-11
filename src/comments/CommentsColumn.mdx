@@ -1,0 +1,43 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as Stories from './CommentsColumn.stories'
+
+<Meta of={Stories} />
+
+# CommentsColumn
+
+A file's conversation in the column beside its page: the package's one column
+(`ConversationLayout`), its threads, and the box to start one. It is the same
+conversation Peek and Ship show for that file.
+
+## When
+
+- Beside a document, for its comments, in the order of its text (`FilePage`).
+- Beside a topic's page, for the topic's own conversation, as Ship's topic page
+  has it (`TopicPage`, with `topic`).
+
+## When not
+
+- Not for a file's Overview: that is **OverviewPanel**, which takes the
+  column's place.
+- Not for one comment's card of a file it names: that is **CommentCard**.
+
+## How
+
+```tsx
+import { CommentsColumn } from './CommentsColumn'
+
+<CommentsColumn doc={{ address, folder }} addressable editor={editor} docBody={body} draft={draft} onDraft={setDraft} />
+<CommentsColumn doc={{ address: topic.address, folder: topic.folder }} addressable={false} editor={null} docBody={noBody} draft={null} onDraft={noDraft} topic />
+```
+
+- `closed` puts the archived line in the box's place; the conversation only shows.
+- `hidden` keeps an open edit and the chosen thread while the column is put away.
+- `topic` uses Ship's words and marks what is read, in every app: the topic's
+  conversations while it is shown, a thread's replies only once it is open.
+
+## What it owns
+
+- Reading the file's threads, keeping them live on its Folder, and every write
+  in them: comment, reply, edit, delete, react, resolve.
+- On a document, the link between a thread and its blocks in the text.
+- On a topic, its read marks (`useMarkRead`, `relay/readState`).

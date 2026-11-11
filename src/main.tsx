@@ -25,6 +25,8 @@ void (async () => {
   }
   const { App } = await import('./App')
   followOtherTabs()
+  // A topic read just before the tab goes away still reaches the relay.
+  ;(await import('./relay/readState')).installReadStateFlush()
   // A sign-in that ends from here on draws the passkey screen in the page's place (AUT-5).
   root.render(
     <StrictMode>
