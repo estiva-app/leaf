@@ -93,11 +93,12 @@ function forPerson(pubkey: string): void {
 }
 
 /**
- * Read this installation's own blob back, once per person, before the first write. Only our own coordinate: the write
- * needs nothing of the other slots, and each one would cost a `/nip44/decrypt` from the quota the mute list shares.
+ * Read this installation's own blob back before every write, not once: every Leaf tab of this browser shares the slot,
+ * and a blob read before another tab's publish would write over what that tab added. Only our own coordinate: the
+ * write needs nothing of the other slots, and each one would cost a `/nip44/decrypt` from the quota the mute list shares.
  */
 async function hydrate(pubkey: string): Promise<void> {
-  if (hydrated) return
+  hydrated = false
   hydrating ??= (async () => {
     const slot = currentIdentity()
     // Unreachable is not empty: publishing then would drop every marker this slot held. The throw keeps us unhydrated.
@@ -157,7 +158,10 @@ export function flushReadState(): Promise<void> {
     pending = {}
     if (published && sameContexts(published, contexts)) return
     try {
-      const result = await publishReadState({ sign: changeWriter.sign, publish: changeWriter.publish, nip44 }, pubkey, currentIdentity(), contexts, Date.now())
+      // Signed only as the person whose markers these are: Estiva ID signs as whoever holds the session now, and a
+      // sign-in in another tab since the flush began would put them in that person's slot.
+      const sign: typeof changeWriter.sign = (event) => (viewerPubkey() === pubkey ? changeWriter.sign(event) : Promise.reject(new Error('the person signed in changed')))
+      const result = await publishReadState({ sign, publish: changeWriter.publish, nip44 }, pubkey, currentIdentity(), contexts, Date.now())
       if (result.ok) {
         published = contexts
         retryMs = 0

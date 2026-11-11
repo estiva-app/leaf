@@ -174,6 +174,35 @@ describe("a topic's conversation in Leaf", () => {
     expect(parseReadStateBlob(relay.signed[0].content.slice(4))?.contexts).toEqual({ [fileContext(earlier)!]: 1_790_000_000, [fileContext(TOPIC)!]: 1_790_000_500 })
   })
 
+  it("keeps what another Leaf tab published to the shared slot since this tab last wrote it", async () => {
+    const slotId = '2'.repeat(32)
+    localStorage.setItem('leaf.readstate.slot', JSON.stringify({ slotId, clientId: 'leaf-test' }))
+    const slotEvent = (contexts: Record<string, number>, at: number): SignedEvent => ({
+      id: String(at).padStart(64, '7'),
+      pubkey: ME,
+      created_at: at,
+      kind: 30078,
+      tags: [['d', `read-state:${slotId}`], ['t', 'read-state']],
+      content: `enc:${JSON.stringify({ v: 1, client_id: 'leaf-test', contexts })}`,
+      sig: '',
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    markRead([fileContext(TOPIC)], 1_790_000_500_000)
+    await pass()
+    expect(relay.signed).toHaveLength(1)
+    // Another tab of this browser, same slot, reads a second topic and publishes after this one.
+    const other = `30840:${MIKY}:44444444-4444-4444-8444-444444444444`
+    relay.events = [slotEvent({ [fileContext(TOPIC)!]: 1_790_000_500, [fileContext(other)!]: 1_790_000_550 }, 1_790_000_560)]
+    const third = `30840:${MIKY}:55555555-5555-4555-8555-555555555555`
+    markRead([fileContext(third)], 1_790_000_600_000)
+    await pass()
+    expect(parseReadStateBlob(relay.signed[1].content.slice(4))?.contexts).toEqual({
+      [fileContext(TOPIC)!]: 1_790_000_500,
+      [fileContext(other)!]: 1_790_000_550,
+      [fileContext(third)!]: 1_790_000_600,
+    })
+  })
+
   it("publishes nothing one person read into the next person's slot when they sign in to the same tab", async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     markRead([fileContext(TOPIC)], 1_790_000_500_000)
