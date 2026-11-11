@@ -5,8 +5,8 @@
  * read a block's text separately, and once disagreed on a line break: a
  * comment across two lines of a quote read as reworded everywhere but Leaf.
  */
-import { beforeAll, expect, it } from 'vitest'
-import { act, render, waitFor } from '@testing-library/react'
+import { afterEach, beforeAll, expect, it } from 'vitest'
+import { act, cleanup, render, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { blockRunTag, descriptionTextToBlockDocument, quoteTag, resolveCommentAnchor, serializeBlockDocument } from '@estiva-app/protocol'
 import { anchorOfSelection } from '@estiva-app/ui/editor'
@@ -22,6 +22,10 @@ beforeAll(() => {
     proto.getBoundingClientRect = empty
   }
 })
+
+// Unmount each editor: one left mounted runs its selection strip's timer after
+// jsdom is gone, and the run fails on "window is not defined".
+afterEach(cleanup)
 
 /** The document position of `text`'s first character, and of the one after its last. */
 function rangeOf(editor: Editor, text: string): { from: number; to: number } {
