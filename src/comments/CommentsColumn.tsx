@@ -10,6 +10,7 @@ import {
   draftKeys,
   embedsToEdit,
   embedsToSend,
+  fileContext,
   namedBefore,
   offersEditAndDelete,
   openingWords,
@@ -18,6 +19,7 @@ import {
   refusalReason,
   ownFileOf,
   ROW_BLOCK,
+  threadContext,
   withoutOwnFileLines,
   writtenUrlOf,
   type DraftStore,
@@ -84,6 +86,12 @@ import { FileCard } from './CommentFiles'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
+import { useMarkRead } from './useMarkRead'
+
+/** The newest of these comments, in ms; undefined when there are none. */
+function newestAt(items: readonly { at: number }[]): number | undefined {
+  return items.length === 0 ? undefined : Math.max(...items.map((item) => item.at))
+}
 
 /**
  * A document's comments, in the column beside its text — Katerina's option A
@@ -966,14 +974,26 @@ export interface CommentsColumnProps {
   closed?: string
   /** The column is hidden (LED-3): it keeps an open edit and the chosen thread, and draws no comment on the text. */
   hidden?: boolean
+  /**
+   * The file is a topic: its own conversation, as Ship's topic page draws it, in Ship's words. Reading it marks it read
+   * in every app, as Ship's does: its conversations while the column is shown, a thread's replies only once that thread
+   * is open. A document has no read state yet, so its column marks nothing.
+   * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-is-read-only-when-its-thread-is-opened.md
+   */
+  topic?: boolean
 }
 
-/** The comments column of a Leaf document. */
-export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed, hidden = false }: CommentsColumnProps) {
+/** The comments column of a Leaf document, or a topic's conversation. */
+export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed, hidden = false, topic = false }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
+  const reading = topic && !hidden && threads !== null
+  useMarkRead(reading ? [fileContext(doc.address)] : [], reading ? newestAt(threads.flatMap((t) => (t.root ? [t.root] : []))) : undefined)
   const { showToast } = useToast()
   const [held] = useState(() => heldComments(doc.address))
   const [active, setActive] = useState<string | null>(held?.active ?? null)
+  // The open thread's replies are drawn: they are read (§11.3's thread rule); a closed thread's are not.
+  const openThread = reading && !draft ? threads.find((t) => t.id === active) : undefined
+  useMarkRead(openThread ? [threadContext(openThread.id)] : [], openThread ? newestAt(openThread.replies) : undefined)
   // The thread open not by the kit's layout — from its words in the text, or back after a draft — whose box the caret
   // does not go to as it opens ({@link QuietCaret}); `null` once the layout opens one, or the open has been counted.
   const [quiet, setQuiet] = useState<string | null>(null)
@@ -1230,6 +1250,9 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
             empty={
               failed ? (
                 <EmptyState scope="section" message="Could not read the comments. Try again in a moment." />
+              ) : topic ? (
+                // A topic's, in Ship's words.
+                'No conversations yet.'
               ) : closed === undefined ? (
                 'No comments yet. Select words and press Comment, or write below.'
               ) : (
@@ -1242,7 +1265,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
               // A new place to comment on is a new box, which takes the focus: its draft keeps what was written.
               <Box
                 key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
-                placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : 'Comment on this document…'}
+                placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : topic ? 'Start a conversation…' : 'Comment on this document…'}
                 draftKey={draftKeys.object(address ?? '')}
                 scope={pageScope}
                 people={people}

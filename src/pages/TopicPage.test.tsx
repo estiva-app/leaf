@@ -120,16 +120,26 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("a topic's page in Leaf", () => {
-  it('shows its title, team and summary, its conversation in Peek, and what it lists, each opening in Leaf', async () => {
+  it('shows its title, team and summary, its conversation beside it, and what it lists, each opening in Leaf', async () => {
     const plan = file(30842, 'Launch plan')
     const issue = file(30851, 'Write the brief')
     outside = { [plan.address!]: plan, [issue.address!]: issue }
     const d = topic('Widgets', [issue, plan], 'Everything about the widgets.')
+    const address = `30840:${MIKY}:${d}`
+    held.push(sign({ kind: 1111, pubkey: MIKY, created_at: 1_700_000_100, tags: [['A', address], ['K', '30840'], ['P', MIKY], ['a', address], ['k', '30840'], ['p', MIKY], ['h', HQ]], content: 'Said in the topic' }))
     show(d)
     expect(await screen.findByRole('heading', { name: 'Widgets' })).toBeTruthy()
     expect(screen.getByText('Estiva HQ')).toBeTruthy()
     expect(screen.getByText('Everything about the widgets.')).toBeTruthy()
-    expect(screen.getByRole('link', { name: /Conversation in Peek/ }).getAttribute('href')).toBe(`https://peek.estiva.app/topic/widgets-${d}`)
+    // Its conversation in the column beside the page, as Ship's topic page has it, in place of a link to Peek's.
+    expect(screen.queryByRole('link', { name: /Conversation in Peek/ })).toBeNull()
+    expect(await screen.findByText('Said in the topic')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Start a conversation…' })).toBeTruthy()
+    // Hidden and shown as a document's comments are.
+    fireEvent.click(screen.getByRole('button', { name: 'Hide comments' }))
+    expect(document.querySelector('[data-comments-column]')!.closest('[hidden]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show comments' }))
+    expect(document.querySelector('[data-comments-column]')!.closest('[hidden]')).toBeNull()
     // In the topic's one order, as it lists them (the issue first here), not pages first (TOPI-5); each a link inside Leaf.
     const plans = await screen.findByRole('link', { name: /Launch plan/ })
     expect(plans.getAttribute('href')).toBe(`/document/launch-plan-${plan.address!.split(':')[2]}`)

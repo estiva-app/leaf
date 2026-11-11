@@ -1,7 +1,10 @@
 import type { FileLook, FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { Button, Card, EmptyState, KindIcon, Link, NoAccessNotice, PageHeader, Panel, SectionLabel, SkeletonList } from '@estiva-app/ui'
-import { IconArchive, IconExternalLink } from '@tabler/icons-react'
-import { useEffect, useState } from 'react'
+import { archivedLine } from '@estiva-app/conversation'
+import { Button, Card, Divider, EmptyState, KindIcon, NoAccessNotice, PageHeader, Panel, SectionLabel, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { IconArchive, IconMessage, IconMessageOff } from '@tabler/icons-react'
+import { useEffect, useState, type RefObject } from 'react'
+import { CommentsColumn } from '../comments/CommentsColumn'
+import { useSideColumn } from './sideColumn'
 import { rowOf } from '../folders/tree'
 import { replace } from '../route'
 import { useTabTitle } from '../tabTitle'
@@ -13,7 +16,7 @@ import { ReferencesProvider } from '../document/references'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
- * `LeafTopics.tsx`): its title with its team under it and "Conversation in Peek" on the right, its summary, what it
+ * `LeafTopics.tsx`): its title with its team under it, its summary, what it
  * lists that Leaf opens, each opening in Leaf, and the archived ones behind a link. A space goes on to Peek (D4); a
  * topic the reader cannot read is the notice any file they cannot open gets. The address bar gets the topic's current
  * slug, whichever link brought the reader here.
@@ -35,6 +38,8 @@ export function TopicPage({
 }) {
   const { state, retry } = useTopicPage(d, inTree, treeRead)
   const [showArchived, setShowArchived] = useState(false)
+  // Shown or hidden as a document's comments are, remembered on this browser across both (LED-3).
+  const { comments } = useSideColumn()
   const page = typeof state === 'object' ? state : null
   // A space goes on to Peek by itself only on a host beside Leaf's; anywhere else its page is drawn, with the link.
   const sendsOn = !!page?.space && !!page.peekUrl && isSiblingHost(page.peekUrl, window.location.hostname)
@@ -51,22 +56,49 @@ export function TopicPage({
   useTabTitle(page && !sendsOn ? page.title : undefined)
 
   if (state === 'unavailable') return <NoAccessNotice what="topic" />
-  const peek = page?.peekUrl && (
-    <span className="flex shrink-0 text-body-2">
-      <Link href={page.peekUrl} external variant="quiet" className="flex items-center gap-1">
-        Conversation in Peek
-        <IconExternalLink size={14} stroke={1.5} aria-hidden />
-      </Link>
-    </span>
+  // The topic's conversation is in the column beside the page, as on Ship's topic page, in place of the link to Peek;
+  // the header's button shows or hides it, as on a document.
+  const toggle = (
+    <Toolbar aria-label="Topic actions" surface={false}>
+      <ToolbarButton
+        tooltip={comments.open ? 'Hide comments' : 'Show comments'}
+        aria-label={comments.open ? 'Hide comments' : 'Show comments'}
+        onClick={() => comments.onOpenChange(!comments.open)}
+      >
+        {comments.open ? <IconMessageOff size={16} stroke={1.5} /> : <IconMessage size={16} stroke={1.5} />}
+      </ToolbarButton>
+    </Toolbar>
   )
   const team = page ? folders?.find((folder) => folder.id === page.folder)?.name : undefined
   const files = page?.files
+  // Drawn once the topic is known and stays here: a space goes on to Peek, and a topic that did not load has none.
+  const conversation = page && !sendsOn && (
+    <div className={comments.open ? 'contents' : 'hidden'} hidden={!comments.open}>
+      <Divider orientation="vertical" />
+      {/* The kit's one column, 384px, the page's full height, as a document's and as Ship's topic page places it. */}
+      <div className="flex flex-none flex-col" data-comments-column>
+        <CommentsColumn
+          key={page.address}
+          doc={{ address: page.address, folder: page.folder }}
+          addressable={false}
+          editor={null}
+          docBody={noBody}
+          draft={null}
+          onDraft={noDraft}
+          // An archived topic's conversation only shows, with the line every app says in the box's place (Ship's too).
+          closed={page.archived ? (archivedLine({}, undefined, { in: 'Peek', to: 'reply' }) ?? '') : undefined}
+          hidden={!comments.open}
+          topic
+        />
+      </div>
+    </div>
+  )
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
         <Panel
           title={page?.title ?? 'Topic'}
-          header={<PageHeader title={page?.title ?? ''} leading={<KindIcon kind="topic" />} actions={peek || undefined} />}
+          header={<PageHeader title={page?.title ?? ''} leading={<KindIcon kind="topic" />} actions={page && !sendsOn ? toggle : undefined} />}
           bodyClassName="px-12 pt-10 pb-24"
         >
           <div data-topic-page className="mx-auto flex w-full max-w-3xl flex-col gap-4">
@@ -111,9 +143,14 @@ export function TopicPage({
           </div>
         </Panel>
       </div>
+      {conversation}
     </div>
   )
 }
+
+/** A topic has no text: nothing for a comment to point at, nor to scroll to. */
+const noBody: RefObject<HTMLDivElement | null> = { current: null }
+const noDraft = () => {}
 
 /** What a topic lists, in its order: a row as Leaf's sidebar draws one (its icon, its title and, for another app's file, its type), or its card. */
 function Rows({ files, looks, readOnly }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook>; readOnly: boolean }) {
