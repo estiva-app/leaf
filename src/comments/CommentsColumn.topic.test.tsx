@@ -109,6 +109,15 @@ describe("a topic's conversation in Leaf", () => {
     expect(screen.queryByText(/Comment on this document/)).toBeNull()
   })
 
+  it('says nothing of where a comment is: it is on the topic, never "on the whole document"', async () => {
+    const only = said('Kickoff notes', 1_790_000_000)
+    relay.events = [only]
+    column()
+    await waitFor(() => expect(item(only.id)).not.toBeNull())
+    expect(within(item(only.id)!).getByText('Kickoff notes')).toBeTruthy()
+    expect(screen.queryByText(/whole document/)).toBeNull()
+  })
+
   it('starts a conversation as the comment Ship writes for a topic: about the topic, in its team, and nothing else', async () => {
     column()
     await screen.findByText('No conversations yet.')

@@ -793,6 +793,8 @@ function LeafReply({ id, ...entry }: EntryProps & { id: string }) {
 interface ThreadProps {
   thread: Thread
   where: Where
+  /** A topic's conversation: a comment is on the topic itself, so no line says where, as in Ship and Peek. */
+  onTopic?: boolean
   editor: Editor | null
   names: Record<string, string>
   pictures: Record<string, string>
@@ -856,7 +858,7 @@ function ThreadComment(props: ThreadProps) {
   const faces = [...new Set(thread.replies.map((r) => r.by))].map((by) => ({ name: names[by] ?? 'Someone', picture: pictures[by], bot: bots[by] }))
   const resolution = thread.resolution
   const card: CommentCardProps = {
-    about: aboutOf(thread, where, editor),
+    about: props.onTopic ? undefined : aboutOf(thread, where, editor),
     replies: last ? { count: thread.replies.length, faces, last: whenOf(last.at, now) } : undefined,
     resolved: resolution && { by: named(resolution.by), note: resolution.note, at: inSentence(whenOf(resolution.at, now)) },
     onResolve:
@@ -1187,6 +1189,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   const propsOf = (t: Thread): ThreadProps => ({
     thread: t,
     where: whereOf(t),
+    onTopic: topic,
     editor,
     names,
     pictures,
