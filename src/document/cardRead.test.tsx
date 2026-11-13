@@ -116,6 +116,12 @@ describe("a card under a comment, once the relay keeps projects in order", () =>
     expect(projectReads(d)).toHaveLength(1)
   })
 
+  it("says a project this reader cannot open is the app's, as before, when the list read leaves it out", async () => {
+    // Not on the relay for this reader: in a team they are not in.
+    render(<Cards uris={[`nostr:${addrToNaddr(`30850:${OWNER}:elsewhere`)}`]} />)
+    expect(await screen.findByText("You can't open this file in Tracker")).toBeTruthy()
+  })
+
   it("lists each of a project's issues once when one of them has a card of its own beside it", async () => {
     const { project, issue } = aProject('q3')
     render(<Cards uris={[`nostr:${addrToNaddr(project)}`, `nostr:${addrToNaddr(issue)}`]} />)

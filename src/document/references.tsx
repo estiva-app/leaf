@@ -107,7 +107,16 @@ async function readListed(uris: readonly string[]): Promise<Resolved> {
       { ...object, people: found, ...(object.children ? { children: onceEach(object.children).map((child) => ({ ...child, people: found })) } : {}) },
     ]),
   )
-  return Object.fromEntries(uris.map((uri) => [uri, byAddress.get(keyOf(uri)) ?? null]))
+  // One the list read leaves out (deleted, or in a team this reader is not in) by its full read, which costs little when
+  // the relay holds nothing to send: it still names the file's app and kind, "Issue · you can't open it", not a blank.
+  const left = uris.filter((uri) => !byAddress.has(keyOf(uri)))
+  const full = left.length ? await readFull(left) : {}
+  return Object.fromEntries(uris.map((uri) => [uri, byAddress.get(keyOf(uri)) ?? full[uri] ?? null]))
+}
+
+/** The files `uris` name, each with its every change and comments: interop's full read, as every card read before ALO-24. */
+async function readFull(uris: readonly string[]): Promise<Resolved> {
+  return resolveForeignObjects(uris, query, people.viaRelay(query), manifests, await archivedWithOptions())
 }
 
 /**
@@ -118,10 +127,7 @@ async function readNow(uris: readonly string[]): Promise<Resolved> {
   const { listRead } = await archivedRootsOptions()
   const listed = listRead ? uris.filter((uri) => LISTED_KINDS.some((kind) => keyOf(uri).startsWith(`${kind}:`))) : []
   const rest = uris.filter((uri) => !listed.includes(uri))
-  const [full, current] = await Promise.all([
-    rest.length ? archivedWithOptions().then((options) => resolveForeignObjects(rest, query, people.viaRelay(query), manifests, options)) : {},
-    listed.length ? readListed(listed) : {},
-  ])
+  const [full, current] = await Promise.all([rest.length ? readFull(rest) : {}, listed.length ? readListed(listed) : {}])
   return { ...full, ...current }
 }
 
