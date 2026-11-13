@@ -371,14 +371,8 @@ export async function react(comment: CommentItem, emoji: string): Promise<WriteR
   const pubkey = viewerPubkey()
   if (!pubkey) return send(null)
   const target = comment.event
-  let key: string | undefined
-  if (needsRelayKey(target)) {
-    try {
-      key = await relayKey()
-    } catch (reason) {
-      return { ok: false, reason }
-    }
-  }
+  // Without the key every comment is its signer's, which is right for every comment a person signed.
+  const key = needsRelayKey(target) ? await relayKey().catch(() => undefined) : undefined
   return send(buildReaction(pubkey, Date.now(), { target, emoji, relayKey: key }))
 }
 

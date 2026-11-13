@@ -777,6 +777,22 @@ describe('reactions on a comment (COMM-4)', () => {
     expect(e.tags).toEqual([['e', forQa2.id], ['p', QA2]])
   })
 
+  it("still reacts when the relay key cannot be read, naming the comment's signer (ACT-6)", async () => {
+    const { query } = await import('../relay/bridge')
+    const real = vi.mocked(query).getMockImplementation()!
+    vi.mocked(query).mockImplementation(async (filters) => {
+      if (filters.some((f) => (f.kinds as number[] | undefined)?.includes(39000))) throw new Error('relay unreachable')
+      return real(filters)
+    })
+    try {
+      const theirs = { ...comment([['p', ME]], 'Over to you'), pubkey: QA2 }
+      const e = await reactTo(theirs)
+      expect(e.tags).toEqual([['e', theirs.id], ['p', QA2]])
+    } finally {
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
   it('signed out, shows the reactions with nothing to click and writes nothing', async () => {
     const root = comment([], 'Too long?')
     signedIn.pubkey = null
