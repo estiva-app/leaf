@@ -833,6 +833,26 @@ describe('reactions on a comment (COMM-4)', () => {
     expect(publish.mock.calls[1][0].tags).toEqual([['e', second.id], ['p', QA2]])
   })
 
+  it('shows your 👍 at once, lit, while the relay key is still being read and before anything is sent (ACT-6)', async () => {
+    const posted = forQa2('Posted for QA-2')
+    const real = vi.mocked(query).getMockImplementation()!
+    vi.mocked(query).mockImplementation((filters) => (readsRelayKey(filters) ? new Promise<never>(() => {}) : real(filters)))
+    try {
+      await open([posted, team])
+      await waitFor(() => expect(items()).not.toHaveLength(0))
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      pick(posted)
+      expect(screen.queryByRole('button', { name: 'Makes sense, 1' })?.getAttribute('aria-pressed')).toBe('true')
+      expect(publish).not.toHaveBeenCalled()
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      vi.useRealTimers()
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    } finally {
+      vi.useRealTimers()
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
   it("still reacts, naming the comment's signer, when the relay key read does not answer (ACT-6)", async () => {
     const posted = forQa2('Posted for QA-2')
     const real = vi.mocked(query).getMockImplementation()!

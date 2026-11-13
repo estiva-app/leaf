@@ -492,6 +492,17 @@ interface EntryProps {
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
  */
+/** The reactions as they will be once your pick lands: you added to the emoji's people, or taken off them. */
+function drawnOver(reactions: CommentItem['reactions'], drawn: { emoji: string; on: boolean }, viewer: string): CommentItem['reactions'] {
+  const had = reactions.some((r) => r.emoji === drawn.emoji)
+  if (drawn.on && !had) return [...reactions, { emoji: drawn.emoji, count: 1, by: [viewer] }]
+  return reactions.map((r) => {
+    if (r.emoji !== drawn.emoji) return r
+    const by = drawn.on ? [...r.by.filter((p) => p !== viewer), viewer] : r.by.filter((p) => p !== viewer)
+    return { emoji: r.emoji, count: by.length, by, ...(drawn.on && r.mine ? { mine: r.mine } : {}) }
+  })
+}
+
 function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, onReact, own, closed }: EntryProps): ConversationEntryProps {
   const reactions = comment.reactions
   // A refused delete keeps the question open and says why, under it (the kit's `deleteRefused`).
@@ -513,13 +524,22 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
   useEffect(() => {
     pending.current = false
   }, [comment])
+  // Your pick shows the moment you make it, and goes again if the relay refuses it; it gives way to the read once the read agrees.
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
+  const [drawn, setDrawn] = useState<{ emoji: string; on: boolean } | null>(null)
+  const agrees = drawn !== null && reactions.some((r) => r.emoji === drawn.emoji && viewer !== undefined && r.by.includes(viewer)) === drawn.on
+  if (drawn && agrees) setDrawn(null)
+  const shown = drawn && !agrees && viewer ? drawnOver(reactions, drawn, viewer) : reactions
   // The relay's answer goes back to the kit's card, which says a refusal ("Not reacted: …") and keeps it until the next reaction.
   const toggle = async (emoji: string): Promise<{ accepted: true } | { accepted: false; reason: unknown } | undefined> => {
     if (!onReact || pending.current) return undefined
     pending.current = true
-    const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
+    const mine = reactions.find((r) => r.emoji === emoji)?.mine
+    setDrawn({ emoji, on: !mine })
+    const result = await onReact(comment, emoji, mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
     if (result.ok) return { accepted: true }
     pending.current = false
+    setDrawn(null)
     return { accepted: false, reason: result.reason }
   }
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
@@ -529,7 +549,7 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     time: whenOf(comment.at, now),
     at: comment.at,
     edited: comment.edited ? `Edited${comment.editedAt === undefined ? '' : ` ${inSentence(whenOf(comment.editedAt, now))}`}` : undefined,
-    reactions: { reactions, options: REACTION_OPTIONS, nameOf: (pubkey) => named(pubkey) ?? 'Someone', viewer, onToggle: onReact ? toggle : undefined },
+    reactions: { reactions: shown, options: REACTION_OPTIONS, nameOf: (pubkey) => named(pubkey) ?? 'Someone', viewer, onToggle: onReact ? toggle : undefined },
     readOnly: closed,
     own: !!own,
     // The column holds it, so a sign-in ending can put it back (AUT-5).
