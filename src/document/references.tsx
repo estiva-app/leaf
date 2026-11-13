@@ -4,7 +4,7 @@ import { createPeopleCache, resolveForeignObjects, resolveForeignRoots, type For
 import { FILE_KINDS, KIND, readAbsence, referenceToPointer } from '@estiva-app/protocol'
 import { query } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
-import { archivedRootsOptions, archivedWithOptions } from '../relay/projectFields'
+import { archivedWithOptions } from '../relay/projectFields'
 import { unavailableLinks } from './linkMemory'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
@@ -120,11 +120,12 @@ async function readFull(uris: readonly string[]): Promise<Resolved> {
 }
 
 /**
- * The files `uris` name: a project, issue or document by the list read once the relay keeps files in order
- * ({@link readListed}); anything else (a topic, an event, a relay not switched) by its full read, as before.
+ * The files `uris` name: a project, issue or document by the list read once the relay offers it ({@link readListed});
+ * anything else (a topic, an event, a relay without it) by its full read, as before.
  */
 async function readNow(uris: readonly string[]): Promise<Resolved> {
-  const { listRead } = await archivedRootsOptions()
+  // As soon as the relay offers the list read, switched or not: a card draws no text, and one it leaves out is read in full.
+  const { listRead } = await archivedWithOptions()
   const listed = listRead ? uris.filter((uri) => LISTED_KINDS.some((kind) => keyOf(uri).startsWith(`${kind}:`))) : []
   const rest = uris.filter((uri) => !listed.includes(uri))
   const [full, current] = await Promise.all([rest.length ? readFull(rest) : {}, listed.length ? readListed(listed) : {}])

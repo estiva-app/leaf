@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 /*
   ALO-24: a card under a comment reads its file as it is now, once for every card asking in the same moment. The relay
   is the seam: `query` answers from the events below, each filter on its own as the relay does, and every filter that
-  reaches it is counted. The relay keeps projects in order (the switch), as production has since 4 Nov.
+  reaches it is counted. The relay offers the list read, as production has since 2 Nov.
 */
 const query = vi.hoisted(() => vi.fn())
 vi.mock('../relay/bridge', () => ({ query: (filters: unknown[]) => query(filters), publish: vi.fn(), viewerPubkey: () => 'c4'.repeat(32) }))
 vi.mock('../relay/projectFields', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../relay/projectFields')>()),
-  archivedRootsOptions: async () => ({ archivedWith: true, listRead: true }),
+  archivedWithOptions: async () => ({ archivedWith: true, listRead: true }),
 }))
 
 import { CommentCard } from '../comments/CommentCard'
@@ -97,7 +97,7 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe("a card under a comment, once the relay keeps projects in order", () => {
+describe('a card under a comment, once the relay offers the list read', () => {
   it("draws a project's card from the project as it is now, with its issues, and never reads its every change", async () => {
     const { project } = aProject('q1')
     render(<Cards uris={[`nostr:${addrToNaddr(project)}`]} />)
