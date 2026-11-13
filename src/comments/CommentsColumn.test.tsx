@@ -819,6 +819,20 @@ describe('reactions on a comment (COMM-4)', () => {
     }
   })
 
+  it('reads the relay key again for the next reaction when the first read found none (ACT-6)', async () => {
+    const first = forQa2('Posted for QA-2')
+    const second = forQa2('Posted for QA-2 again')
+    await open([first, second])
+    await waitFor(() => expect(items()).not.toHaveLength(0))
+    pick(first)
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    expect(publish.mock.calls[0][0].tags).toEqual([['e', first.id], ['p', RELAY]])
+    relay.events = [...relay.events, team]
+    pick(second)
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(2))
+    expect(publish.mock.calls[1][0].tags).toEqual([['e', second.id], ['p', QA2]])
+  })
+
   it("still reacts, naming the comment's signer, when the relay key read does not answer (ACT-6)", async () => {
     const posted = forQa2('Posted for QA-2')
     const real = vi.mocked(query).getMockImplementation()!
