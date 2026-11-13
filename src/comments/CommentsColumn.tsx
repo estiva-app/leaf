@@ -484,18 +484,28 @@ interface EntryProps {
   closed: boolean
 }
 
-/** One of your picks, drawn before the read has it: on is your reaction there, off is it taken back. */
-type Drawn = { emoji: string; on: boolean }
+/** Your reaction under one emoji as Leaf knows it before the read does: there or taken back, its event's id, and whether a write is on its way. */
+type Mine = { on: boolean; id?: string; writing: boolean }
 
-/** The reactions as they will be once your pick lands: you added to the emoji's people, or taken off them. */
-function drawnOver(reactions: CommentItem['reactions'], drawn: Drawn, viewer: string): CommentItem['reactions'] {
-  if (drawn.on && !reactions.some((r) => r.emoji === drawn.emoji)) return [...reactions, { emoji: drawn.emoji, count: 1, by: [viewer] }]
+/** Whether the read now says what you did, so it can show again: by your reaction's id when that is known. */
+function readHas(mine: Mine, read: CommentItem['reactions'][number] | undefined, viewer: string): boolean {
+  if (mine.writing) return false
+  if (!mine.id) return !!read?.by.includes(viewer) === mine.on
+  return mine.on ? read?.mine === mine.id : read?.mine !== mine.id
+}
+
+/** The reactions as they are once your pick lands: you added to the emoji's people, or taken off them. */
+function drawnOver(reactions: CommentItem['reactions'], emoji: string, on: boolean, viewer: string): CommentItem['reactions'] {
+  if (on && !reactions.some((r) => r.emoji === emoji)) return [...reactions, { emoji, count: 1, by: [viewer] }]
   return reactions.map((r) => {
-    if (r.emoji !== drawn.emoji) return r
-    const by = drawn.on ? [...r.by.filter((p) => p !== viewer), viewer] : r.by.filter((p) => p !== viewer)
-    return { emoji: r.emoji, count: by.length, by, ...(drawn.on && r.mine ? { mine: r.mine } : {}) }
+    if (r.emoji !== emoji) return r
+    const by = on ? [...r.by.filter((p) => p !== viewer), viewer] : r.by.filter((p) => p !== viewer)
+    return { emoji, count: by.length, by, ...(on && r.mine ? { mine: r.mine } : {}) }
   })
 }
+
+/** What the kit's card hears back from a click: accepted, or refused and why. */
+type Answer = { accepted: true } | { accepted: false; reason: unknown }
 
 /**
  * What the kit's two cards take from one Leaf comment or reply: who, when, "(edited)" with when, Leaf's words
@@ -521,49 +531,56 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     removing.current = false
     if (!result.ok) setRemoveRefused(refusalReason(result.reason))
   }
-  // Your picks show the moment you make them, each until the read agrees, and go again if the relay refuses them.
+  // What you did shows the moment you do it and stays until the read has it; a refusal goes back to what the relay last
+  // accepted from you, and the card says why.
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
-  const [drawn, setDrawn] = useState<readonly Drawn[]>([])
-  const reads = (d: Drawn) => viewer !== undefined && reactions.some((r) => r.emoji === d.emoji && r.by.includes(viewer)) === d.on
-  if (drawn.some(reads)) setDrawn(drawn.filter((d) => !reads(d)))
-  const shown = viewer ? drawn.filter((d) => !reads(d)).reduce((row, d) => drawnOver(row, d, viewer), reactions) : reactions
-  const isOn = (emoji: string) => viewer !== undefined && shown.some((r) => r.emoji === emoji && r.by.includes(viewer))
-  // Per emoji: what you last asked for while a write is on its way, the write on its way, and your reaction's id once accepted.
+  const [mine, setMine] = useState<Readonly<Record<string, Mine>>>({})
+  const readOf = (emoji: string) => reactions.find((r) => r.emoji === emoji)
+  const held = viewer ? Object.entries(mine).filter(([emoji, m]) => !readHas(m, readOf(emoji), viewer)) : []
+  if (held.length !== Object.keys(mine).length) setMine(Object.fromEntries(held))
+  const shown = viewer ? held.reduce((row, [emoji, m]) => drawnOver(row, emoji, m.on, viewer), reactions) : reactions
+  // While an emoji's write is on its way: what your last click asked for there, and the write, which sends it after.
   const wanted = useRef(new Map<string, boolean>())
-  const writing = useRef(new Set<string>())
-  const ids = useRef(new Map<string, string>())
-  // A click acts on what you see: a lit pill is taken back. A click while that emoji's write is on its way is sent after it.
-  // The relay's answer goes back to the kit's card, which says a refusal ("Not reacted: …") and keeps it until the next reaction.
-  const toggle = async (emoji: string): Promise<{ accepted: true } | { accepted: false; reason: unknown } | undefined> => {
-    if (!onReact) return undefined
-    const was = wanted.current.get(emoji) ?? isOn(emoji)
-    wanted.current.set(emoji, !was)
-    setDrawn((d) => [...d.filter((x) => x.emoji !== emoji), { emoji, on: !was }])
-    if (writing.current.has(emoji)) return undefined
-    writing.current.add(emoji)
-    const undraw = () => setDrawn((d) => d.filter((x) => x.emoji !== emoji))
+  const runs = useRef(new Map<string, Promise<Answer>>())
+  const write = async (send: OnReact, emoji: string, from: { on: boolean; id?: string }): Promise<Answer> => {
+    let at = from
+    const settle = () => setMine((m) => ({ ...m, [emoji]: { ...at, writing: false } }))
     try {
-      for (let on = was; wanted.current.get(emoji) !== on; ) {
-        const mine = on ? (ids.current.get(emoji) ?? reactions.find((r) => r.emoji === emoji)?.mine) : undefined
-        // Your reaction is not known by its id yet: nothing to name, so the row stays as the read has it.
-        if (on && !mine) {
-          undraw()
-          return undefined
+      while (wanted.current.get(emoji) !== at.on) {
+        // Your reaction is not known by its id: there is nothing to name in a take-back.
+        if (at.on && !at.id) {
+          settle()
+          return { accepted: false, reason: { cause: 'unknown' } }
         }
-        const result = await onReact(comment, emoji, mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
+        const result = await send(comment, emoji, at.on ? at.id : undefined).catch((error: unknown) => ({ ok: false, reason: error }) as const)
         if (!result.ok) {
-          undraw()
+          settle()
           return { accepted: false, reason: result.reason }
         }
-        on = !on
-        if (on && result.id) ids.current.set(emoji, result.id)
-        else ids.current.delete(emoji)
+        at = at.on ? { on: false, id: at.id } : { on: true, id: result.id }
       }
+      settle()
       return { accepted: true }
     } finally {
-      writing.current.delete(emoji)
+      runs.current.delete(emoji)
       wanted.current.delete(emoji)
     }
+  }
+  // A click acts on what you see: a lit pill is taken back. A click while that emoji's write is on its way is sent
+  // after it, and answers with it, so the card says a refusal of either (the kit's "Not reacted: …").
+  const toggle = (emoji: string): Promise<Answer> | undefined => {
+    if (!onReact || !viewer) return undefined
+    const read = readOf(emoji)
+    const was = wanted.current.get(emoji) ?? mine[emoji]?.on ?? !!read?.by.includes(viewer)
+    const id = mine[emoji]?.id ?? read?.mine
+    wanted.current.set(emoji, !was)
+    setMine((m) => ({ ...m, [emoji]: { on: !was, id: m[emoji]?.id ?? id, writing: true } }))
+    const running = runs.current.get(emoji)
+    if (running) return running
+    // Held before the write starts, so a write that ends at once still lets the next click go.
+    const run = Promise.resolve().then(() => write(onReact, emoji, { on: was, id }))
+    runs.current.set(emoji, run)
+    return run
   }
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   return {

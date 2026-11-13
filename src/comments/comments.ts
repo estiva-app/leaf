@@ -99,10 +99,10 @@ export interface Resolved {
 }
 
 /**
- * What a write answered: `ok`, or the refusal as it came — the relay's words, an error, or `{ cause }` for Leaf's own —
- * which the kit says in `@estiva-app/conversation`'s plain words (`refusalReason`), the same in every app (ONE-4).
+ * What a write answered: `ok`, with the event's `id` when it is known, or the refusal as it came — the relay's words,
+ * an error, or `{ cause }` for Leaf's own — which the kit says in `@estiva-app/conversation`'s plain words
+ * (`refusalReason`), the same in every app (ONE-4).
  */
-/** A write's answer: accepted, with the event's id when the relay names it, or refused and why. */
 export type WriteResult = { ok: true; id?: string } | { ok: false; reason: unknown }
 
 /** A write with no sign-in to sign it: the kit says "you are signed out; sign in again". */

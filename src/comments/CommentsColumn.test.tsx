@@ -862,6 +862,8 @@ describe('reactions on a comment (COMM-4)', () => {
       await waitFor(() => expect(items()).not.toHaveLength(0))
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       pick(posted)
+      // The 👍 is on its way: its write waits on the relay key.
+      await act(async () => {})
       act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
       expect(screen.queryByRole('button', { name: 'Makes sense, 1' })).toBeNull()
       await act(() => vi.advanceTimersByTimeAsync(5_000))
@@ -870,6 +872,34 @@ describe('reactions on a comment (COMM-4)', () => {
         [5, [['e', '9'.repeat(64)]]],
       ])
       expect(screen.queryByRole('button', { name: 'Makes sense, 1' })).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
+  it('keeps your 👍 lit and says why when the take-back sent after it is refused, and the next click takes it back, not a second 👍 (ACT-6)', async () => {
+    const posted = forQa2('Posted for QA-2')
+    const real = vi.mocked(query).getMockImplementation()!
+    vi.mocked(query).mockImplementation((filters) => (readsRelayKey(filters) ? new Promise<never>(() => {}) : real(filters)))
+    publish.mockResolvedValueOnce({ ok: true, eventId: '9'.repeat(64) }).mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 5 not allowed' })
+    try {
+      await open([posted, team])
+      await waitFor(() => expect(items()).not.toHaveLength(0))
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      pick(posted)
+      await act(async () => {})
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      expect(screen.queryByRole('button', { name: 'Makes sense, 1' })?.getAttribute('aria-pressed')).toBe('true')
+      expect(screen.queryByText('Not reacted: you can no longer write here.')).not.toBeNull()
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense, 1' })))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(publish.mock.calls.map(([e]) => [e.kind, e.tags])).toEqual([
+        [7, [['e', posted.id], ['p', RELAY]]],
+        [5, [['e', '9'.repeat(64)]]],
+        [5, [['e', '9'.repeat(64)]]],
+      ])
     } finally {
       vi.useRealTimers()
       vi.mocked(query).mockImplementation(real)
