@@ -92,7 +92,7 @@ function pubkeysOf(object: ForeignObject): string[] {
  * own files under it (a project's issues) the same way, and the people they name in one lookup, because the list
  * read names nobody. Not every change ever made to it, nor its comments: a card draws neither, and counts its
  * comments with a read of its own (`useCardConversation`). Ship's cards read the same way (ALO-23). A file the list
- * read leaves out (deleted, or not readable here) is `null`, as the full read's.
+ * read leaves out (deleted, or not readable here) is read in full, so its card still names its app, or says deleted.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
  */
