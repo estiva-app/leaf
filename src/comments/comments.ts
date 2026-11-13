@@ -360,6 +360,23 @@ function relayKey(): Promise<string | undefined> {
   return relayKeyRead
 }
 
+/** Forget the relay's key, so the next reaction reads it again: each test starts with none. */
+export function forgetRelayKey(): void {
+  relayKeyRead = null
+}
+
+/** How long a reaction waits for the relay's key before it goes out without it. */
+const RELAY_KEY_WAIT_MS = 3_000
+
+/** The relay's key, or none when the read fails or has not answered in time: a reaction never waits on it for longer. */
+function relayKeyInTime(): Promise<string | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), RELAY_KEY_WAIT_MS)
+  })
+  return Promise.race([relayKey().catch(() => undefined), late]).finally(() => clearTimeout(timer))
+}
+
 /**
  * React to a comment or a reply: the `kind:7` Ship and Peek write, with no
  * `h` — the relay files it under the comment's Folder, from its `e`. Its `p`
@@ -372,7 +389,7 @@ export async function react(comment: CommentItem, emoji: string): Promise<WriteR
   if (!pubkey) return send(null)
   const target = comment.event
   // Without the key every comment is its signer's, which is right for every comment a person signed.
-  const key = needsRelayKey(target) ? await relayKey().catch(() => undefined) : undefined
+  const key = needsRelayKey(target) ? await relayKeyInTime() : undefined
   return send(buildReaction(pubkey, Date.now(), { target, emoji, relayKey: key }))
 }
 
