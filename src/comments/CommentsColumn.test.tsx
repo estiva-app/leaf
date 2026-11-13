@@ -906,6 +906,30 @@ describe('reactions on a comment (COMM-4)', () => {
     }
   })
 
+  it('says why your 👍 was refused even when you picked another reaction on the comment while it was on its way (ACT-6)', async () => {
+    const posted = forQa2('Posted for QA-2')
+    const real = vi.mocked(query).getMockImplementation()!
+    vi.mocked(query).mockImplementation((filters) => (readsRelayKey(filters) ? new Promise<never>(() => {}) : real(filters)))
+    publish.mockResolvedValueOnce({ ok: false, reason: 'blocked: kind 7 not allowed' })
+    try {
+      await open([posted, team])
+      await waitFor(() => expect(items()).not.toHaveLength(0))
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      pick(posted)
+      await act(async () => {})
+      pointAt(entry(posted.id)!)
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
+      act(() => void fireEvent.click(screen.getByRole('button', { name: 'Thank you' })))
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      expect(publish.mock.calls.map(([e]) => e.content)).toEqual(['👍', '🙏'])
+      expect(screen.queryByRole('button', { name: 'Makes sense, 1' })).toBeNull()
+      expect(screen.queryByText('Not reacted: you can no longer write here.')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
   it("takes your reaction off the pill at once, before the relay answers, and leaves the others' on it", async () => {
     const root = comment([], 'Too long?')
     const mine = reaction(root.id, '👍', ME, '8'.repeat(64))

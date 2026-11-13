@@ -540,16 +540,21 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
   if (held.length !== Object.keys(mine).length) setMine(Object.fromEntries(held))
   const shown = viewer ? held.reduce((row, [emoji, m]) => drawnOver(row, emoji, m.on, viewer), reactions) : reactions
   // While an emoji's write is on its way: what your last click asked for there, and the write, which sends it after.
+  // Once it ends, where it ended, for a click that comes before the card has drawn that.
   const wanted = useRef(new Map<string, boolean>())
   const runs = useRef(new Map<string, Promise<Answer>>())
+  const ended = useRef(new Map<string, { on: boolean; id?: string }>())
   const write = async (send: OnReact, emoji: string, from: { on: boolean; id?: string }): Promise<Answer> => {
     let at = from
-    const settle = () => setMine((m) => ({ ...m, [emoji]: { ...at, writing: false } }))
+    const settle = () => {
+      ended.current.set(emoji, at)
+      setMine((m) => ({ ...m, [emoji]: { ...at, writing: false } }))
+    }
     try {
       while (wanted.current.get(emoji) !== at.on) {
-        // Your reaction is not known by its id: there is nothing to name in a take-back.
+        // Your reaction is not known by its id: nothing to name in a take-back, so the row goes back to the read.
         if (at.on && !at.id) {
-          settle()
+          setMine((m) => Object.fromEntries(Object.entries(m).filter(([e]) => e !== emoji)))
           return { accepted: false, reason: { cause: 'unknown' } }
         }
         const result = await send(comment, emoji, at.on ? at.id : undefined).catch((error: unknown) => ({ ok: false, reason: error }) as const)
@@ -567,20 +572,22 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     }
   }
   // A click acts on what you see: a lit pill is taken back. A click while that emoji's write is on its way is sent
-  // after it, and answers with it, so the card says a refusal of either (the kit's "Not reacted: …").
+  // after it. Each click answers with every write still on its way on this card, so the kit, which says only the
+  // latest click's refusal ("Not reacted: …"), says a refusal of any of them.
   const toggle = (emoji: string): Promise<Answer> | undefined => {
     if (!onReact || !viewer) return undefined
     const read = readOf(emoji)
-    const was = wanted.current.get(emoji) ?? mine[emoji]?.on ?? !!read?.by.includes(viewer)
-    const id = mine[emoji]?.id ?? read?.mine
+    // A record still marked as writing when no write is on its way is from before the write ended: use where it ended.
+    const record = mine[emoji]?.writing && !runs.current.has(emoji) ? ended.current.get(emoji) : mine[emoji]
+    const was = wanted.current.get(emoji) ?? record?.on ?? !!read?.by.includes(viewer)
+    const id = record?.id ?? read?.mine
     wanted.current.set(emoji, !was)
-    setMine((m) => ({ ...m, [emoji]: { on: !was, id: m[emoji]?.id ?? id, writing: true } }))
-    const running = runs.current.get(emoji)
-    if (running) return running
-    // Held before the write starts, so a write that ends at once still lets the next click go.
-    const run = Promise.resolve().then(() => write(onReact, emoji, { on: was, id }))
-    runs.current.set(emoji, run)
-    return run
+    setMine((m) => ({ ...m, [emoji]: { on: !was, id: m[emoji]?.writing ? m[emoji].id : id, writing: true } }))
+    if (!runs.current.has(emoji)) {
+      // Held before the write starts, so a write that ends at once still lets the next click go.
+      runs.current.set(emoji, Promise.resolve().then(() => write(onReact, emoji, { on: was, id })))
+    }
+    return Promise.all(runs.current.values()).then((answers) => answers.find((a) => !a.accepted) ?? { accepted: true })
   }
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   return {
