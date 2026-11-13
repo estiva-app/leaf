@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
@@ -60,7 +60,7 @@ import { LiveDocument } from '../document/LiveDocument'
 import { blockLinkOf } from '../document/blockLink'
 import { buildManifest } from '../manifest'
 import { CommentsColumn } from './CommentsColumn'
-import type { Anchor } from './comments'
+import { forgetRelayKey, type Anchor } from './comments'
 import { query } from '../relay/bridge'
 import { holdTyping, holdTypingFor } from '../auth/heldTyping'
 import { useRef, useState } from 'react'
@@ -748,8 +748,108 @@ describe('reactions on a comment (COMM-4)', () => {
     act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
     await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
     const e = publish.mock.calls[0][0]
-    expect([e.kind, e.content, e.tags, e.pubkey]).toEqual([7, '👍', [['e', root.id]], ME])
+    expect([e.kind, e.content, e.tags, e.pubkey]).toEqual([7, '👍', [['e', root.id], ['p', AUTHOR]], ME])
     expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  const reactTo = async (target: SignedEvent, extra: SignedEvent[] = []) => {
+    await open([target, ...extra])
+    await waitFor(() => expect(items()).not.toHaveLength(0))
+    pointAt(entry(target.id)!)
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    return publish.mock.calls[0][0]
+  }
+
+  it("names the comment's author on the reaction, not the page's author or someone the comment mentions (ACT-6)", async () => {
+    // QA-2's comment on AUTHOR's page, mentioning ME: it carries a `p` for each of them, and is QA-2's.
+    const theirs = { ...comment([['p', ME]], 'Over to you'), pubkey: QA2 }
+    const e = await reactTo(theirs)
+    expect(e.tags).toEqual([['e', theirs.id], ['p', QA2]])
+  })
+
+  // The relay's key is read once a session: each test starts without it.
+  beforeEach(() => forgetRelayKey())
+  const RELAY = 'e'.repeat(64)
+  // A team record: the relay signs it, so its signer is the relay's key.
+  const team: SignedEvent = { id: 'd'.repeat(63) + '1', pubkey: RELAY, created_at: 1_760_000_000, kind: 39000, tags: [['d', FOLDER]], content: '', sig: '' }
+  const forQa2 = (content: string) => ({ ...comment([['actor', QA2]], content), pubkey: RELAY })
+  const readsRelayKey = (filters: Record<string, unknown>[]) => filters.some((f) => (f.kinds as number[] | undefined)?.includes(39000))
+  const pick = (target: SignedEvent) => {
+    pointAt(entry(target.id)!)
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
+  }
+
+  it('names the person the relay signed a comment for, not the relay, once it has read the relay key (ACT-6)', async () => {
+    const posted = forQa2('Posted for QA-2')
+    const e = await reactTo(posted, [team])
+    expect(e.tags).toEqual([['e', posted.id], ['p', QA2]])
+  })
+
+  it("names the comment's author on a reaction to an edited comment, not whoever made the edit (ACT-6)", async () => {
+    const theirs = { ...comment([], 'Too long?'), pubkey: QA2 }
+    const edit: SignedEvent = { id: '6'.repeat(64), pubkey: QA2, created_at: 1_760_000_300, kind: 40003, tags: [['h', FOLDER], ['e', theirs.id], ['ts', '1760000300000']], content: 'Far too long?', sig: '' }
+    const e = await reactTo(theirs, [edit])
+    expect(within(entry(theirs.id)!).getByText('(edited)')).toBeTruthy()
+    expect(e.tags).toEqual([['e', theirs.id], ['p', QA2]])
+  })
+
+  it("still reacts when the relay key cannot be read, naming the comment's signer, and reads it again for the next reaction (ACT-6)", async () => {
+    const first = forQa2('Posted for QA-2')
+    const second = forQa2('Posted for QA-2 again')
+    const real = vi.mocked(query).getMockImplementation()!
+    let failures = 0
+    vi.mocked(query).mockImplementation(async (filters) => {
+      if (readsRelayKey(filters) && failures++ === 0) throw new Error('relay unreachable')
+      return real(filters)
+    })
+    try {
+      await open([first, second, team])
+      await waitFor(() => expect(items()).not.toHaveLength(0))
+      pick(first)
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      expect(publish.mock.calls[0][0].tags).toEqual([['e', first.id], ['p', RELAY]])
+      pick(second)
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(2))
+      expect(publish.mock.calls[1][0].tags).toEqual([['e', second.id], ['p', QA2]])
+    } finally {
+      vi.mocked(query).mockImplementation(real)
+    }
+  })
+
+  it('reads the relay key again for the next reaction when the first read found none (ACT-6)', async () => {
+    const first = forQa2('Posted for QA-2')
+    const second = forQa2('Posted for QA-2 again')
+    await open([first, second])
+    await waitFor(() => expect(items()).not.toHaveLength(0))
+    pick(first)
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    expect(publish.mock.calls[0][0].tags).toEqual([['e', first.id], ['p', RELAY]])
+    relay.events = [...relay.events, team]
+    pick(second)
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(2))
+    expect(publish.mock.calls[1][0].tags).toEqual([['e', second.id], ['p', QA2]])
+  })
+
+  it("still reacts, naming the comment's signer, when the relay key read does not answer (ACT-6)", async () => {
+    const posted = forQa2('Posted for QA-2')
+    const real = vi.mocked(query).getMockImplementation()!
+    vi.mocked(query).mockImplementation((filters) => (readsRelayKey(filters) ? new Promise<never>(() => {}) : real(filters)))
+    try {
+      await open([posted, team])
+      await waitFor(() => expect(items()).not.toHaveLength(0))
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      pick(posted)
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      vi.useRealTimers()
+      await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+      expect(publish.mock.calls[0][0].tags).toEqual([['e', posted.id], ['p', RELAY]])
+    } finally {
+      vi.useRealTimers()
+      vi.mocked(query).mockImplementation(real)
+    }
   })
 
   it('signed out, shows the reactions with nothing to click and writes nothing', async () => {
@@ -773,20 +873,14 @@ describe('reactions on a comment (COMM-4)', () => {
     const root = comment([], 'Too long?')
     await open([root])
     await waitFor(() => expect(items()).not.toHaveLength(0))
-    const { query } = await import('../relay/bridge')
     const real = vi.mocked(query).getMockImplementation()!
     // The relay accepts the reaction; the column's read after it does not answer yet.
-    vi.mocked(query).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(query).mockImplementation((filters) => (readsRelayKey(filters) ? real(filters) : new Promise(() => {})))
     try {
-      const pick = () => {
-        pointAt(entry(root.id)!)
-        act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
-        act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
-      }
-      pick()
+      pick(root)
       await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
       await act(async () => {})
-      pick()
+      pick(root)
       await act(async () => {})
       expect(publish).toHaveBeenCalledTimes(1)
     } finally {

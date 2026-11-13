@@ -27,7 +27,9 @@ import {
   buildResolution,
   embedTagsOf,
   imetaTag,
+  needsRelayKey,
   quoteTag,
+  RELAY_KEY_FILTER,
   toRenderTree,
   withCard,
   type Embed,
@@ -341,13 +343,54 @@ export function setResolved(doc: Commented, thread: Thread, resolved: boolean, n
   )
 }
 
+/** The relay's own key, read once a session and only when a reaction needs it: a read that failed or found none is tried again. */
+let relayKeyRead: Promise<string | undefined> | null = null
+function relayKey(): Promise<string | undefined> {
+  relayKeyRead ??= query([{ ...RELAY_KEY_FILTER }]).then(
+    (events) => {
+      const key = events[0]?.pubkey
+      if (!key) relayKeyRead = null
+      return key
+    },
+    (reason: unknown) => {
+      relayKeyRead = null
+      throw reason
+    },
+  )
+  return relayKeyRead
+}
+
+/** Forget the relay's key, so the next reaction reads it again: each test starts with none. */
+export function forgetRelayKey(): void {
+  relayKeyRead = null
+}
+
+/** How long a reaction waits for the relay's key before it goes out without it. */
+const RELAY_KEY_WAIT_MS = 3_000
+
+/** The relay's key, or none when the read fails or has not answered in time: a reaction never waits on it for longer. */
+function relayKeyInTime(): Promise<string | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), RELAY_KEY_WAIT_MS)
+  })
+  return Promise.race([relayKey().catch(() => undefined), late]).finally(() => clearTimeout(timer))
+}
+
 /**
  * React to a comment or a reply: the `kind:7` Ship and Peek write, with no
- * `h` — the relay files it under the comment's Folder, from its `e`.
+ * `h` — the relay files it under the comment's Folder, from its `e`. Its `p`
+ * names whose comment it is: its signer, or, on one the relay signed for
+ * someone, that someone, which takes the relay's key to tell.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-names-whose-message-it-reacts-to.md
  */
-export function react(comment: CommentItem, emoji: string): Promise<WriteResult> {
+export async function react(comment: CommentItem, emoji: string): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  return send(pubkey ? buildReaction(pubkey, Date.now(), { targetEventId: comment.id, emoji }) : null)
+  if (!pubkey) return send(null)
+  const target = comment.event
+  // Without the key every comment is its signer's, which is right for every comment a person signed.
+  const key = needsRelayKey(target) ? await relayKeyInTime() : undefined
+  return send(buildReaction(pubkey, Date.now(), { target, emoji, relayKey: key }))
 }
 
 /** Take your reaction back: a `kind:5` naming the reaction's own event, as Ship's and Peek's do. */
