@@ -748,8 +748,33 @@ describe('reactions on a comment (COMM-4)', () => {
     act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
     await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
     const e = publish.mock.calls[0][0]
-    expect([e.kind, e.content, e.tags, e.pubkey]).toEqual([7, '👍', [['e', root.id]], ME])
+    expect([e.kind, e.content, e.tags, e.pubkey]).toEqual([7, '👍', [['e', root.id], ['p', AUTHOR]], ME])
     expect((await pill('Makes sense, 1')).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  const reactTo = async (target: SignedEvent, extra: SignedEvent[] = []) => {
+    await open([target, ...extra])
+    await waitFor(() => expect(items()).not.toHaveLength(0))
+    pointAt(entry(target.id)!)
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'React' })))
+    act(() => void fireEvent.click(screen.getByRole('button', { name: 'Makes sense' })))
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(1))
+    return publish.mock.calls[0][0]
+  }
+
+  it("names the comment's author on the reaction, not the page's author or someone the comment mentions (ACT-6)", async () => {
+    // QA-2's comment on AUTHOR's page, mentioning ME: it carries a `p` for each of them, and is QA-2's.
+    const theirs = { ...comment([['p', ME]], 'Over to you'), pubkey: QA2 }
+    const e = await reactTo(theirs)
+    expect(e.tags).toEqual([['e', theirs.id], ['p', QA2]])
+  })
+
+  it('names the person the relay signed a comment for, not the relay, once it has read the relay key (ACT-6)', async () => {
+    const RELAY = 'e'.repeat(64)
+    const team: SignedEvent = { id: 'd'.repeat(63) + '1', pubkey: RELAY, created_at: 1_760_000_000, kind: 39000, tags: [['d', FOLDER]], content: '', sig: '' }
+    const forQa2 = { ...comment([['actor', QA2]], 'Posted for QA-2'), pubkey: RELAY }
+    const e = await reactTo(forQa2, [team])
+    expect(e.tags).toEqual([['e', forQa2.id], ['p', QA2]])
   })
 
   it('signed out, shows the reactions with nothing to click and writes nothing', async () => {

@@ -27,7 +27,9 @@ import {
   buildResolution,
   embedTagsOf,
   imetaTag,
+  needsRelayKey,
   quoteTag,
+  RELAY_KEY_FILTER,
   toRenderTree,
   withCard,
   type Embed,
@@ -341,13 +343,43 @@ export function setResolved(doc: Commented, thread: Thread, resolved: boolean, n
   )
 }
 
+/** The relay's own key, read once a session and only when a reaction needs it: a read that failed or found none is tried again. */
+let relayKeyRead: Promise<string | undefined> | null = null
+function relayKey(): Promise<string | undefined> {
+  relayKeyRead ??= query([{ ...RELAY_KEY_FILTER }]).then(
+    (events) => {
+      const key = events[0]?.pubkey
+      if (!key) relayKeyRead = null
+      return key
+    },
+    (reason: unknown) => {
+      relayKeyRead = null
+      throw reason
+    },
+  )
+  return relayKeyRead
+}
+
 /**
  * React to a comment or a reply: the `kind:7` Ship and Peek write, with no
- * `h` — the relay files it under the comment's Folder, from its `e`.
+ * `h` — the relay files it under the comment's Folder, from its `e`. Its `p`
+ * names whose comment it is: its signer, or, on one the relay signed for
+ * someone, that someone, which takes the relay's key to tell.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-names-whose-message-it-reacts-to.md
  */
-export function react(comment: CommentItem, emoji: string): Promise<WriteResult> {
+export async function react(comment: CommentItem, emoji: string): Promise<WriteResult> {
   const pubkey = viewerPubkey()
-  return send(pubkey ? buildReaction(pubkey, Date.now(), { targetEventId: comment.id, emoji }) : null)
+  if (!pubkey) return send(null)
+  const target = comment.event
+  let key: string | undefined
+  if (needsRelayKey(target)) {
+    try {
+      key = await relayKey()
+    } catch (reason) {
+      return { ok: false, reason }
+    }
+  }
+  return send(buildReaction(pubkey, Date.now(), { target, emoji, relayKey: key }))
 }
 
 /** Take your reaction back: a `kind:5` naming the reaction's own event, as Ship's and Peek's do. */
