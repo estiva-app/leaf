@@ -484,18 +484,12 @@ interface EntryProps {
   closed: boolean
 }
 
-/**
- * What the kit's two cards take from one Leaf comment or reply: who, when, "(edited)" with when, Leaf's words
- * ({@link CommentWords}), its files, its reactions, and on your own the edit box and the delete, in Leaf's words. A
- * reaction shows once the relay accepts it, one write at a time until the read after it lands; a refused reaction, a
- * refused ✕ on a sent card and a refused delete each leave things as they were and say why.
- *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
- */
+/** One of your picks, drawn before the read has it: on is your reaction there, off is it taken back. */
+type Drawn = { emoji: string; on: boolean }
+
 /** The reactions as they will be once your pick lands: you added to the emoji's people, or taken off them. */
-function drawnOver(reactions: CommentItem['reactions'], drawn: { emoji: string; on: boolean }, viewer: string): CommentItem['reactions'] {
-  const had = reactions.some((r) => r.emoji === drawn.emoji)
-  if (drawn.on && !had) return [...reactions, { emoji: drawn.emoji, count: 1, by: [viewer] }]
+function drawnOver(reactions: CommentItem['reactions'], drawn: Drawn, viewer: string): CommentItem['reactions'] {
+  if (drawn.on && !reactions.some((r) => r.emoji === drawn.emoji)) return [...reactions, { emoji: drawn.emoji, count: 1, by: [viewer] }]
   return reactions.map((r) => {
     if (r.emoji !== drawn.emoji) return r
     const by = drawn.on ? [...r.by.filter((p) => p !== viewer), viewer] : r.by.filter((p) => p !== viewer)
@@ -503,6 +497,14 @@ function drawnOver(reactions: CommentItem['reactions'], drawn: { emoji: string; 
   })
 }
 
+/**
+ * What the kit's two cards take from one Leaf comment or reply: who, when, "(edited)" with when, Leaf's words
+ * ({@link CommentWords}), its files, its reactions, and on your own the edit box and the delete, in Leaf's words. A
+ * reaction shows the moment you pick it and is taken back if the relay refuses it; a refused reaction, a refused ✕ on
+ * a sent card and a refused delete each leave things as they were and say why.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
+ */
 function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, onReact, own, closed }: EntryProps): ConversationEntryProps {
   const reactions = comment.reactions
   // A refused delete keeps the question open and says why, under it (the kit's `deleteRefused`).
@@ -519,28 +521,49 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     removing.current = false
     if (!result.ok) setRemoveRefused(refusalReason(result.reason))
   }
-  // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
-  const pending = useRef(false)
-  useEffect(() => {
-    pending.current = false
-  }, [comment])
-  // Your pick shows the moment you make it, and goes again if the relay refuses it; it gives way to the read once the read agrees.
+  // Your picks show the moment you make them, each until the read agrees, and go again if the relay refuses them.
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
-  const [drawn, setDrawn] = useState<{ emoji: string; on: boolean } | null>(null)
-  const agrees = drawn !== null && reactions.some((r) => r.emoji === drawn.emoji && viewer !== undefined && r.by.includes(viewer)) === drawn.on
-  if (drawn && agrees) setDrawn(null)
-  const shown = drawn && !agrees && viewer ? drawnOver(reactions, drawn, viewer) : reactions
+  const [drawn, setDrawn] = useState<readonly Drawn[]>([])
+  const reads = (d: Drawn) => viewer !== undefined && reactions.some((r) => r.emoji === d.emoji && r.by.includes(viewer)) === d.on
+  if (drawn.some(reads)) setDrawn(drawn.filter((d) => !reads(d)))
+  const shown = viewer ? drawn.filter((d) => !reads(d)).reduce((row, d) => drawnOver(row, d, viewer), reactions) : reactions
+  const isOn = (emoji: string) => viewer !== undefined && shown.some((r) => r.emoji === emoji && r.by.includes(viewer))
+  // Per emoji: what you last asked for while a write is on its way, the write on its way, and your reaction's id once accepted.
+  const wanted = useRef(new Map<string, boolean>())
+  const writing = useRef(new Set<string>())
+  const ids = useRef(new Map<string, string>())
+  // A click acts on what you see: a lit pill is taken back. A click while that emoji's write is on its way is sent after it.
   // The relay's answer goes back to the kit's card, which says a refusal ("Not reacted: …") and keeps it until the next reaction.
   const toggle = async (emoji: string): Promise<{ accepted: true } | { accepted: false; reason: unknown } | undefined> => {
-    if (!onReact || pending.current) return undefined
-    pending.current = true
-    const mine = reactions.find((r) => r.emoji === emoji)?.mine
-    setDrawn({ emoji, on: !mine })
-    const result = await onReact(comment, emoji, mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
-    if (result.ok) return { accepted: true }
-    pending.current = false
-    setDrawn(null)
-    return { accepted: false, reason: result.reason }
+    if (!onReact) return undefined
+    const was = wanted.current.get(emoji) ?? isOn(emoji)
+    wanted.current.set(emoji, !was)
+    setDrawn((d) => [...d.filter((x) => x.emoji !== emoji), { emoji, on: !was }])
+    if (writing.current.has(emoji)) return undefined
+    writing.current.add(emoji)
+    const undraw = () => setDrawn((d) => d.filter((x) => x.emoji !== emoji))
+    try {
+      for (let on = was; wanted.current.get(emoji) !== on; ) {
+        const mine = on ? (ids.current.get(emoji) ?? reactions.find((r) => r.emoji === emoji)?.mine) : undefined
+        // Your reaction is not known by its id yet: nothing to name, so the row stays as the read has it.
+        if (on && !mine) {
+          undraw()
+          return undefined
+        }
+        const result = await onReact(comment, emoji, mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
+        if (!result.ok) {
+          undraw()
+          return { accepted: false, reason: result.reason }
+        }
+        on = !on
+        if (on && result.id) ids.current.set(emoji, result.id)
+        else ids.current.delete(emoji)
+      }
+      return { accepted: true }
+    } finally {
+      writing.current.delete(emoji)
+      wanted.current.delete(emoji)
+    }
   }
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   return {

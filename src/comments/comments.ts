@@ -102,7 +102,8 @@ export interface Resolved {
  * What a write answered: `ok`, or the refusal as it came — the relay's words, an error, or `{ cause }` for Leaf's own —
  * which the kit says in `@estiva-app/conversation`'s plain words (`refusalReason`), the same in every app (ONE-4).
  */
-export type WriteResult = { ok: true } | { ok: false; reason: unknown }
+/** A write's answer: accepted, with the event's id when the relay names it, or refused and why. */
+export type WriteResult = { ok: true; id?: string } | { ok: false; reason: unknown }
 
 /** A write with no sign-in to sign it: the kit says "you are signed out; sign in again". */
 const SIGNED_OUT = { cause: 'signed-out' } as const
@@ -196,7 +197,7 @@ function threadOf(thread: FoldedThread): Thread {
 async function send(unsigned: Parameters<typeof publish>[0] | null): Promise<WriteResult> {
   if (!unsigned) return { ok: false, reason: SIGNED_OUT }
   const result = await publish(unsigned)
-  if (result.ok) return { ok: true }
+  if (result.ok) return result.eventId ? { ok: true, id: result.eventId } : { ok: true }
   console.warn('[relay] write refused', unsigned.kind, result)
   return { ok: false, reason: result.reason }
 }
