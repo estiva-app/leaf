@@ -38,7 +38,11 @@ const projections = {
 }
 const recommend = (kind: number) => event({ kind: 31989, tags: [['d', String(kind)], ['a', `31990:${OWNER}:tracker`]] })
 const world = [
-  event({ kind: 31990, tags: [['d', 'tracker'], ['k', '30850'], ['k', '30851']], content: JSON.stringify({ name: 'Tracker', projections }) }),
+  event({
+    kind: 31990,
+    tags: [['d', 'tracker'], ['k', '30850'], ['k', '30851'], ['web', 'https://tracker.example/o/<bech32>', 'naddr']],
+    content: JSON.stringify({ name: 'Tracker', projections }),
+  }),
   recommend(30850),
   recommend(30851),
 ]
@@ -100,6 +104,15 @@ describe("a card under a comment, once the relay keeps projects in order", () =>
     expect(await screen.findByText('Universal Navigation')).toBeTruthy()
     expect(screen.getByText('Draw the sidebar')).toBeTruthy()
     expect(historyReads()).toEqual([])
+  })
+
+  it("keeps a project's comment count on its card, opening its conversation in its own app", async () => {
+    const { project } = aProject('q4')
+    world.push(event({ kind: 1111, tags: [['A', project], ['K', '30850'], ['a', project], ['k', '30850']], content: 'Looks right' }))
+    render(<Cards uris={[`nostr:${addrToNaddr(project)}`]} />)
+    expect(await screen.findByText('Universal Navigation')).toBeTruthy()
+    const count = await screen.findByRole('link', { name: /1 comment/ })
+    expect(count.getAttribute('href')).toMatch(/^https:\/\/tracker\.example\/o\/naddr1/)
   })
 
   it('reads a project once when two comments link it by two spellings of its address', async () => {
