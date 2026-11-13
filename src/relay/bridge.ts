@@ -112,7 +112,9 @@ export async function publish(unsigned: UnsignedEvent): Promise<PublishResult> {
     return { ok: false, reason: signingFailure(error) }
   }
   try {
-    return await b.relay.publish(signed)
+    // The signed event's id is the one the relay keeps, whether or not its answer names it.
+    const result = await b.relay.publish(signed)
+    return result.ok ? { ...result, eventId: result.eventId ?? signed.id } : result
   } catch (error) {
     console.warn('[relay] could not publish', error)
     return { ok: false, reason: 'Leaf could not reach the workspace. Try again.' }

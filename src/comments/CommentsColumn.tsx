@@ -484,11 +484,34 @@ interface EntryProps {
   closed: boolean
 }
 
+/** Your reaction under one emoji as Leaf knows it before the read does: there or taken back, its event's id, and whether a write is on its way. */
+type Mine = { on: boolean; id?: string; writing: boolean }
+
+/** Whether the read now says what you did, so it can show again: by your reaction's id when that is known. */
+function readHas(mine: Mine, read: CommentItem['reactions'][number] | undefined, viewer: string): boolean {
+  if (mine.writing) return false
+  if (!mine.id) return !!read?.by.includes(viewer) === mine.on
+  return mine.on ? read?.mine === mine.id : read?.mine !== mine.id
+}
+
+/** The reactions as they are once your pick lands: you added to the emoji's people, or taken off them. */
+function drawnOver(reactions: CommentItem['reactions'], emoji: string, on: boolean, viewer: string): CommentItem['reactions'] {
+  if (on && !reactions.some((r) => r.emoji === emoji)) return [...reactions, { emoji, count: 1, by: [viewer] }]
+  return reactions.map((r) => {
+    if (r.emoji !== emoji) return r
+    const by = on ? [...r.by.filter((p) => p !== viewer), viewer] : r.by.filter((p) => p !== viewer)
+    return { emoji, count: by.length, by, ...(on && r.mine ? { mine: r.mine } : {}) }
+  })
+}
+
+/** What the kit's card hears back from a click: accepted, or refused and why. */
+type Answer = { accepted: true } | { accepted: false; reason: unknown }
+
 /**
  * What the kit's two cards take from one Leaf comment or reply: who, when, "(edited)" with when, Leaf's words
  * ({@link CommentWords}), its files, its reactions, and on your own the edit box and the delete, in Leaf's words. A
- * reaction shows once the relay accepts it, one write at a time until the read after it lands; a refused reaction, a
- * refused ✕ on a sent card and a refused delete each leave things as they were and say why.
+ * reaction shows the moment you pick it and is taken back if the relay refuses it; a refused reaction, a refused ✕ on
+ * a sent card and a refused delete each leave things as they were and say why.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-app-writes-and-reacts-with-one-shared-box.md
  */
@@ -508,19 +531,63 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     removing.current = false
     if (!result.ok) setRemoveRefused(refusalReason(result.reason))
   }
-  // One write at a time, until the read after it lands: a second click before then would write from the row as it was.
-  const pending = useRef(false)
-  useEffect(() => {
-    pending.current = false
-  }, [comment])
-  // The relay's answer goes back to the kit's card, which says a refusal ("Not reacted: …") and keeps it until the next reaction.
-  const toggle = async (emoji: string): Promise<{ accepted: true } | { accepted: false; reason: unknown } | undefined> => {
-    if (!onReact || pending.current) return undefined
-    pending.current = true
-    const result = await onReact(comment, emoji, reactions.find((r) => r.emoji === emoji)?.mine).catch((error: unknown) => ({ ok: false, reason: error }) as const)
-    if (result.ok) return { accepted: true }
-    pending.current = false
-    return { accepted: false, reason: result.reason }
+  // What you did shows the moment you do it and stays until the read has it; a refusal goes back to what the relay last
+  // accepted from you, and the card says why.
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
+  const [mine, setMine] = useState<Readonly<Record<string, Mine>>>({})
+  const readOf = (emoji: string) => reactions.find((r) => r.emoji === emoji)
+  const held = viewer ? Object.entries(mine).filter(([emoji, m]) => !readHas(m, readOf(emoji), viewer)) : []
+  if (held.length !== Object.keys(mine).length) setMine(Object.fromEntries(held))
+  const shown = viewer ? held.reduce((row, [emoji, m]) => drawnOver(row, emoji, m.on, viewer), reactions) : reactions
+  // While an emoji's write is on its way: what your last click asked for there, and the write, which sends it after.
+  // Once it ends, where it ended, for a click that comes before the card has drawn that.
+  const wanted = useRef(new Map<string, boolean>())
+  const runs = useRef(new Map<string, Promise<Answer>>())
+  const ended = useRef(new Map<string, { on: boolean; id?: string }>())
+  const write = async (send: OnReact, emoji: string, from: { on: boolean; id?: string }): Promise<Answer> => {
+    let at = from
+    const settle = () => {
+      ended.current.set(emoji, at)
+      setMine((m) => ({ ...m, [emoji]: { ...at, writing: false } }))
+    }
+    try {
+      while (wanted.current.get(emoji) !== at.on) {
+        // Your reaction is not known by its id: nothing to name in a take-back, so the row goes back to the read.
+        if (at.on && !at.id) {
+          setMine((m) => Object.fromEntries(Object.entries(m).filter(([e]) => e !== emoji)))
+          return { accepted: false, reason: { cause: 'unknown' } }
+        }
+        const result = await send(comment, emoji, at.on ? at.id : undefined).catch((error: unknown) => ({ ok: false, reason: error }) as const)
+        if (!result.ok) {
+          settle()
+          return { accepted: false, reason: result.reason }
+        }
+        at = at.on ? { on: false, id: at.id } : { on: true, id: result.id }
+      }
+      settle()
+      return { accepted: true }
+    } finally {
+      runs.current.delete(emoji)
+      wanted.current.delete(emoji)
+    }
+  }
+  // A click acts on what you see: a lit pill is taken back. A click while that emoji's write is on its way is sent
+  // after it. Each click answers with every write still on its way on this card, so the kit, which says only the
+  // latest click's refusal ("Not reacted: …"), says a refusal of any of them.
+  const toggle = (emoji: string): Promise<Answer> | undefined => {
+    if (!onReact || !viewer) return undefined
+    const read = readOf(emoji)
+    // A record still marked as writing when no write is on its way is from before the write ended: use where it ended.
+    const record = mine[emoji]?.writing && !runs.current.has(emoji) ? ended.current.get(emoji) : mine[emoji]
+    const was = wanted.current.get(emoji) ?? record?.on ?? !!read?.by.includes(viewer)
+    const id = record?.id ?? read?.mine
+    wanted.current.set(emoji, !was)
+    setMine((m) => ({ ...m, [emoji]: { on: !was, id: m[emoji]?.writing ? m[emoji].id : id, writing: true } }))
+    if (!runs.current.has(emoji)) {
+      // Held before the write starts, so a write that ends at once still lets the next click go.
+      runs.current.set(emoji, Promise.resolve().then(() => write(onReact, emoji, { on: was, id })))
+    }
+    return Promise.all(runs.current.values()).then((answers) => answers.find((a) => !a.accepted) ?? { accepted: true })
   }
   const named = (pubkey: string) => nameOf(pubkey) ?? names[pubkey]
   return {
@@ -529,7 +596,7 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
     time: whenOf(comment.at, now),
     at: comment.at,
     edited: comment.edited ? `Edited${comment.editedAt === undefined ? '' : ` ${inSentence(whenOf(comment.editedAt, now))}`}` : undefined,
-    reactions: { reactions, options: REACTION_OPTIONS, nameOf: (pubkey) => named(pubkey) ?? 'Someone', viewer, onToggle: onReact ? toggle : undefined },
+    reactions: { reactions: shown, options: REACTION_OPTIONS, nameOf: (pubkey) => named(pubkey) ?? 'Someone', viewer, onToggle: onReact ? toggle : undefined },
     readOnly: closed,
     own: !!own,
     // The column holds it, so a sign-in ending can put it back (AUT-5).
