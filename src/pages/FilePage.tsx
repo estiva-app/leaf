@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+
+/** CONCEPT ONLY (concept/insights-journal-risks): an item opened from a marked block, drawn in the comments' place. Never merged. */
+export const ConceptSide = createContext<ReactNode>(null)
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
@@ -118,6 +121,7 @@ function DocumentView({
   onChanged?: (folder: string) => void | Promise<void>
   onNewInside?: (page: ForeignObject, listedIn: string) => void
 }) {
+  const conceptSide = useContext(ConceptSide)
   const { file, changedBy, merges } = useLiveDocument(opened)
   const { showToast } = useToast()
   const facts = useFileFacts(file)
@@ -386,7 +390,13 @@ function DocumentView({
       </div>
       {/* Hidden, not taken away: an edit open in it is still there when it comes back. By the class too: Tailwind 3's
           `[hidden]` loses to `.contents`, and the column stayed drawn (LED-3, found on production). */}
-      <div className={comments.open ? 'contents' : 'hidden'} hidden={!comments.open}>
+      {conceptSide && (
+        <>
+          <Divider orientation="vertical" />
+          <div className="flex flex-none flex-col">{conceptSide}</div>
+        </>
+      )}
+      <div className={comments.open && !conceptSide ? 'contents' : 'hidden'} hidden={!comments.open || !!conceptSide}>
         <Divider orientation="vertical" />
         {/* The kit's one column, 384px (ONE-5, step 4), the page's full height: placed as Ship places it. */}
         <div className="flex flex-none flex-col">

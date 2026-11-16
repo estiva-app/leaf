@@ -26,10 +26,16 @@ export interface Source {
   gone?: boolean
 }
 
+/** An Insight's category: the company's own field, on top of the core fields (record, 16 Nov). Estiva's four. */
+export type Category = 'Customer' | 'Product' | 'Technical' | 'Process'
+export const CATEGORIES: Category[] = ['Customer', 'Product', 'Technical', 'Process']
+
 export interface Item {
   id: string
   type: ItemType
   word: MarkWord
+  /** An Insight's category; none yet right after Mark as… (it marks at once). */
+  category?: Category
   title: string
   summary?: string
   details?: string
@@ -59,66 +65,84 @@ export const ITEMS: Item[] = [
   {
     id: 'i1', type: 'insight', word: 'Insight', status: 'proposed', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onIssue('Ship and Leaf sidebar match Peek'), isNew: true,
     title: 'Nothing on the left says where an open file belongs',
+    summary: 'Katerina opened a file and could not tell which team or topic it was in: nothing on the left was selected.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: KATERINA, quote: 'I can’t find where the file belongs to. Nothing is selected on the left panel.' },
   },
   {
-    id: 'i2', type: 'insight', word: 'Insight', status: 'proposed', at: '10 Nov', day: '2026-11-10', team: TEAM, about: onProject, isNew: true,
+    id: 'i2', type: 'insight', word: 'Insight', category: 'Customer', status: 'proposed', at: '10 Nov', day: '2026-11-10', team: TEAM, about: onProject, isNew: true,
     title: 'A first-time reader spots the sidebar inconsistencies at once',
+    summary: 'Miky’s brother saw straight away that Ship’s and Leaf’s sidebars work differently from Peek’s.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: MIKY, quote: 'One thing I’m not happy about is the sidebar navigation in Ship and Leaf. My brother called out immediately the inconsistencies.' },
   },
   {
-    id: 'i3', type: 'insight', word: 'Insight', status: 'accepted', at: '9 Oct', day: '2026-10-09', team: TEAM, about: onProject, acceptedBy: MIKY,
+    id: 'i3', type: 'insight', word: 'Insight', category: 'Process', status: 'accepted', at: '9 Oct', day: '2026-10-09', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'Being a member of many Ship issues is an annoyance',
     summary: 'There are at least three types of topics.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Friday Meetings', author: MIKY, quote: 'Meeting notes … we discussed the annoyance caused by being member of many Ship issues… we see at least 3 types of topics. Anything I missed?', now: 'Meeting notes … we discussed the annoyance caused by being member of many Ship issues… we see at least 3 types of topics (people, work, places). Anything I missed?' },
   },
   {
-    id: 'i4', type: 'insight', word: 'Insight', status: 'accepted', at: '18 Aug', day: '2026-08-18', team: TEAM, about: onProject, acceptedBy: MIKY,
+    id: 'i4', type: 'insight', word: 'Insight', category: 'Product', status: 'accepted', at: '18 Aug', day: '2026-08-18', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'One search for everything',
+    summary: 'Katerina looks for a thing, not for an app: one search box should find messages, issues and pages alike.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: KATERINA, quote: 'One search for everything, and an “All topics” switch.' },
   },
   {
-    id: 'i5', type: 'insight', word: 'Insight', status: 'outdated', at: '8 Sep', day: '2026-09-08', team: TEAM, about: onProject, acceptedBy: MIKY,
+    id: 'i5', type: 'insight', word: 'Insight', category: 'Product', status: 'outdated', at: '8 Sep', day: '2026-09-08', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'An “All topics” switch helps people find a place',
+    summary: 'Nobody should have to know which team a topic is in. Main and All replaced the switch.',
     markedBy: MIKY,
     source: { app: 'Leaf', what: 'block', place: 'Navigation notes', author: KATERINA, quote: 'An “All topics” switch, so nobody has to know which team a topic is in.' },
+  },
+  {
+    id: 'i6', type: 'insight', word: 'Insight', category: 'Technical', status: 'accepted', at: '13 Oct', day: '2026-10-13', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'Speed measured on a near-empty workspace says nothing',
+    summary: 'Opening a topic passed on the QA account’s near-empty workspace and took 5–10 seconds on Miky’s. Measure on a workspace his size.',
+    markedBy: MIKY,
   },
   // Journal
   {
     id: 'j1', type: 'journal', word: 'Decision', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onIssue('Ship and Leaf sidebar match Peek'), isNew: true,
     title: 'The sidebar shows Teams and Topics, never Folders',
+    summary: 'Teams and Topics go at the top of Ship’s and Leaf’s sidebars, and Folders leave the sidebar completely.',
     markedBy: MIKY, decidedBy: KATERINA,
     source: { app: 'Ship', what: 'comment', place: 'Ship and Leaf sidebar match Peek', author: KATERINA, quote: 'Let’s go with Teams and Topics at the top and drop Folders from the sidebar completely.' },
   },
   {
     id: 'j2', type: 'journal', word: 'Decision', status: 'accepted', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onProject, acceptedBy: MIKY, isNew: true,
     title: 'Cross-app work is an Initiative; a team room is a Topic',
+    summary: 'Work that spans apps is an Initiative, a team’s room is a Topic, and People become DMs. Katerina judges the names on the prototype.',
     markedBy: MIKY, decidedBy: MIKY,
     source: { app: 'Leaf', what: 'block', place: 'Universal Navigation brainstorm', author: MIKY, quote: 'Cross-app work = Initiatives, team rooms = Topics, People → DMs.' },
   },
   {
     id: 'j3', type: 'journal', word: 'Update', status: 'accepted', at: '10 Nov', day: '2026-11-10', team: TEAM, about: onProject, acceptedBy: MIKY,
-    title: 'Main and All shipped in Peek, Ship and Leaf',
+    title: 'Topics: Main and All shipped in Peek',
+    summary: 'In Peek, the level you set on a topic is what you see.',
+    details: 'Topics: Main and All is done, in Peek only: the level you set on a topic is what you see of it.\n\nNext: the Activity indicator on each topic and team, ahead of sending a thread up and highlights. What is new in Ship and Leaf waits; it needs more thinking.',
     markedBy: MIKY,
   },
   {
     id: 'j4', type: 'journal', word: 'Update', status: 'accepted', at: '4 Nov', day: '2026-11-04', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'Ship’s and Leaf’s Topics navigation shipped',
+    summary: 'Ship and Leaf list Topics in the sidebar, as Peek does.',
+    details: 'Ship and Leaf now list Topics in the sidebar, as Peek does: a file shows under the topic it belongs to.\n\nNext: Main and All in all three apps.',
     markedBy: MIKY,
   },
   {
     id: 'j5', type: 'journal', word: 'Decision', status: 'accepted', at: '2 Nov', day: '2026-11-02', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'A Folder is called a team',
+    summary: 'Everywhere a person reads it, a Folder is called a team. Code and the wire still say folder.',
     markedBy: MIKY, decidedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: MIKY, quote: 'Let’s call it a team everywhere people read it.' },
   },
   {
     id: 'j6', type: 'journal', word: 'Decision', status: 'superseded', at: '8 Sep', day: '2026-09-08', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'One search with an “All topics” switch',
+    summary: 'One search box, with a switch to look in every topic. Replaced by Main and All.',
     markedBy: MIKY, decidedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: MIKY, quote: 'that’s good call' },
   },
@@ -133,24 +157,28 @@ export const ITEMS: Item[] = [
   {
     id: 'r2', type: 'risk', word: 'Concern', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'Ship and Leaf “what is new” needs more thinking',
+    summary: 'Before it is built, decide what counts as new in Ship and in Leaf.',
     markedBy: MIKY,
     source: { app: 'Ship', what: 'comment', place: PROJECT, author: MIKY, quote: 'What is new in Ship and Leaf needs more thinking before we build it.' },
   },
   {
     id: 'r3', type: 'risk', word: 'Question', status: 'open', at: '28 Oct', day: '2026-10-28', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'Teams and Topics at the top, no Folders: who leads, who reads?',
+    summary: 'Once Folders leave the sidebar, who leads a topic and who can read it?',
     markedBy: MIKY,
     source: { app: 'Leaf', what: 'block', place: 'Who leads, who reads', author: MIKY, quote: 'Who leads a topic, and who can read it, once Folders are gone from the sidebar?', gone: true },
   },
   {
     id: 'r4', type: 'risk', word: 'Concern', status: 'resolved', at: '4 Nov', day: '2026-11-04', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'A Folder as the access boundary feels wrong',
+    summary: 'Parked until the navigation work; Teams and Topics answered it.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Friday Meetings', author: MIKY, quote: 'A Folder as the access boundary feels wrong to me. Let’s park it until navigation.' },
   },
   {
     id: 'r5', type: 'risk', word: 'Concern', status: 'rejected', at: '14 Oct', day: '2026-10-14', team: TEAM, about: onProject,
     title: 'Peek’s topic list is too long',
+    summary: 'Katerina found the list long, but fine for now.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Friday Meetings', author: KATERINA, quote: 'The list is getting long, but it’s fine for now.' },
   },

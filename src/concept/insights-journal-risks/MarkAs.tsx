@@ -116,10 +116,32 @@ export function ChangedLine({ children }: { children: ReactNode }) {
   )
 }
 
-/** The CSS for marking blocks inside a document editor, by block id — the editor draws blocks itself, so a story marks them by attribute. */
-export function blockLineCss(marks: Record<string, ItemType>, changed: string[] = []): string {
+/**
+ * The CSS for marking blocks inside a document editor, by block id — the editor draws blocks itself, so a story marks
+ * them by attribute. A marked block wears its word as a small label in the right margin, level with its first line,
+ * like a message's label beside its time (Miky, 16 Nov: a line on the left collided with the block handle); what
+ * changed since your last visit says "Changed" in grey in the same place. The label opens the item beside the page.
+ */
+export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed: string[] = [], place: 'inside' | 'gutter' = 'inside'): string {
   const colour: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
-  const rule = (id: string, c: string, style: string) =>
-    `[data-block-id="${id}"]{box-shadow:none;border-left:2px ${style} ${c};padding-left:10px;margin-left:-12px}`
-  return [...Object.entries(marks).map(([id, t]) => rule(id, colour[t], 'solid')), ...changed.map((id) => rule(id, 'var(--border-strong)', 'dashed'))].join('\n')
+  // `gutter`: in the page's right margin, where a page has one (Leaf); `inside`: the block's own right 96px (Ship's description, whose column meets the side panel).
+  const where = place === 'gutter' ? 'position:relative}' : 'position:relative;padding-right:96px}'
+  const at = place === 'gutter' ? 'left:calc(100% + 12px)' : 'right:0'
+  const label = (id: string, words: string, c: string, wash: boolean) =>
+    `[data-block-id="${id}"]{${where}[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:2px;${at};font-size:12px;line-height:18px;font-weight:500;padding:0 6px;border-radius:4px;white-space:nowrap;color:${c};${wash ? `background:color-mix(in srgb, ${c} 14%, transparent);cursor:pointer;` : ''}}`
+  return [
+    ...Object.entries(marks).map(([id, m]) => {
+      const t = (m in TYPE_META ? m : TYPE_OF[m as MarkWord]) as ItemType
+      return label(id, m in TYPE_META ? TYPE_META[t].label : m, colour[t], true)
+    }),
+    ...changed.filter((id) => !marks[id]).map((id) => label(id, 'Changed', 'var(--text-secondary)', false)),
+  ].join('\n')
+}
+
+/** The marked block whose label was clicked, if any: a click on `::after` lands on the block, in its right 96px or past it. */
+export function markedBlockAt(e: { target: EventTarget; clientX: number }, marks: Record<string, unknown>): string | undefined {
+  const el = (e.target as HTMLElement).closest?.('[data-block-id]') as HTMLElement | null
+  const id = el?.dataset.blockId
+  if (!el || !id || !marks[id]) return undefined
+  return e.clientX > el.getBoundingClientRect().right - 96 ? id : undefined
 }

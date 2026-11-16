@@ -12,8 +12,10 @@ import { query, viewerPubkey } from '../../relay/bridge'
 import { FilePage } from '../../pages/FilePage'
 import { answer, factsOf } from '../../pages/fixtures/relay'
 import { KATERINA, MIKY, PROFILES, threadsOn } from '../../pages/fixtures/shipFiles'
-import { MarkAsRows, MarkedLine, MarkedNotice, TYPE_OF, blockLineCss, drawsLine, type ItemType, type Mark, type MarkWord } from './MarkAs'
-import { ITEMS, TEAM } from './fixtures'
+import { ConceptSide } from '../../pages/FilePage'
+import { MarkAsRows, MarkedLine, MarkedNotice, TYPE_OF, blockLineCss, drawsLine, markedBlockAt, type ItemType, type Mark, type MarkWord } from './MarkAs'
+import { ITEMS, KATERINA as KATERINA_P, TEAM, type Item } from './fixtures'
+import { ItemPanel } from './ItemPanel'
 
 /*
   CONCEPT — Insights, Journal and Risks in Leaf (prototype issue 009bc509). Leaf's real FilePage, as Pages/File page
@@ -25,20 +27,53 @@ const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const ROOT = 'e'.repeat(63) + '1'
 const item = (id: string) => ITEMS.find((i) => i.id === id)!
 
-/** Katerina's "Navigation notes": each paragraph's words are the real ones, from the fixtures' sources. */
-const BLOCKS: [string, string][] = [
-  ['n1', item('i4').source!.quote],
-  ['n2', item('i5').source!.quote],
-  ['n3', item('i1').source!.quote],
-  ['n4', item('j1').source!.quote],
-  ['n5', item('r3').source!.quote],
-  ['n6', item('r5').source!.quote],
+/*
+  Katerina's "Navigation notes" as a real page holds them (Miky, 16 Nov: "whole paragraph, a table, a bullet list,
+  a checklist, a note or warning"): a paragraph, a list, a table, a checklist, two callouts, a last paragraph. The
+  words come from the fixtures' sources; the table and the checklist say where each app's sidebar stood.
+*/
+const text = (t: string) => [{ type: 'text', text: t }]
+const para = (t: string) => ({ type: 'paragraph', content: text(t) })
+const item_ = (t: string, checked?: boolean) => ({ type: 'listItem', ...(checked === undefined ? {} : { attrs: { checked } }), content: text(t) })
+const cell = (t: string, header = false) => ({ type: header ? 'tableHeader' : 'tableCell', content: [para(t)] })
+const row = (cells: string[], header = false) => ({ type: 'tableRow', content: cells.map((c) => cell(c, header)) })
+const BLOCKS: { id: string; words: string; node: Record<string, unknown> }[] = [
+  { id: 'n1', words: 'One search for everything', node: para(`${item('i4').source!.quote} Katerina looks for a thing, not for an app: she does not want to know whether it is a message, an issue or a page before she finds it.`) },
+  {
+    id: 'n2',
+    words: 'What we keep hitting',
+    node: { type: 'bulletList', content: [item_(item('i1').source!.quote), item_('Ship’s and Leaf’s sidebars work differently from Peek’s; a first-time reader sees it at once.'), item_('Being a member of many Ship issues is noisy.')] },
+  },
+  {
+    id: 'n3',
+    words: 'Where each sidebar starts',
+    node: { type: 'table', content: [row(['App', 'Top of the sidebar', 'Folders'], true), row(['Peek', 'Teams and Topics', 'Gone']), row(['Ship', 'Projects and Issues', 'Listed']), row(['Leaf', 'Documents', 'Listed'])] },
+  },
+  {
+    id: 'n4',
+    words: 'Same sidebar everywhere',
+    node: { type: 'bulletList', content: [item_('Teams and Topics at the top in Peek', true), item_('The same sidebar in Ship', false), item_('The same sidebar in Leaf', false), item_('An open file selects its team and topic', false)] },
+  },
+  { id: 'n5', words: item('r3').source!.quote, node: { type: 'blockquote', attrs: { tone: 'warning' }, content: text(item('r3').source!.quote) } },
+  { id: 'n6', words: item('j1').source!.quote, node: { type: 'blockquote', attrs: { tone: 'note' }, content: text(item('j1').source!.quote) } },
+  { id: 'n7', words: item('r5').source!.quote, node: para(item('r5').source!.quote) },
 ]
-const textOf = Object.fromEntries(BLOCKS)
+const textOf = Object.fromEntries(BLOCKS.map((b) => [b.id, b.words]))
 
-/** A description as blocks with ids, so a block's menu can mark it and a story can draw its line by id. */
-const blocksDoc = (paragraphs: [string, string][]) =>
-  serializeBlockDocument({ type: 'doc', content: paragraphs.map(([id, words]) => ({ type: 'paragraph', id, content: [{ type: 'text', text: words }] })) })
+/** The page as blocks with ids, so a block's menu can mark it and a story can draw its label by id. */
+const blocksDoc = () => serializeBlockDocument({ type: 'doc', content: BLOCKS.map((b) => withIds(b.node, b.id)) } as unknown as Parameters<typeof serializeBlockDocument>[0])
+/** Every block has an id, nested ones too (§13.3): a list's items, a table's rows and cells, a callout's paragraph. */
+function withIds(node: Record<string, unknown>, id: string): Record<string, unknown> {
+  const content = node.content as Record<string, unknown>[] | undefined
+  const blocks = content && content.length && content[0].type !== 'text' ? content.map((c, i) => withIds(c, `${id}-${i}`)) : content
+  return { ...node, id, ...(blocks ? { content: blocks } : {}) }
+}
+
+/** Items for the blocks that are not among the fixtures' sources: the table and the checklist. */
+const TABLE_INSIGHT: Item = { ...item('i2'), id: 't1', category: 'Product', title: 'Each app’s sidebar starts somewhere else', summary: 'Peek starts with Teams and Topics; Ship with Projects and Issues; Leaf with Documents.', source: { app: 'Leaf', what: 'block', place: 'Navigation notes', author: KATERINA_P, quote: 'App · Top of the sidebar · Folders — Peek: Teams and Topics, gone; Ship: Projects and Issues, listed; Leaf: Documents, listed.' } }
+const CHECKLIST_UPDATE: Item = { ...item('j3'), id: 'u1', title: 'Same sidebar everywhere: Peek done, Ship and Leaf next', summary: 'One of four done.', details: undefined, source: { app: 'Leaf', what: 'block', place: 'Navigation notes', author: KATERINA_P, quote: '☑ Teams and Topics at the top in Peek · ☐ The same sidebar in Ship · ☐ The same sidebar in Leaf · ☐ An open file selects its team and topic' } }
+/** The item a marked block opens. */
+const ITEM_OF: Record<string, Item> = { n1: item('i4'), n2: item('i1'), n3: TABLE_INSIGHT, n4: CHECKLIST_UPDATE, n5: item('r3'), n6: item('j1'), n7: item('r5') }
 
 /** The Leaf page "Navigation notes", Katerina's. */
 function navigationNotes(): ForeignObject {
@@ -54,7 +89,7 @@ function navigationNotes(): ForeignObject {
     slots: {
       title: { value: 'Navigation notes' },
       subtitle: { value: 'What we keep hitting in the sidebar, in Peek, Ship and Leaf.' },
-      [BODY_SLOT]: { value: blocksDoc(BLOCKS), format: 'blocks' },
+      [BODY_SLOT]: { value: blocksDoc(), format: 'blocks' },
     },
   } as unknown as ForeignObject
 }
@@ -83,20 +118,30 @@ function threads(file: ForeignObject) {
 const firstLine = (text: string) => text.split(/(?<=[.!?])\s/)[0].slice(0, 80)
 const marked = (type: ItemType, word: MarkWord, title: string, status: Mark['status'] = 'accepted'): Mark => ({ type, word, title, href: '#', status })
 
-/** The two concept hooks around the real page: Mark as… in the block menu and in a comment's ⋯; the lines; the notice. */
-function Marking({ children, blocks = {}, comments = {}, changed = [] }: { children: ReactNode; blocks?: Record<string, Mark>; comments?: Record<string, Mark>; changed?: string[] }) {
+/**
+ * The concept hooks around the real page: Mark as… in the block menu and in a comment's ⋯; a marked block's label in
+ * its right margin, clear of the block handle; the label opens the item in the comments' place; the notice.
+ */
+function Marking({ children, blocks = {}, comments = {}, changed = [], open: open0 }: { children: ReactNode; blocks?: Record<string, Mark>; comments?: Record<string, Mark>; changed?: string[]; open?: string }) {
   const [marks, setMarks] = useState<Record<string, Mark | undefined>>({ ...blocks, ...comments })
+  const [open, setOpen] = useState<string | undefined>(open0)
   const [notice, setNotice] = useState<MarkWord>()
   const mark = (id: string, text: string, word: MarkWord) => (setMarks((m) => ({ ...m, [id]: marked(TYPE_OF[word], word, firstLine(text)) })), setNotice(word))
   const unmark = (id: string) => setMarks((m) => ({ ...m, [id]: undefined }))
   const rows = (id: string, text: string) => <MarkAsRows mark={marks[id]} onMark={(w) => mark(id, text, w)} onUnmark={() => unmark(id)} />
-  const lines = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && textOf[id] ? [[id, m.type]] : [])))
+  const labels = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && textOf[id] ? [[id, m.word]] : [])))
+  const opened = open ? ITEM_OF[open] : undefined
   return (
     <ConceptBlockRows.Provider value={(id) => rows(id, textOf[id] ?? '')}>
       <ConceptComment.Provider value={{ menu: (id, body) => rows(id, body), wrap: (id, card) => <MarkedLine mark={marks[id]}>{card}</MarkedLine> }}>
-        <style>{blockLineCss(lines, changed)}</style>
-        {children}
-        {notice && <MarkedNotice word={notice} team={TEAM} onClose={() => setNotice(undefined)} />}
+        <ConceptSide.Provider value={opened ? <ItemPanel key={opened.id} item={opened} onClose={() => setOpen(undefined)} /> : null}>
+          <style>{blockLineCss(labels, changed, 'gutter')}</style>
+          {/* @estiva-escape(no-raw-interactive): concept only, the margin label is CSS on the editor's own block, so its click is read here */}
+          <div className="contents" onClickCapture={(e) => { const id = markedBlockAt(e, labels); if (id) setOpen(id) }}>
+            {children}
+          </div>
+          {notice && <MarkedNotice word={notice} team={TEAM} onClose={() => setNotice(undefined)} />}
+        </ConceptSide.Provider>
       </ConceptComment.Provider>
     </ConceptBlockRows.Provider>
   )
@@ -130,50 +175,40 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A Risk-marked block (red line) right above one changed since your last visit (grey, dashed): can you tell them apart? */
-export const MarkedBesideChanged: Story = {
-  render: (args) => (
-    <Marking blocks={{ n5: marked('risk', 'Question', item('r3').title, 'open') }} changed={['n6']}>
-      <FilePage {...args} />
-    </Marking>
-  ),
+const page = (props: Parameters<typeof Marking>[0]['blocks'], more: Omit<Parameters<typeof Marking>[0], 'children' | 'blocks'> = {}) => (args: Story['args']) => (
+  <Marking blocks={props} {...more}>
+    <FilePage {...(args as Parameters<typeof FilePage>[0])} />
+  </Marking>
+)
+
+/** A whole paragraph marked as an Insight: its label sits in the right margin, level with its first line, clear of the ⠿ handle. */
+export const MarkedParagraph: Story = { render: page({ n1: marked('insight', 'Insight', item('i4').title, 'accepted') }) }
+
+/** A bullet list and a checklist, each marked whole: an Insight on the list, an Update on the checklist. */
+export const MarkedLists: Story = {
+  render: page({ n2: marked('insight', 'Insight', item('i1').title, 'proposed'), n4: marked('journal', 'Update', CHECKLIST_UPDATE.title, 'accepted') }),
 }
 
-/** Every type once on one page: an Insight (amber), a Decision (blue, a Journal entry) and a Risk (red). */
-export const EveryType: Story = {
-  render: (args) => (
-    <Marking
-      blocks={{ n3: marked('insight', 'Insight', item('i1').title, 'proposed'), n4: marked('journal', 'Decision', item('j1').title, 'proposed'), n5: marked('risk', 'Question', item('r3').title, 'open') }}
-    >
-      <FilePage {...args} />
-    </Marking>
-  ),
+/** A table marked as an Insight. */
+export const MarkedTable: Story = { render: page({ n3: marked('insight', 'Insight', TABLE_INSIGHT.title, 'proposed') }) }
+
+/** Two callouts: the warning marked as a Question (a Risk), the note as a Decision (a Journal entry). */
+export const MarkedCallouts: Story = {
+  render: page({ n5: marked('risk', 'Question', item('r3').title, 'open'), n6: marked('journal', 'Decision', item('j1').title, 'proposed') }),
 }
 
-/** A comment marked as an Insight (amber line around the card); the others offer Mark as… in their ⋯. */
-export const MarkedComment: Story = {
-  render: (args) => (
-    <Marking comments={{ [SIDEBAR]: marked('insight', 'Insight', item('i2').title, 'proposed') }}>
-      <FilePage {...args} />
-    </Marking>
-  ),
-}
+/** A marked callout above a paragraph changed since your last visit: "Question" in red, "Changed" in grey, both in the margin. */
+export const MarkedBesideChanged: Story = { render: page({ n5: marked('risk', 'Question', item('r3').title, 'open') }, { changed: ['n7'] }) }
 
-/** The last block was marked as a Concern and that Risk was Rejected: drawn unmarked — no line — and its menu offers Mark as… again. */
-export const RejectedLeavesNoLine: Story = {
-  render: (args) => (
-    <Marking blocks={{ n6: marked('risk', 'Concern', item('r5').title, 'rejected') }}>
-      <FilePage {...args} />
-    </Marking>
-  ),
-}
+/** The label opened: the Decision beside the page, in the comments' place; ✕ brings the comments back. */
+export const MarkOpenBeside: Story = { render: page({ n6: marked('journal', 'Decision', item('j1').title, 'proposed'), n3: marked('insight', 'Insight', TABLE_INSIGHT.title, 'proposed') }, { open: 'n6' }) }
 
-/** Katerina reading her own page: the block Miky marked as an Insight shows the same line to her, Unmark in its menu. */
-export const KaterinasView: Story = {
-  parameters: { viewer: KATERINA },
-  render: (args) => (
-    <Marking blocks={{ n3: marked('insight', 'Insight', item('i1').title, 'proposed') }}>
-      <FilePage {...args} />
-    </Marking>
-  ),
-}
+/** A comment marked as an Insight (its line around the card); the others offer Mark as… in their ⋯. */
+export const MarkedComment: Story = { render: page({}, { comments: { [SIDEBAR]: marked('insight', 'Insight', item('i2').title, 'proposed') } }) }
+
+/** The last paragraph was marked as a Concern and that Risk was Rejected: drawn unmarked, no label, and its menu offers Mark as… again. */
+export const RejectedLeavesNoLabel: Story = { render: page({ n7: marked('risk', 'Concern', item('r5').title, 'rejected') }) }
+
+/** Katerina reading her own page: the list Miky marked as an Insight shows the same label to her, Unmark in its menu. */
+export const KaterinasView: Story = { parameters: { viewer: KATERINA }, render: page({ n2: marked('insight', 'Insight', item('i1').title, 'proposed') }) }
+
