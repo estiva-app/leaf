@@ -310,7 +310,7 @@ export const ITEMS: Item[] = [
   },
   {
     // Real: question B of this prototype's Read me, its two options as the agent wrote them.
-    id: 'r8', type: 'risk', word: 'Question', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY, isNew: true,
+    id: 'r8', type: 'risk', word: 'Question', severity: 'Low', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY, isNew: true,
     title: 'Does marking a reply bring its thread into the topic’s feed?',
     summary: 'On 29 Oct a thread reaches Main only when someone sends it there. Is marking that send?',
     markedBy: CLAUDE,
