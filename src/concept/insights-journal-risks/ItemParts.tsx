@@ -1,19 +1,17 @@
 /**
- * CONCEPT — the parts Ship's Insights, Journal and Risks tabs draw: an item's card, the Triage, the Journal timeline,
- * the filter row and the source as marked. Reuses: the kit's Card, Chip, StatusMark, Button, IconButton, Avatar,
- * MetaText, EmptyState, Divider (the conversation's "New" line and Peek's date line); the timeline's line is Ship's
- * History line (a face, the words, when) on a vertical rule.
- * Miky's notes, 16 Nov: Accept (primary) and a secondary ✕ in place of Yes / No; an Insight shows its category, and
- * Insights are filtered by it; a card reads title, summary, then where it came from; the Journal's "New" is the
- * conversation's; a Journal entry shows its summary, an Update its whole text; details open in a side panel.
+ * CONCEPT — the parts Ship's Insights, Journal and Risks tabs draw. One entry and one timeline for all three
+ * (Miky, 16 Nov: "simplify our UX elements so we don't have so many different UX concepts"):
+ * - an item reads as a conversation message: face, name, its tag (as Peek's mark label), when and where in the
+ *   header; its title and summary below (an Update's whole text); Accept and ✕ while Proposed;
+ * - the list is one unbroken line with a square at each entry, as a thread's marks in Peek; no date headers;
+ * - the conversation's "New" line where what you have seen begins.
+ * Reuses: the kit's Card, StatusMark, Button, IconButton, Avatar, MetaText, EmptyState, Divider, Tabs.
  */
 import { Fragment, useState, type ReactNode } from 'react'
 import { IconTrash, IconX } from '@tabler/icons-react'
-import { Avatar, Button, Card, Chip, Divider, EmptyState, IconButton, MetaText, SkeletonList, StatusMark, Tabs, type ChipType } from '@estiva-app/ui'
+import { Avatar, Button, Card, Divider, EmptyState, IconButton, MetaText, SkeletonList, StatusMark, Tabs } from '@estiva-app/ui'
 import { TYPE_META, statusOption, type ItemType, type Status } from './MarkAs'
 import { CATEGORIES, type Item, type Source } from './fixtures'
-
-const WORD_CHIP: Record<Item['word'], ChipType> = { Insight: 'warning', Decision: 'info', Update: 'neutral', Concern: 'error', Question: 'neutral' }
 
 export function StatusOf({ item }: { item: Pick<Item, 'type' | 'status'> }) {
   const o = statusOption(item.type, item.status)
@@ -26,16 +24,10 @@ export function sourceLine(source?: Source) {
   return `From ${source.author.name}’s ${source.what} in ${source.app} · ${source.place}`
 }
 
-/** Where it came from, by whom, when: the card's last line. */
+/** Where it came from, by whom, when: the item panel's line. */
 export function metaLine(item: Item) {
   const by = item.decidedBy ? `decided by ${item.decidedBy.name}, written by ${item.markedBy.name}` : item.source ? `marked by ${item.markedBy.name}` : `by ${item.markedBy.name}`
   return `${sourceLine(item.source)} · ${by} · ${item.at}`
-}
-
-/** The label an item's card wears: an Insight's category, else its word (Decision, Update, Concern, Question). */
-export function ItemLabel({ item }: { item: Item }) {
-  if (item.type === 'insight') return item.category ? <Chip type="neutral" label={item.category} /> : null
-  return <Chip type={WORD_CHIP[item.word]} label={item.word} />
 }
 
 /** Accept (primary) and a secondary ✕ on a Proposed item, signed as you (Miky, 16 Nov, in place of Yes / No). */
@@ -55,28 +47,95 @@ export function AcceptReject({ onAnswer, waitingOn }: { onAnswer?: (accept: bool
 
 export const acceptedStatus = (item: Pick<Item, 'type'>): Status => (item.type === 'risk' ? 'open' : 'accepted')
 
-/** One item as a card in a list: its title, summary, then its label and where it came from; Accept / ✕ while Proposed. */
-export function ItemCard({ item, me = 'miky', onOpen, selected }: { item: Item; me?: string; onOpen?: () => void; selected?: boolean }) {
-  const [status, setStatus] = useState<Status>(item.status)
-  const shown = { ...item, status }
-  // A Decision naming someone else waits for them (Decided, 16 Nov); everyone else sees who.
-  const waitingOn = status === 'proposed' && item.decidedBy && item.decidedBy.key !== me ? item.decidedBy.name : undefined
+/** An item's tag in its header, as Peek's mark label sits after the name: the type's icon and colour, an Insight's category or the word. */
+export function ItemTag({ item }: { item: Item }) {
+  const word = item.type === 'insight' ? (item.category ?? 'Insight') : item.word
   return (
-    <Card fill="surface" hover="hairline" onPress={onOpen} selected={selected}>
-      <div className="flex items-start gap-3 p-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-body-2 font-medium text-text-primary">{item.title}</span>
-          {item.summary && <span className="line-clamp-2 text-body-2 text-text-secondary">{item.summary}</span>}
-          <div className="flex min-w-0 items-center gap-2 pt-0.5">
-            <ItemLabel item={item} />
-            <span className="min-w-0 truncate">
-              <MetaText tone="muted">{metaLine(item)}</MetaText>
-            </span>
-          </div>
+    <span className={`flex shrink-0 items-center gap-1 text-caption ${TYPE_META[item.type].text}`}>
+      {TYPE_META[item.type].icon(14)}
+      {word}
+    </span>
+  )
+}
+
+/** Who the header names: whoever wrote the words, or typed the item when it has no source. */
+const authorOf = (item: Item) => item.source?.author ?? item.markedBy
+
+/**
+ * One item as a conversation message (Miky, 16 Nov: "more aligned with how conversation is structured"): the header
+ * is the face, the name, the tag, when and where from; the body its title and summary, an Update's whole text;
+ * Accept and ✕ at the header's end while Proposed. The same entry in all three tabs and on the issue page.
+ */
+export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item; me?: string; onOpen?: () => void; selected?: boolean }) {
+  const [status, setStatus] = useState<Status>(item.status)
+  const proposed = status === 'proposed'
+  // A Decision naming someone else waits for them (Decided, 16 Nov).
+  const waitingOn = proposed && item.decidedBy && item.decidedBy.key !== me ? item.decidedBy.name : undefined
+  const ended = ENDED.includes(status)
+  const body = item.word === 'Update' ? (item.details ?? item.summary) : item.summary
+  const where = item.source ? `${item.source.app} · ${item.source.place}` : 'Typed by hand'
+  return (
+    <Card fill="none" hover="fill" quietUntilHover onPress={onOpen} selected={selected}>
+      <div className="flex flex-col gap-1 p-2">
+        <div className="flex h-6 min-w-0 items-center gap-2">
+          <Avatar name={authorOf(item).name} size={20} />
+          <span className="shrink-0 text-body-2 font-medium text-text-primary">{authorOf(item).name}</span>
+          <ItemTag item={item} />
+          <span className="min-w-0 truncate">
+            <MetaText tone="muted">
+              {item.at} · {where}
+            </MetaText>
+          </span>
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            {proposed ? (
+              <AcceptReject waitingOn={waitingOn} onAnswer={(yes) => setStatus(yes ? acceptedStatus(item) : 'rejected')} />
+            ) : LIVE.includes(status) ? null : (
+              <StatusOf item={{ type: item.type, status }} />
+            )}
+          </span>
         </div>
-        {status === 'proposed' ? <AcceptReject waitingOn={waitingOn} onAnswer={(yes) => setStatus(yes ? acceptedStatus(item) : 'rejected')} /> : <StatusOf item={shown} />}
+        <div className={`flex flex-col gap-0.5 pl-7 ${ended ? 'opacity-60' : ''}`}>
+          <span className={`text-body-2 font-medium text-text-primary ${status === 'superseded' ? 'line-through' : ''}`}>{item.title}</span>
+          {body && <span className="whitespace-pre-line text-body-2 text-text-secondary">{body}</span>}
+        </div>
       </div>
     </Card>
+  )
+}
+
+/** The square on the line: the type's colour, hollow while Proposed, grey once ended. */
+const MARKER: Record<ItemType, { border: string; fill: string }> = {
+  insight: { border: 'border-warning-default', fill: 'bg-warning-default' },
+  journal: { border: 'border-info-default', fill: 'bg-info-default' },
+  risk: { border: 'border-error-default', fill: 'bg-error-default' },
+}
+const markerClass = (item: Item) =>
+  item.status === 'proposed' ? `${MARKER[item.type].border} bg-bg-surface` : ENDED.includes(item.status) ? 'border-border-strong bg-border-strong' : `${MARKER[item.type].border} ${MARKER[item.type].fill}`
+
+/**
+ * Insights, Journal and Risks as one timeline, newest first: one unbroken line, a square at each entry level with its
+ * name, as a thread's marks in Peek. No date headers: each entry says its date. The conversation's New line sits
+ * where what you have seen begins; the new entries are above it.
+ */
+export function ItemTimeline({ items, onOpen, openId, me = 'miky', label }: { items: Item[]; onOpen?: (item: Item) => void; openId?: string; me?: string; label: string }) {
+  const sorted = [...items].sort((a, b) => b.day.localeCompare(a.day))
+  const firstSeen = sorted.some((i) => i.isNew) ? sorted.find((i) => !i.isNew)?.id : undefined
+  return (
+    <ol className="ml-2 flex flex-col border-l-2 border-border-strong pl-5" aria-label={label}>
+      {sorted.map((item) => (
+        <Fragment key={item.id}>
+          {item.id === firstSeen && (
+            <li>
+              <Divider label="New ↑" tone="warning" />
+            </li>
+          )}
+          <li className="relative">
+            <span aria-hidden className={`absolute -left-[25px] top-4 size-2 rounded-sm border-2 ${markerClass(item)}`} />
+            <ItemEntry item={item} me={me} selected={item.id === openId} onOpen={() => onOpen?.(item)} />
+          </li>
+        </Fragment>
+      ))}
+    </ol>
   )
 }
 
@@ -106,11 +165,6 @@ export function filterItems(items: Item[], filter: string) {
   if ((CATEGORIES as string[]).includes(filter)) return items.filter((i) => i.category === filter)
   return items
 }
-/** Live first, then Proposed, then what ended; newest first inside each. */
-export const byStanding = (items: Item[]) => {
-  const rank = (s: Status) => (LIVE.includes(s) ? 0 : s === 'proposed' ? 1 : 2)
-  return [...items].sort((a, b) => rank(a.status) - rank(b.status) || b.day.localeCompare(a.day))
-}
 
 /** A list's state: what to draw while it loads, when it failed, when it is empty. */
 export type ListState = 'ready' | 'loading' | 'error' | 'empty'
@@ -132,86 +186,6 @@ export function ListStateView({ state, type, children }: { state: ListState; typ
       />
     )
   return <>{children}</>
-}
-
-/** The Triage: what is new since your last visit and waits for an answer, at the top of Insights and Risks. */
-export function Triage({ items, onOpen, openId }: { items: Item[]; onOpen?: (item: Item) => void; openId?: string }) {
-  if (!items.length) return null
-  return (
-    <section className="flex flex-col gap-2 rounded-lg bg-bg-inset p-3" aria-label="Triage">
-      <span className="text-caption font-medium text-text-secondary">New since your last visit · {items.length}</span>
-      {items.map((item) => (
-        <ItemCard key={item.id} item={item} selected={item.id === openId} onOpen={() => onOpen?.(item)} />
-      ))}
-    </section>
-  )
-}
-export const triageOf = (items: Item[]) => items.filter((i) => i.isNew && i.status === 'proposed')
-
-/**
- * The Journal: History's lines on a vertical rule under Peek's date lines, newest first. The conversation's "New"
- * line sits where what you have seen begins; newest first, the new entries are above it.
- */
-export function JournalTimeline({ items, onOpen, openId, me = 'miky' }: { items: Item[]; onOpen?: (item: Item) => void; openId?: string; me?: string }) {
-  const sorted = [...items].sort((a, b) => b.day.localeCompare(a.day))
-  const days: { day: string; at: string; items: Item[] }[] = []
-  for (const item of sorted) {
-    const last = days[days.length - 1]
-    if (last && last.day === item.day) last.items.push(item)
-    else days.push({ day: item.day, at: item.at, items: [item] })
-  }
-  const anyNew = sorted.some((i) => i.isNew)
-  const firstSeen = anyNew ? sorted.find((i) => !i.isNew)?.id : undefined
-  return (
-    <ol className="flex flex-col" aria-label="Journal">
-      {days.map((d) => (
-        <li key={d.day} className="flex flex-col">
-          {d.items[0].id === firstSeen && <Divider label="New ↑" tone="warning" />}
-          <Divider look="section" label={d.at} />
-          <ol className="ml-2 flex flex-col border-l border-border-default">
-            {d.items.map((item) => (
-              <Fragment key={item.id}>
-                {item.id === firstSeen && item !== d.items[0] && <Divider label="New ↑" tone="warning" />}
-                <TimelineEntry item={item} me={me} selected={item.id === openId} onOpen={() => onOpen?.(item)} />
-              </Fragment>
-            ))}
-          </ol>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function TimelineEntry({ item, me, onOpen, selected }: { item: Item; me: string; onOpen: () => void; selected?: boolean }) {
-  const [status, setStatus] = useState<Status>(item.status)
-  const proposed = status === 'proposed'
-  const waitingOn = proposed && item.decidedBy && item.decidedBy.key !== me ? item.decidedBy.name : undefined
-  const ended = status === 'superseded' || status === 'rejected'
-  // An Update is read whole in the timeline; a Decision shows its summary (Miky, 16 Nov).
-  const body = item.word === 'Update' ? (item.details ?? item.summary) : item.summary
-  return (
-    <li className="relative py-1 pl-4">
-      {/* The dot on the line: filled when accepted, hollow while proposed. */}
-      <span aria-hidden className={`absolute -left-[5px] top-5 size-2.5 rounded-full border-2 ${proposed ? 'border-border-strong bg-bg-surface' : ended ? 'border-border-default bg-border-default' : 'border-info-default bg-info-default'}`} />
-      <Card fill="none" hover="fill" onPress={onOpen} selected={selected}>
-        <div className="flex items-start gap-3 p-2">
-          <Avatar name={(item.decidedBy ?? item.markedBy).name} size={20} />
-          <div className={`flex min-w-0 flex-1 flex-col gap-1 ${ended ? 'opacity-60' : ''}`}>
-            <span className="text-body-2 text-text-primary">
-              <span className="text-text-secondary">{item.word} · </span>
-              <span className={`font-medium ${status === 'superseded' ? 'line-through' : ''}`}>{item.title}</span>
-            </span>
-            {body && <span className="whitespace-pre-line text-body-2 text-text-secondary">{body}</span>}
-            <MetaText tone="muted">
-              {metaLine(item)}
-              {status !== 'proposed' && status !== 'accepted' ? ` · ${statusOption(item.type, status).label}` : ''}
-            </MetaText>
-          </div>
-          {proposed ? <AcceptReject waitingOn={waitingOn} onAnswer={(yes) => setStatus(yes ? 'accepted' : 'rejected')} /> : null}
-        </div>
-      </Card>
-    </li>
-  )
 }
 
 /** The source as it read when marked, pinned; "edited since marked" opens the words now (record #448). */
