@@ -9,12 +9,16 @@ export const MIKY: Person = { key: 'miky', name: 'Miky' }
 export const KATERINA: Person = { key: 'katerina', name: 'Katerina' }
 export const CLAUDE: Person = { key: 'claude', name: 'Claude', bot: true }
 export const PEOPLE = [MIKY, KATERINA, CLAUDE]
+/** Imagined tools on the protocol that send insights (Miky, 16 Nov). */
+export const POSTHOG: Person = { key: 'posthog', name: 'PostHog', bot: true }
+export const INTERCOM: Person = { key: 'intercom', name: 'Intercom', bot: true }
 
-export type SourceApp = 'Peek' | 'Ship' | 'Leaf'
+/** PostHog and Intercom are imagined on the protocol (Miky, 16 Nov): what an analytics tool and a support desk would send. */
+export type SourceApp = 'Peek' | 'Ship' | 'Leaf' | 'PostHog' | 'Intercom'
 export interface Source {
   app: SourceApp
-  /** What was marked: a message in a topic, a comment on an issue, a block of a document. */
-  what: 'message' | 'comment' | 'block'
+  /** What was marked: a message in a topic, a comment on an issue, a block of a document; a chart, a support conversation. */
+  what: 'message' | 'comment' | 'block' | 'chart' | 'conversation'
   /** Where it lives: the topic, issue or document's title. */
   place: string
   author: Person
@@ -30,6 +34,12 @@ export interface Source {
 export type Category = 'Customer' | 'Product' | 'Technical' | 'Process'
 export const CATEGORIES: Category[] = ['Customer', 'Product', 'Technical', 'Process']
 
+/** An insight's own picture, sent by the tool it came from: PostHog's number, bars or line; a support desk's quote. */
+export type Visual =
+  | { kind: 'number'; range: string; value: string; change: string; up: boolean }
+  | { kind: 'bars' | 'line'; range: string; points: number[]; labels: [string, string]; unit?: string; marker?: { at: number; label: string } }
+  | { kind: 'quote'; quote: string; customer: string; company: string }
+
 /** A Risk's severity (Miky, 16 Nov), most severe first; none yet right after Mark as…. */
 export type Severity = 'Critical' | 'High' | 'Medium' | 'Low'
 export const SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low']
@@ -40,6 +50,8 @@ export interface Item {
   word: MarkWord
   /** A Risk's severity. */
   severity?: Severity
+  /** What an insight from another tool shows in its box: a number, a chart, a customer's words. */
+  visual?: Visual
   /** An Insight's category; none yet right after Mark as… (it marks at once). */
   category?: Category
   title: string
@@ -108,6 +120,39 @@ export const ITEMS: Item[] = [
     title: 'Speed measured on a near-empty workspace says nothing',
     summary: 'Opening a topic passed on the QA account’s near-empty workspace and took 5–10 seconds on Miky’s. Measure on a workspace his size.',
     markedBy: MIKY,
+  },
+  // Imagined (Miky, 16 Nov): PostHog and Intercom on the protocol, sending insights of their own. Numbers are made up.
+  {
+    id: 'i7', type: 'insight', word: 'Insight', category: 'Product', status: 'accepted', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'People find a file from the sidebar',
+    summary: 'Of the files opened this week, this share was opened from the sidebar rather than a link or search.',
+    markedBy: POSTHOG,
+    visual: { kind: 'number', range: 'Last 7 days', value: '62%', change: 'Up 21 points since Topics shipped', up: true },
+    source: { app: 'PostHog', what: 'chart', place: 'Navigation dashboard', author: POSTHOG, quote: 'Files opened from the sidebar, share of all file opens, last 7 days: 62%.' },
+  },
+  {
+    id: 'i8', type: 'insight', word: 'Insight', category: 'Product', status: 'accepted', at: '15 Nov', day: '2026-11-15', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'Topics opened from the sidebar, per week',
+    summary: 'Flat until Topics shipped in Ship and Leaf on 4 Nov, then three times higher.',
+    markedBy: POSTHOG,
+    visual: { kind: 'bars', range: 'Last 12 weeks', points: [41, 38, 44, 40, 46, 43, 45, 48, 52, 131, 148, 162], labels: ['25 Aug', '10 Nov'], marker: { at: 9, label: 'Topics shipped' } },
+    source: { app: 'PostHog', what: 'chart', place: 'Navigation dashboard', author: POSTHOG, quote: 'Topics opened from the sidebar, weekly, last 12 weeks.' },
+  },
+  {
+    id: 'i9', type: 'insight', word: 'Insight', category: 'Technical', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, isNew: true,
+    title: 'Opening a topic got four times faster',
+    summary: 'The slowest quarter of opens took 6 seconds in October; since Main and All, about 1.5.',
+    markedBy: POSTHOG,
+    visual: { kind: 'line', range: 'Last 60 days', points: [6.1, 5.8, 6.4, 5.9, 6.2, 5.6, 4.1, 3.2, 2.4, 1.9, 1.6, 1.5], labels: ['17 Sep', '16 Nov'], unit: 's', marker: { at: 6, label: 'Speed work' } },
+    source: { app: 'PostHog', what: 'chart', place: 'Speed dashboard', author: POSTHOG, quote: 'Time to open a topic, 75th percentile, daily, last 60 days.' },
+  },
+  {
+    id: 'i10', type: 'insight', word: 'Insight', category: 'Customer', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, isNew: true,
+    title: 'A shared link doesn’t say which team the file is in',
+    summary: 'Three customers asked this week; each opened a file from a link and couldn’t tell who else could read it.',
+    markedBy: INTERCOM,
+    visual: { kind: 'quote', quote: 'I opened the doc from a link and had no idea which team it was in, so I didn’t know who I could share it with.', customer: 'Dana', company: 'Acme' },
+    source: { app: 'Intercom', what: 'conversation', place: 'Support inbox', author: { key: 'dana', name: 'Dana at Acme' }, quote: 'I opened the doc from a link and had no idea which team it was in, so I didn’t know who I could share it with.' },
   },
   // Journal
   {
