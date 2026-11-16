@@ -8,7 +8,7 @@ import { IconUsers, IconX } from '@tabler/icons-react'
 import { IconButton, LinkPickers, MetaText, Panel, ScrollArea, Select } from '@estiva-app/ui'
 import { STATUSES, TYPE_META, type Status } from './MarkAs'
 import { SourceAsMarked } from './ItemParts'
-import { CATEGORIES, PEOPLE, type Item } from './fixtures'
+import { CATEGORIES, SEVERITIES, PEOPLE, type Item } from './fixtures'
 
 /** The item whole: title, its status and fields, summary, details, its source as marked. */
 export function ItemPanel({ item, me = 'miky', onClose }: { item: Item; me?: string; onClose: () => void }) {
@@ -16,6 +16,7 @@ export function ItemPanel({ item, me = 'miky', onClose }: { item: Item; me?: str
   const [status, setStatus] = useState<Status>(item.status)
   const [decider, setDecider] = useState(item.decidedBy?.key)
   const [category, setCategory] = useState<string>(item.category ?? '')
+  const [severity, setSeverity] = useState<string>(item.severity ?? '')
   const people = PEOPLE.map((p) => ({ value: p.key, label: p.name }))
   const waitingOn = status === 'proposed' && item.decidedBy && item.decidedBy.key !== me ? item.decidedBy.name : undefined
   return (
@@ -43,6 +44,9 @@ export function ItemPanel({ item, me = 'miky', onClose }: { item: Item; me?: str
               />
               {item.type === 'insight' && (
                 <Select size="small" ariaLabel="Category" placeholder="Category" value={category} onChange={setCategory} options={CATEGORIES.map((c) => ({ value: c, label: c }))} />
+              )}
+              {item.type === 'risk' && (
+                <Select size="small" ariaLabel="Severity" placeholder="Severity" value={severity} onChange={setSeverity} options={SEVERITIES.map((s) => ({ value: s, label: s }))} />
               )}
             </div>
             <MetaText tone="muted">

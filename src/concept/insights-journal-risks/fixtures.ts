@@ -30,10 +30,16 @@ export interface Source {
 export type Category = 'Customer' | 'Product' | 'Technical' | 'Process'
 export const CATEGORIES: Category[] = ['Customer', 'Product', 'Technical', 'Process']
 
+/** A Risk's severity (Miky, 16 Nov), most severe first; none yet right after Mark as…. */
+export type Severity = 'Critical' | 'High' | 'Medium' | 'Low'
+export const SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low']
+
 export interface Item {
   id: string
   type: ItemType
   word: MarkWord
+  /** A Risk's severity. */
+  severity?: Severity
   /** An Insight's category; none yet right after Mark as… (it marks at once). */
   category?: Category
   title: string
@@ -148,46 +154,54 @@ export const ITEMS: Item[] = [
   },
   // Risks
   {
-    id: 'r1', type: 'risk', word: 'Question', status: 'proposed', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onProject, isNew: true,
+    id: 'r1', type: 'risk', word: 'Question', severity: 'Medium', status: 'proposed', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onProject, isNew: true,
     title: 'Initiatives and Topics: are those the names?',
     summary: 'Waiting on Katerina’s look at the prototype.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: MIKY, quote: 'Initiatives for cross-app work, Topics for team rooms — Katerina to judge on the prototype.' },
   },
   {
-    id: 'r2', type: 'risk', word: 'Concern', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
+    id: 'r2', type: 'risk', word: 'Concern', severity: 'High', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'Ship and Leaf “what is new” needs more thinking',
     summary: 'Before it is built, decide what counts as new in Ship and in Leaf.',
     markedBy: MIKY,
     source: { app: 'Ship', what: 'comment', place: PROJECT, author: MIKY, quote: 'What is new in Ship and Leaf needs more thinking before we build it.' },
   },
   {
-    id: 'r3', type: 'risk', word: 'Question', status: 'open', at: '28 Oct', day: '2026-10-28', team: TEAM, about: onProject, acceptedBy: MIKY,
+    id: 'r3', type: 'risk', word: 'Question', severity: 'High', status: 'open', at: '28 Oct', day: '2026-10-28', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'Teams and Topics at the top, no Folders: who leads, who reads?',
     summary: 'Once Folders leave the sidebar, who leads a topic and who can read it?',
     markedBy: MIKY,
     source: { app: 'Leaf', what: 'block', place: 'Who leads, who reads', author: MIKY, quote: 'Who leads a topic, and who can read it, once Folders are gone from the sidebar?', gone: true },
   },
   {
-    id: 'r4', type: 'risk', word: 'Concern', status: 'resolved', at: '4 Nov', day: '2026-11-04', team: TEAM, about: onProject, acceptedBy: MIKY,
+    id: 'r4', type: 'risk', word: 'Concern', severity: 'Medium', status: 'resolved', at: '4 Nov', day: '2026-11-04', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'A Folder as the access boundary feels wrong',
     summary: 'Parked until the navigation work; Teams and Topics answered it.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Friday Meetings', author: MIKY, quote: 'A Folder as the access boundary feels wrong to me. Let’s park it until navigation.' },
   },
   {
-    id: 'r5', type: 'risk', word: 'Concern', status: 'rejected', at: '14 Oct', day: '2026-10-14', team: TEAM, about: onProject,
+    id: 'r5', type: 'risk', word: 'Concern', severity: 'Low', status: 'rejected', at: '14 Oct', day: '2026-10-14', team: TEAM, about: onProject,
     title: 'Peek’s topic list is too long',
     summary: 'Katerina found the list long, but fine for now.',
     markedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Friday Meetings', author: KATERINA, quote: 'The list is getting long, but it’s fine for now.' },
+  },
+  {
+    // Real: the agent's key is not a team member, so a team's roster change as Miky needs his passkey in Peek.
+    id: 'r6', type: 'risk', word: 'Blocker', severity: 'Critical', status: 'open', at: '11 Nov', day: '2026-11-11', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'The agent can’t change who is in a team',
+    summary: 'Its key is not a member, so adding someone to a team needs Miky’s passkey in Peek. Team work stops there until he does it.',
+    markedBy: MIKY,
+    source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: CLAUDE, quote: 'I can’t add people to the team: my key isn’t a member. It needs your passkey in Peek.' },
   },
 ]
 
 export const byType = (type: ItemType) => ITEMS.filter((i) => i.type === type)
 /** A hand-typed item with no source (record #450). */
 export const HAND_TYPED: Item = {
-  id: 'h1', type: 'risk', word: 'Concern', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
+  id: 'h1', type: 'risk', word: 'Concern', severity: 'Medium', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
   title: 'A new feature often makes the next speed round necessary',
   summary: 'Recognise it at once: each build issue carries a Load cost line.',
   markedBy: MIKY,
