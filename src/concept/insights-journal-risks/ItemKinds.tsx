@@ -3,8 +3,9 @@
  * its list and in its detail (Miky, 16 Nov: the detail must feel like the list it was opened from): a tool's chart or
  * customer quote, a risk's severity, a question's options and phase, a blocker's wait. Copied unchanged into Leaf.
  */
-import { IconAlertSquareRoundedFilled, IconAntennaBars3, IconAntennaBars4, IconAntennaBars5, IconTrendingDown, IconTrendingUp } from '@tabler/icons-react'
-import { AvatarGroup, MetaText, WithTooltip, cn } from '@estiva-app/ui'
+import { useState } from 'react'
+import { IconAlertSquareRoundedFilled, IconCircleCheckFilled, IconAntennaBars3, IconAntennaBars4, IconAntennaBars5, IconTrendingDown, IconTrendingUp } from '@tabler/icons-react'
+import { AvatarGroup, Card, Field, FormDialog, MetaText, Textarea, WithTooltip, cn } from '@estiva-app/ui'
 import type { Item, Severity, Visual } from './fixtures'
 
 /** A chart's range over it, as an analytics tool labels its tiles ("LAST 12 WEEKS"), and the latest value on the right. */
@@ -149,5 +150,44 @@ export function QuestionOptions({ options, full = false }: { options: NonNullabl
           </li>
         ))}
       </ol>
+  )
+}
+
+/**
+ * Decide (Miky, 16 Nov: draw what happens after Decide): the kit's FormDialog, as Resolve is. Pick an option, the one
+ * leant towards already picked, and say why if the gist does not; Decide writes the Decision into the Journal with
+ * the options not chosen, and resolves the question.
+ */
+export function DecideDialog({ item, onDecide, onClose }: { item: Item; onDecide: (choice: number, why: string) => void; onClose: () => void }) {
+  const options = item.options ?? []
+  const [choice, setChoice] = useState(Math.max(0, options.findIndex((o) => o.lean)))
+  const [why, setWhy] = useState('')
+  const letters = 'ABCDEF'
+  return (
+    <FormDialog title="Decide" submitLabel="Decide" submitVariant="resolve" onSubmit={() => onDecide(choice, why)} onClose={onClose}>
+      <span className="text-body-2 font-medium text-text-primary">{item.title}</span>
+      {/* New here: the kit has no radio group yet, so each option is a card you press, the picked one selected. */}
+      <div className="flex flex-col gap-2" aria-label="Options">
+        {options.map((o, n) => (
+          <Card key={o.label} fill="surface" hover="hairline" selected={n === choice} onPress={() => setChoice(n)} aria-label={`${letters[n]}: ${o.label}${n === choice ? ', chosen' : ''}`} className="flex gap-2 px-3 py-2">
+            <span className="w-4 shrink-0 text-body-2 font-medium text-text-muted">{letters[n]}</span>
+            <span className="flex min-w-0 flex-1 flex-col text-body-2">
+              <span className="flex items-center gap-2 font-medium text-text-primary">
+                {o.label}
+                {o.lean && <span className="text-caption text-accent-primary">Leaning</span>}
+              </span>
+              <span className="text-text-secondary">{o.gist}</span>
+            </span>
+            {n === choice && <IconCircleCheckFilled size={18} className="shrink-0 text-accent-primary" />}
+          </Card>
+        ))}
+      </div>
+      <Field label="Why" helper="Optional. Goes into the Journal with the Decision.">
+        <Textarea rows={2} value={why} onChange={(e) => setWhy(e.target.value)} placeholder={options[choice]?.gist} />
+      </Field>
+      <span className="text-caption text-text-muted">
+        Writes “{options[choice]?.decision ?? options[choice]?.label}” into the Journal, decided by {item.decider?.name ?? 'you'}, with the {options.length - 1 === 1 ? 'option' : 'options'} not chosen. The question is resolved.
+      </span>
+    </FormDialog>
   )
 }

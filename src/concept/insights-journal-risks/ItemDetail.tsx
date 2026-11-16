@@ -7,10 +7,10 @@
  */
 import { useState } from 'react'
 import { IconExternalLink, IconSparkles, IconUsers } from '@tabler/icons-react'
-import { Button, Card, LinkPickers, MetaText, Select } from '@estiva-app/ui'
+import { Button, Card, Link, LinkPickers, MetaText, Select } from '@estiva-app/ui'
 import { STATUSES, type Status } from './MarkAs'
 import { ItemTag, JournalExtras, SourceAsMarked } from './ItemParts'
-import { InsightVisual, QuestionOptions, SeverityMark, needs, waited } from './ItemKinds'
+import { DecideDialog, InsightVisual, QuestionOptions, SeverityMark, needs, waited } from './ItemKinds'
 import { CATEGORIES, SEVERITIES, PEOPLE, type Item } from './fixtures'
 
 /** An Insight sent by another tool on the protocol: its chart or quote is the source, live. */
@@ -77,13 +77,26 @@ export function ItemFields({ item, me = 'miky' }: { item: Item; me?: string }) {
   )
 }
 
-/** A Question's phase and next step, as its box's footer says it (Miky, 16 Nov), with Decide for its decider. */
-function QuestionPhase({ item, me }: { item: Item; me: string }) {
+/**
+ * A Question's phase and next step, as its box's footer says it (Miky, 16 Nov), with Decide for its decider. Once
+ * decided, the Decision it ended in.
+ */
+function QuestionPhase({ item, me, onDecide, deciding = false }: { item: Item; me: string; onDecide?: (choice: number, why: string) => void; deciding?: boolean }) {
+  const [open, setOpen] = useState(deciding)
+  if (item.decidedIn)
+    return (
+      <Card fill="inset" className="flex flex-col gap-0.5 px-3 py-2">
+        <span className="text-body-2 text-text-muted">Decided, in the Journal</span>
+        <Link href="#" variant="quiet">
+          {item.decidedIn}
+        </Link>
+      </Card>
+    )
   return (
     <Card fill="inset" className="flex items-center justify-between gap-3 px-3 py-2">
       <span className="text-body-2 font-medium text-text-primary">{needs(item, me)}</span>
       {item.step === 'decide' && item.decider?.key === me && (
-        <Button variant="primary" size="small" onClick={() => undefined}>
+        <Button variant="primary" size="small" onClick={() => setOpen(true)}>
           Decide
         </Button>
       )}
@@ -92,6 +105,7 @@ function QuestionPhase({ item, me }: { item: Item; me: string }) {
           Research options
         </Button>
       )}
+      {open && <DecideDialog item={item} onDecide={(c, why) => onDecide?.(c, why)} onClose={() => setOpen(false)} />}
     </Card>
   )
 }
@@ -115,12 +129,12 @@ function BlockerWait({ item }: { item: Item }) {
  * The item's own content under its fields, kind by kind, as its list shows it. `words`: draw the summary and details
  * here (the side panel); the item page leaves them to its header and description.
  */
-export function ItemContent({ item, me = 'miky', words = true }: { item: Item; me?: string; words?: boolean }) {
+export function ItemContent({ item, me = 'miky', words = true, onDecide, deciding }: { item: Item; me?: string; words?: boolean; onDecide?: (choice: number, why: string) => void; deciding?: boolean }) {
   const tool = fromTool(item)
   const quote = item.visual?.kind === 'quote'
   return (
     <div className="flex flex-col gap-3">
-      {item.word === 'Question' && item.status !== 'proposed' && <QuestionPhase item={item} me={me} />}
+      {item.word === 'Question' && item.status !== 'proposed' && <QuestionPhase item={item} me={me} onDecide={onDecide} deciding={deciding} />}
       {item.word === 'Blocker' && item.status !== 'proposed' && <BlockerWait item={item} />}
       {item.visual && (
         <Card fill="inset" className="flex flex-col p-3">
@@ -148,7 +162,7 @@ export function ItemContent({ item, me = 'miky', words = true }: { item: Item; m
             <IconExternalLink size={12} stroke={1.5} />
           </span>
         </MetaText>
-      ) : (
+      ) : item.decision ? null : (
         <SourceAsMarked source={item.source} />
       )}
     </div>

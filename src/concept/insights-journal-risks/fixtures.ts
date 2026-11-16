@@ -88,13 +88,38 @@ export interface Item {
   waitingOn?: Person
   blocks?: string
   /** An open Question: its options as researched (by Claude, say), and the talk about them so far. */
-  options?: { label: string; gist: string; lean?: boolean; favouredBy?: Person[]; addedBy?: Person }[]
+  options?: { label: string; gist: string; lean?: boolean; favouredBy?: Person[]; addedBy?: Person; decision?: string }[]
   optionsBy?: Person
   /** Where an open question is (Miky, 16 Nov): raised, its options researched, in review, ready to decide. */
   step?: QuestionStep
   /** Who decides it: the Decision it ends in inherits them. */
   decider?: Person
   discussion?: { people: Person[]; replies: number; last: string }
+  /** A decided Question: the Decision it ended in, in the Journal. */
+  decidedIn?: string
+  /** A Decision that answered a Question: what was chosen, what was not, and the question. */
+  decision?: { chosen: string; notChosen: string[]; question: string }
+}
+
+/**
+ * Decide (Miky, 16 Nov: draw what happens after Decide): the question is Resolved, pointing at its Decision; the
+ * Decision goes into the Journal with the option chosen, the ones not chosen, and why. Its decider is the question's,
+ * so it is accepted at once.
+ */
+export function decide(items: Item[], id: string, choice: number, why = ''): Item[] {
+  const q = items.find((i) => i.id === id)
+  const opt = q?.options?.[choice]
+  if (!q || !opt) return items
+  const title = opt.decision ?? `${q.title} ${opt.label}`
+  const by = q.decider ?? MIKY
+  const entry: Item = {
+    id: `d-${id}`, type: 'journal', word: 'Decision', status: 'accepted', at: '16 Nov', day: '2026-11-16', team: q.team, about: q.about, acceptedBy: by, decidedBy: by, isNew: true,
+    title,
+    summary: why || opt.gist,
+    markedBy: by,
+    decision: { chosen: opt.label, notChosen: (q.options ?? []).filter((o) => o !== opt).map((o) => o.label), question: q.title },
+  }
+  return [entry, ...items.map((i) => (i.id === id ? { ...i, status: 'resolved' as const, decidedIn: title, isNew: false } : i))]
 }
 
 export const PROJECT = 'Teams and Topics navigation'
@@ -145,30 +170,32 @@ export const ITEMS: Item[] = [
     summary: 'Opening a topic passed on the QA account’s near-empty workspace and took 5–10 seconds on Miky’s. Measure on a workspace his size.',
     markedBy: MIKY,
   },
-  // Imagined (Miky, 16 Nov): PostHog and Intercom on the protocol, sending insights of their own. Numbers are made up.
+  // Imagined senders (Miky, 16 Nov): PostHog and Intercom on the protocol, sending insights of their own. PostHog's
+  // numbers are real: our own speed measurements of 26 Oct–16 Nov, from the Performance update (Miky: "replace the
+  // posthog data with performance data that we really have"). Intercom's customer is still imagined.
   {
-    id: 'i7', type: 'insight', word: 'Insight', category: 'Product', status: 'accepted', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
-    title: 'People find a file from the sidebar',
-    summary: 'Of the files opened this week, this share was opened from the sidebar rather than a link or search.',
+    id: 'i7', type: 'insight', word: 'Insight', category: 'Technical', status: 'accepted', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'A Leaf page opens in 2.5 seconds',
+    summary: 'Opening a Leaf page in Miky’s workspace took 38 seconds on 26 Oct; after the speed work, 2.5.',
     markedBy: POSTHOG,
-    visual: { kind: 'number', range: 'Last 7 days', value: '62%', change: 'Up 21 points since Topics shipped', up: true },
-    source: { app: 'PostHog', what: 'chart', place: 'Navigation dashboard', author: POSTHOG, quote: 'Files opened from the sidebar, share of all file opens, last 7 days: 62%.' },
+    visual: { kind: 'number', range: 'Today', value: '2.5 s', change: 'Was 38 s on 26 Oct', up: true },
+    source: { app: 'PostHog', what: 'chart', place: 'Speed dashboard', author: POSTHOG, quote: 'Time to open a Leaf page, Miky’s workspace: 2.5 s (26 Oct: 38 s).' },
   },
   {
-    id: 'i8', type: 'insight', word: 'Insight', category: 'Product', status: 'accepted', at: '15 Nov', day: '2026-11-15', team: TEAM, about: onProject, acceptedBy: MIKY,
-    title: 'Topics opened from the sidebar, per week',
-    summary: 'Flat until Topics shipped in Ship and Leaf on 4 Nov, then three times higher.',
+    id: 'i8', type: 'insight', word: 'Insight', category: 'Technical', status: 'accepted', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'Claude reads a Peek topic in under 2 seconds',
+    summary: 'An agent reading a Peek topic waited 79 seconds on 26 Oct; now 1.7.',
     markedBy: POSTHOG,
-    visual: { kind: 'bars', range: 'Last 12 weeks', points: [41, 38, 44, 40, 46, 43, 45, 48, 52, 131, 148, 162], labels: ['25 Aug', '10 Nov'], marker: { at: 9, label: 'Topics shipped' } },
-    source: { app: 'PostHog', what: 'chart', place: 'Navigation dashboard', author: POSTHOG, quote: 'Topics opened from the sidebar, weekly, last 12 weeks.' },
+    visual: { kind: 'bars', range: '26 Oct – 16 Nov', points: [79, 1.7], labels: ['26 Oct', '16 Nov'], unit: ' s', marker: { at: 1, label: 'Speed work' } },
+    source: { app: 'PostHog', what: 'chart', place: 'Speed dashboard', author: POSTHOG, quote: 'Time for an agent to read a Peek topic: 79 s on 26 Oct, 1.7 s on 16 Nov.' },
   },
   {
     id: 'i9', type: 'insight', word: 'Insight', category: 'Technical', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, isNew: true,
-    title: 'Opening a topic got four times faster',
-    summary: 'The slowest quarter of opens took 6 seconds in October; since Main and All, about 1.5.',
+    title: 'Weekly Plans is growing again: 59 MB',
+    summary: 'A page still downloads every edit ever made to it: 79 MB on 26 Oct, 43 MB at the end of October, 59 MB today.',
     markedBy: POSTHOG,
-    visual: { kind: 'line', range: 'Last 60 days', points: [6.1, 5.8, 6.4, 5.9, 6.2, 5.6, 4.1, 3.2, 2.4, 1.9, 1.6, 1.5], labels: ['17 Sep', '16 Nov'], unit: 's', marker: { at: 6, label: 'Speed work' } },
-    source: { app: 'PostHog', what: 'chart', place: 'Speed dashboard', author: POSTHOG, quote: 'Time to open a topic, 75th percentile, daily, last 60 days.' },
+    visual: { kind: 'line', range: '26 Oct – 16 Nov', points: [79, 43, 59], labels: ['26 Oct', '16 Nov'], unit: ' MB', marker: { at: 1, label: 'End of October' } },
+    source: { app: 'PostHog', what: 'chart', place: 'Speed dashboard', author: POSTHOG, quote: 'Bytes to open the Weekly Plans page: 79 MB, 43 MB, 59 MB.' },
   },
   {
     id: 'i10', type: 'insight', word: 'Insight', category: 'Customer', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, isNew: true,
@@ -340,8 +367,8 @@ export const ITEMS: Item[] = [
     summary: 'The accepted fields leave it out; severity is named as a company’s own, Blocker changes a shared field.',
     markedBy: CLAUDE,
     options: [
-      { label: 'Shared, with Blocker', gist: 'Category and Blocker join the fields every app reads; severity stays the company’s.', lean: true, favouredBy: [CLAUDE] },
-      { label: 'Each company’s own', gist: 'Ship ships defaults; another app may not show them.', favouredBy: [KATERINA] },
+      { label: 'Shared, with Blocker', gist: 'Category and Blocker join the fields every app reads; severity stays the company’s.', lean: true, favouredBy: [CLAUDE], decision: 'An insight’s category and Blocker are fields every app reads' },
+      { label: 'Each company’s own', gist: 'Ship ships defaults; another app may not show them.', favouredBy: [KATERINA], decision: 'An insight’s category is each company’s own' },
     ],
     optionsBy: CLAUDE,
     step: 'decide',

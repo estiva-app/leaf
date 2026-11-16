@@ -5,11 +5,11 @@
  *   header; its title and summary below (an Update's whole text); Accept and ✕ while Proposed;
  * - the list is one unbroken line with a square at each entry, as a thread's marks in Peek; no date headers;
  * - the conversation's "New" line where what you have seen begins.
- * Reuses: the kit's Card, StatusMark, Button, IconButton, Avatar, MetaText, EmptyState, Divider, Tabs.
+ * Reuses: the kit's Card, StatusMark, Button, IconButton, Avatar, MetaText, EmptyState, Tabs.
  */
 import { Fragment, useState, type ReactNode } from 'react'
-import { IconFileText, IconTrash, IconX } from '@tabler/icons-react'
-import { Avatar, Button, Card, Divider, EmptyState, IconButton, MetaText, SkeletonList, StatusMark, Tabs } from '@estiva-app/ui'
+import { IconExternalLink, IconFileText, IconTrash, IconX } from '@tabler/icons-react'
+import { Avatar, Button, Card, EmptyState, IconButton, MetaText, SkeletonList, StatusMark, Tabs } from '@estiva-app/ui'
 import { TYPE_META, statusOption, wordIcon, type ItemType, type Status } from './MarkAs'
 import { CATEGORIES, type Item, type Source } from './fixtures'
 
@@ -73,7 +73,7 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
   const waitingOn = proposed && item.decidedBy && item.decidedBy.key !== me ? item.decidedBy.name : undefined
   const ended = ENDED.includes(status)
   const body = item.word === 'Update' ? (item.details ?? item.summary) : item.summary
-  const where = item.source ? `${item.source.app} · ${item.source.place}` : 'Typed by hand'
+  const where = item.source ? `${item.source.app} · ${item.source.place}` : item.decision ? 'From an open question' : 'Typed by hand'
   return (
     <Card fill="none" hover="fill" quietUntilHover onPress={onOpen} selected={selected}>
       <div className="flex flex-col gap-1 p-2">
@@ -95,7 +95,10 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
           </span>
         </div>
         <div className={`flex flex-col gap-0.5 pl-7 ${ended ? 'opacity-60' : ''}`}>
-          <span className={`text-body-2 font-medium text-text-primary ${status === 'superseded' ? 'line-through' : ''}`}>{item.title}</span>
+          <span className={`text-body-2 font-medium text-text-primary ${status === 'superseded' ? 'line-through' : ''}`}>
+            {item.title}
+            <NewDot on={item.isNew} />
+          </span>
           {body && <span className="whitespace-pre-line text-body-2 text-text-secondary">{body}</span>}
           <JournalExtras item={item} />
         </div>
@@ -108,6 +111,7 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
 export function JournalExtras({ item }: { item: Item }) {
   return (
     <>
+      {item.decision && <Chosen decision={item.decision} />}
       {item.measures && <Measures measures={item.measures} />}
       {item.stillOpen && (
         <div className="flex flex-col gap-1 pt-1">
@@ -121,6 +125,24 @@ export function JournalExtras({ item }: { item: Item }) {
       )}
       {item.artifact && <Artifact artifact={item.artifact} />}
     </>
+  )
+}
+
+/** A Decision that answered a Question: the option chosen, the ones not, and the question it closed. */
+function Chosen({ decision }: { decision: NonNullable<Item['decision']> }) {
+  return (
+    <div className="grid w-fit grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-0.5 pt-1 text-body-2">
+      <span className="text-text-muted">Chosen</span>
+      <span className="font-medium text-success-default">{decision.chosen}</span>
+      {decision.notChosen.length > 0 && (
+        <>
+          <span className="text-text-muted">Not chosen</span>
+          <span className="text-text-secondary">{decision.notChosen.join(' · ')}</span>
+        </>
+      )}
+      <span className="text-text-muted">Question</span>
+      <span className="text-text-secondary">{decision.question}</span>
+    </div>
   )
 }
 
@@ -159,6 +181,11 @@ function Artifact({ artifact }: { artifact: NonNullable<Item['artifact']> }) {
   )
 }
 
+/** What is new since your last visit: one blue dot right after the title, the same in every list and the Journal (Miky, 16 Nov). */
+export function NewDot({ on }: { on?: boolean }) {
+  return on ? <span aria-label="New" className="ml-1.5 inline-block size-1.5 shrink-0 rounded-full bg-accent-primary align-middle" /> : null
+}
+
 /** The square on the line: the type's colour, hollow while Proposed, grey once ended. */
 const MARKER: Record<ItemType, { border: string; fill: string }> = {
   insight: { border: 'border-warning-default', fill: 'bg-warning-default' },
@@ -170,26 +197,18 @@ const markerClass = (item: Item) =>
 
 /**
  * Insights, Journal and Risks as one timeline, newest first: one unbroken line, a square at each entry level with its
- * name, as a thread's marks in Peek. No date headers: each entry says its date. The conversation's New line sits
- * where what you have seen begins; the new entries are above it.
+ * name, as a thread's marks in Peek. No date headers: each entry says its date. What is new has the blue dot after
+ * its title, as in every other list: no New line (Miky, 16 Nov: one marker).
  */
 export function ItemTimeline({ items, onOpen, openId, me = 'miky', label }: { items: Item[]; onOpen?: (item: Item) => void; openId?: string; me?: string; label: string }) {
   const sorted = [...items].sort((a, b) => b.day.localeCompare(a.day))
-  const firstSeen = sorted.some((i) => i.isNew) ? sorted.find((i) => !i.isNew)?.id : undefined
   return (
     <ol className="ml-2 flex flex-col border-l-2 border-border-strong pl-5" aria-label={label}>
       {sorted.map((item) => (
-        <Fragment key={item.id}>
-          {item.id === firstSeen && (
-            <li>
-              <Divider label="New ↑" tone="warning" />
-            </li>
-          )}
-          <li className="relative">
-            <span aria-hidden className={`absolute -left-[25px] top-4 size-2 rounded-sm border-2 ${markerClass(item)}`} />
-            <ItemEntry item={item} me={me} selected={item.id === openId} onOpen={() => onOpen?.(item)} />
-          </li>
-        </Fragment>
+        <li key={item.id} className="relative">
+          <span aria-hidden className={`absolute -left-[25px] top-4 size-2 rounded-sm border-2 ${markerClass(item)}`} />
+          <ItemEntry item={item} me={me} selected={item.id === openId} onOpen={() => onOpen?.(item)} />
+        </li>
       ))}
     </ol>
   )
@@ -264,17 +283,25 @@ export function SourceAsMarked({ source }: { source?: Source }) {
     return <MetaText tone="muted">Typed by hand — no message, comment or block behind it.</MetaText>
   return (
     <figure className="flex flex-col gap-2 rounded-lg border border-border-default p-3">
-      <figcaption className="flex items-center gap-2">
-        <Avatar name={source.author.name} size={20} />
-        <span className="text-body-2 text-text-primary">{source.author.name}’s {source.what}</span>
-        <MetaText tone="muted">
-          in {source.app} · {source.place}
-        </MetaText>
-        <div className="flex-1" />
+      {/* Two lines beside the avatar and an icon to open it, so it fits the 384px panel (it was cramped on one line). */}
+      <figcaption className="flex items-start gap-2">
+        <span className="mt-0.5 flex shrink-0">
+          <Avatar name={source.author.name} size={20} />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-body-2 text-text-primary">
+            {source.author.name}’s {source.what}
+          </span>
+          <span className="min-w-0 truncate">
+            <MetaText tone="muted">
+              in {source.app} · {source.place}
+            </MetaText>
+          </span>
+        </span>
         {!source.gone && (
-          <Button size="small" variant="muted" onClick={() => {}}>
-            Open in {source.app}
-          </Button>
+          <IconButton variant="muted" tooltip={`Open in ${source.app}`} aria-label={`Open in ${source.app}`} onClick={() => {}}>
+            <IconExternalLink size={16} stroke={1.5} />
+          </IconButton>
         )}
       </figcaption>
       {/* An item points, never copies (record #448): a deleted source shows that it was deleted, and no words. */}
