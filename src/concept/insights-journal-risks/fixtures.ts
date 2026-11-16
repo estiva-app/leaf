@@ -82,6 +82,13 @@ export interface Item {
   source?: Source
   /** New since your last visit. */
   isNew?: boolean
+  /** A Blocker: who has to act, and what stops until they do. */
+  waitingOn?: Person
+  blocks?: string
+  /** An open Question: its options as researched (by Claude, say), and the talk about them so far. */
+  options?: { label: string; gist: string; lean?: boolean }[]
+  optionsBy?: Person
+  discussion?: { people: Person[]; replies: number; last: string }
 }
 
 export const PROJECT = 'Teams and Topics navigation'
@@ -257,6 +264,14 @@ export const ITEMS: Item[] = [
     title: 'Teams and Topics at the top, no Folders: who leads, who reads?',
     summary: 'Once Folders leave the sidebar, who leads a topic and who can read it?',
     markedBy: MIKY,
+    // Real: the options of the brief decision-briefs/who-leads-who-reads.html.
+    options: [
+      { label: 'The team is the wall', gist: 'Each team reads only its own; a shared space is a third team with its own members.' },
+      { label: 'The space says who reads it', gist: 'Teams are member lists; each space is led by one team and names its readers.', lean: true },
+      { label: 'Talk by space, files by team', gist: 'Conversations follow the space, files keep their team’s readers.' },
+    ],
+    optionsBy: CLAUDE,
+    discussion: { people: [MIKY, KATERINA, CLAUDE], replies: 12, last: '2 Nov' },
     source: { app: 'Leaf', what: 'block', place: 'Who leads, who reads', author: MIKY, quote: 'Who leads a topic, and who can read it, once Folders are gone from the sidebar?', gone: true },
   },
   {
@@ -279,7 +294,32 @@ export const ITEMS: Item[] = [
     title: 'The agent can’t change who is in a team',
     summary: 'Its key is not a member, so adding someone to a team needs Miky’s passkey in Peek. Team work stops there until he does it.',
     markedBy: MIKY,
+    waitingOn: MIKY,
+    blocks: 'Adding people to teams',
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: CLAUDE, quote: 'I can’t add people to the team: my key isn’t a member. It needs your passkey in Peek.' },
+  },
+  {
+    // Real, this prototype: its previews sit behind sign-in, so the agent sends links it has not opened.
+    id: 'r7', type: 'risk', word: 'Blocker', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, isNew: true,
+    title: 'Claude can’t open the prototype’s preview links',
+    summary: 'The previews sit behind sign-in, so every link in the Read me reaches Miky unopened.',
+    markedBy: CLAUDE,
+    waitingOn: MIKY,
+    blocks: 'Opening every link before it goes to Miky',
+    source: { app: 'Ship', what: 'comment', place: PROJECT, author: CLAUDE, quote: 'The previews are behind Cloudflare Access; I rendered every story headless instead.' },
+  },
+  {
+    // Real: question B of this prototype's Read me, its two options as the agent wrote them.
+    id: 'r8', type: 'risk', word: 'Question', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY, isNew: true,
+    title: 'Does marking a reply bring its thread into the topic’s feed?',
+    summary: 'On 29 Oct a thread reaches Main only when someone sends it there. Is marking that send?',
+    markedBy: CLAUDE,
+    options: [
+      { label: 'Marking shows it in the feed', gist: 'The thread’s marks show under its message in the topic; sending up to Main stays its own act.', lean: true },
+      { label: 'It stays folded', gist: 'Marks show only inside the thread until someone sends it up.' },
+    ],
+    optionsBy: CLAUDE,
+    source: { app: 'Ship', what: 'comment', place: PROJECT, author: CLAUDE, quote: 'Does marking a reply bring its thread into the topic’s feed?' },
   },
 ]
 
