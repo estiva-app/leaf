@@ -186,13 +186,18 @@ export function ItemTimeline({ items, onOpen, openId, me = 'miky', label }: { it
   )
 }
 
-/** The filter row above a list. Insights: by category (Miky, 16 Nov). Journal and Risks: by status. */
+/** The filter row above a list. Insights: by category; Journal: Decided, Updates, To decide; Risks: by status (Miky, 16 Nov). */
 export function FilterRow({ type, value, onChange, items }: { type: ItemType; value: string; onChange: (v: string) => void; items: Item[] }) {
   if (type === 'insight') {
     const tabs = [{ id: 'all', label: 'All', count: items.length }, ...CATEGORIES.map((c) => ({ id: c, label: c, count: items.filter((i) => i.category === c).length }))]
     return <Tabs tabs={tabs} active={value} onChange={onChange} size="small" />
   }
-  const end = { insight: 'Outdated', journal: 'Superseded', risk: 'Resolved' }[type]
+  if (type === 'journal') {
+    // Journal: what was decided, what was reported, what waits for a yes (Miky, 16 Nov); All keeps the rejected ones.
+    const tabs = [{ id: 'all', label: 'All', count: items.length }, ...JOURNAL_FILTERS.map((f) => ({ id: f.id, label: f.label, count: filterItems(items, f.id).length }))]
+    return <Tabs tabs={tabs} active={value} onChange={onChange} size="small" />
+  }
+  const end ={ insight: 'Outdated', journal: 'Superseded', risk: 'Resolved' }[type]
   const live = type === 'risk' ? 'Open' : 'Accepted'
   const tabs = [
     { id: 'all', label: 'All', count: items.length },
@@ -205,7 +210,15 @@ export function FilterRow({ type, value, onChange, items }: { type: ItemType; va
 
 export const LIVE: Status[] = ['accepted', 'open']
 export const ENDED: Status[] = ['outdated', 'superseded', 'resolved', 'rejected']
+const JOURNAL_FILTERS = [
+  { id: 'decided', label: 'Decided' },
+  { id: 'updates', label: 'Updates' },
+  { id: 'to-decide', label: 'To decide' },
+]
 export function filterItems(items: Item[], filter: string) {
+  if (filter === 'decided') return items.filter((i) => i.word === 'Decision' && (i.status === 'accepted' || i.status === 'superseded'))
+  if (filter === 'updates') return items.filter((i) => i.word === 'Update' && i.status !== 'rejected')
+  if (filter === 'to-decide') return items.filter((i) => i.status === 'proposed')
   if (filter === 'live') return items.filter((i) => LIVE.includes(i.status))
   if (filter === 'proposed') return items.filter((i) => i.status === 'proposed')
   if (filter === 'ended') return items.filter((i) => ENDED.includes(i.status))
