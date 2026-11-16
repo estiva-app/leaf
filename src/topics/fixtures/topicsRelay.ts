@@ -45,7 +45,7 @@ function answer(filters: Filter[]): SignedEvent[] {
     (!f.kinds || f.kinds.includes(e.kind)) &&
     (!f.authors || f.authors.includes(e.pubkey)) &&
     Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1])))
-  const found = relay.held.filter((e) => filters.some((f) => matches(e, { ...f, fields: undefined } as Filter)))
+  const found = relay.held.filter((e) => filters.some((f) => matches(e, f)))
   // The list read (`"fields": "newest"`, SPEC §6.13) answers each record with the changes aimed at it; the fold keeps
   // each field's newest.
   const listed = filters.some((f) => (f as Record<string, unknown>).fields === 'newest')

@@ -44,7 +44,8 @@ beforeEach(() => {
   resetTopicChoicesForTests()
   resetTopicReadsForTests()
   resetMutedForTests()
-  resetRelayReadsForTests()
+  // Absent before ALO-22, so this file fails there on what reaches the relay, not on a missing seam.
+  resetRelayReadsForTests?.()
 })
 afterEach(() => {
   cleanup()

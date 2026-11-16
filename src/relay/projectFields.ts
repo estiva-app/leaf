@@ -36,6 +36,7 @@ function relayReads(): Promise<RelayFileReads | undefined> {
 /** Test seam: forget the relay's NIP-11, as a new page would. */
 export function resetRelayReadsForTests(): void {
   held = undefined
+  switchedHere = false
 }
 
 /**
