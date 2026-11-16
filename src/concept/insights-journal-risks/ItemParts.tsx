@@ -8,9 +8,9 @@
  * Reuses: the kit's Card, StatusMark, Button, IconButton, Avatar, MetaText, EmptyState, Divider, Tabs.
  */
 import { Fragment, useState, type ReactNode } from 'react'
-import { IconTrash, IconX } from '@tabler/icons-react'
+import { IconFileText, IconTrash, IconX } from '@tabler/icons-react'
 import { Avatar, Button, Card, Divider, EmptyState, IconButton, MetaText, SkeletonList, StatusMark, Tabs } from '@estiva-app/ui'
-import { TYPE_META, statusOption, type ItemType, type Status } from './MarkAs'
+import { TYPE_META, statusOption, wordIcon, type ItemType, type Status } from './MarkAs'
 import { CATEGORIES, type Item, type Source } from './fixtures'
 
 export function StatusOf({ item }: { item: Pick<Item, 'type' | 'status'> }) {
@@ -52,7 +52,7 @@ export function ItemTag({ item }: { item: Item }) {
   const word = item.type === 'insight' ? (item.category ?? 'Insight') : item.word
   return (
     <span className={`flex shrink-0 items-center gap-1 text-caption ${TYPE_META[item.type].text}`}>
-      {TYPE_META[item.type].icon(14)}
+      {wordIcon(item.word, 14)}
       {word}
     </span>
   )
@@ -97,7 +97,54 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
         <div className={`flex flex-col gap-0.5 pl-7 ${ended ? 'opacity-60' : ''}`}>
           <span className={`text-body-2 font-medium text-text-primary ${status === 'superseded' ? 'line-through' : ''}`}>{item.title}</span>
           {body && <span className="whitespace-pre-line text-body-2 text-text-secondary">{body}</span>}
+          {item.measures && <Measures measures={item.measures} />}
+          {item.stillOpen && (
+            <div className="flex flex-col gap-1 pt-1">
+              <span className="text-caption font-medium text-text-primary">Still open</span>
+              <ul className="flex list-disc flex-col gap-1 pl-5 text-body-2 text-text-secondary">
+                {item.stillOpen.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {item.artifact && <Artifact artifact={item.artifact} />}
         </div>
+      </div>
+    </Card>
+  )
+}
+
+/** An Update's numbers as before → after, the after in green: what changed, readable at a glance. */
+function Measures({ measures }: { measures: NonNullable<Item['measures']> }) {
+  return (
+    <div className="flex flex-col gap-1 pt-1">
+      <span className="text-caption text-text-muted">{measures.caption}</span>
+      <div className="grid w-fit grid-cols-[auto_auto_auto_auto] items-baseline gap-x-3 gap-y-0.5 text-body-2 tabular-nums">
+        {measures.rows.map(([label, before, after]) => (
+          <Fragment key={label}>
+            <span className="text-text-secondary">{label}</span>
+            <span className="text-right text-text-muted">{before}</span>
+            <span className="text-text-muted">→</span>
+            <span className="font-medium text-success-default">{after}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** The brief or diagram a Decision was made on, as an attachment: the picture, then its page's title. */
+function Artifact({ artifact }: { artifact: NonNullable<Item['artifact']> }) {
+  return (
+    <Card fill="inset" clip className="mt-1 flex max-w-[560px] flex-col">
+      <img src={artifact.image} alt={artifact.caption} className="max-h-48 w-full object-cover object-left-top" />
+      <div className="flex items-center gap-2 px-3 py-2">
+        <IconFileText size={16} stroke={1.5} className="shrink-0 text-text-secondary" />
+        <span className="shrink-0 text-body-2 font-medium text-text-primary">{artifact.title}</span>
+        <span className="min-w-0 truncate">
+          <MetaText tone="muted">{artifact.caption}</MetaText>
+        </span>
       </div>
     </Card>
   )

@@ -3,6 +3,11 @@
  * Every line happened; dates and words are the real ones. Copied unchanged into each app's concept folder.
  */
 import type { ItemType, MarkWord, Status } from './MarkAs'
+// The real briefs' diagrams, captured from ~/estiva/decision-briefs, and Main as shipped.
+import teamOrFolder from './assets/team-or-folder.png'
+import teamsAndTopics from './assets/teams-and-topics.png'
+import navigationToday from './assets/navigation-today.png'
+import mainShot from './assets/main.jpg'
 
 export interface Person { key: string; name: string; bot?: boolean }
 export const MIKY: Person = { key: 'miky', name: 'Miky' }
@@ -52,6 +57,12 @@ export interface Item {
   severity?: Severity
   /** What an insight from another tool shows in its box: a number, a chart, a customer's words. */
   visual?: Visual
+  /** The brief or picture a Decision was made on (Miky, 16 Nov: "with each decision there was an artifact or a diagram"). */
+  artifact?: { title: string; caption: string; image: string }
+  /** An Update's numbers, before and after. */
+  measures?: { caption: string; rows: [string, string, string][] }
+  /** An Update's "Still slow", "Next": what it leaves open. */
+  stillOpen?: string[]
   /** An Insight's category; none yet right after Mark as… (it marks at once). */
   category?: Category
   title: string
@@ -156,9 +167,35 @@ export const ITEMS: Item[] = [
   },
   // Journal
   {
+    // Real: the latest update in Peek's Performance topic, 16 Nov, as Miky pointed to it (verbatim, its measurements as a table).
+    id: 'j0', type: 'journal', word: 'Update', status: 'accepted', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY, isNew: true,
+    title: 'Peek, Ship and Leaf open in about 2 seconds',
+    summary: 'Leaf shows the page you open in a couple of seconds, even from a Peek conversation; Ship opens in about 2 seconds again; Claude answers in about 2 seconds.',
+    details: 'Leaf shows the page you open in a couple of seconds, even from a Peek conversation, while the sidebar fills in behind it. Ship projects and issues open in about 2 seconds again. When Claude reads Ship or Peek for you, it answers in about 2 seconds instead of half a minute or more.',
+    measures: {
+      caption: 'Measured on a fresh open, 26 October → today',
+      rows: [
+        ['A Leaf page (Weekly Plans)', '38 s', '2.5 s'],
+        ['The same page from Peek’s “Open ↗”', '113 s', '2.3 s'],
+        ['A Ship project', '7.2 s', '2.0 s'],
+        ['A Ship issue', '5.8 s', '2.1 s'],
+        ['Claude reading a Ship issue', '40 s', '1.8 s'],
+        ['Claude reading a Peek topic', '79 s', '1.7 s'],
+        ['Peek’s Desk on a large workspace', '20–33 MB', '10–13 MB'],
+      ],
+    },
+    stillOpen: [
+      'A page still downloads every edit ever made to it, so it grows as you work: Weekly Plans went from 79 MB to 43 MB at the end of October and is back to 59 MB today. It opens fast, but it costs data and time on a slow connection.',
+      'Speed work continues. If something still feels slow to you, say where in Peek, and it goes into the next round.',
+    ],
+    markedBy: MIKY,
+    source: { app: 'Peek', what: 'message', place: 'Performance', author: CLAUDE, quote: 'Update 11/16/2026 — Faster: Leaf shows the page you open in a couple of seconds…' },
+  },
+  {
     id: 'j1', type: 'journal', word: 'Decision', status: 'proposed', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onIssue('Ship and Leaf sidebar match Peek'), isNew: true,
     title: 'The sidebar shows Teams and Topics, never Folders',
     summary: 'Teams and Topics go at the top of Ship’s and Leaf’s sidebars, and Folders leave the sidebar completely.',
+    artifact: { title: 'Cross-app navigation concepts', caption: 'Teams decide who reads; topics gather files from any team', image: teamsAndTopics },
     markedBy: MIKY, decidedBy: KATERINA,
     source: { app: 'Ship', what: 'comment', place: 'Ship and Leaf sidebar match Peek', author: KATERINA, quote: 'Let’s go with Teams and Topics at the top and drop Folders from the sidebar completely.' },
   },
@@ -166,6 +203,7 @@ export const ITEMS: Item[] = [
     id: 'j2', type: 'journal', word: 'Decision', status: 'accepted', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onProject, acceptedBy: MIKY, isNew: true,
     title: 'Cross-app work is an Initiative; a team room is a Topic',
     summary: 'Work that spans apps is an Initiative, a team’s room is a Topic, and People become DMs. Katerina judges the names on the prototype.',
+    artifact: { title: 'Navigation brainstorm', caption: 'Today, in one picture: a team holds chat, spaces and topics; each app shows its own sidebar', image: navigationToday },
     markedBy: MIKY, decidedBy: MIKY,
     source: { app: 'Leaf', what: 'block', place: 'Universal Navigation brainstorm', author: MIKY, quote: 'Cross-app work = Initiatives, team rooms = Topics, People → DMs.' },
   },
@@ -174,6 +212,7 @@ export const ITEMS: Item[] = [
     title: 'Topics: Main and All shipped in Peek',
     summary: 'In Peek, the level you set on a topic is what you see.',
     details: 'Topics: Main and All is done, in Peek only: the level you set on a topic is what you see of it.\n\nNext: the Activity indicator on each topic and team, ahead of sending a thread up and highlights. What is new in Ship and Leaf waits; it needs more thinking.',
+    artifact: { title: 'Main, All, Activity', caption: 'A Peek topic’s Main, as shipped', image: mainShot },
     markedBy: MIKY,
   },
   {
@@ -187,6 +226,7 @@ export const ITEMS: Item[] = [
     id: 'j5', type: 'journal', word: 'Decision', status: 'accepted', at: '2 Nov', day: '2026-11-02', team: TEAM, about: onProject, acceptedBy: MIKY,
     title: 'A Folder is called a team',
     summary: 'Everywhere a person reads it, a Folder is called a team. Code and the wire still say folder.',
+    artifact: { title: 'Team or Folder', caption: 'Today a Folder is a box of files; after, the same place has members, followers, its chat and spaces', image: teamOrFolder },
     markedBy: MIKY, decidedBy: MIKY,
     source: { app: 'Peek', what: 'message', place: 'Universal Navigation', author: MIKY, quote: 'Let’s call it a team everywhere people read it.' },
   },
