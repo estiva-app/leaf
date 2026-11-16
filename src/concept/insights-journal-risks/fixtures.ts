@@ -49,6 +49,8 @@ export type Visual =
 export type Severity = 'Critical' | 'High' | 'Medium' | 'Low'
 export const SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low']
 
+export type QuestionStep = 'raised' | 'options' | 'review' | 'decide'
+
 export interface Item {
   id: string
   type: ItemType
@@ -86,8 +88,12 @@ export interface Item {
   waitingOn?: Person
   blocks?: string
   /** An open Question: its options as researched (by Claude, say), and the talk about them so far. */
-  options?: { label: string; gist: string; lean?: boolean }[]
+  options?: { label: string; gist: string; lean?: boolean; favouredBy?: Person[]; addedBy?: Person }[]
   optionsBy?: Person
+  /** Where an open question is (Miky, 16 Nov): raised, its options researched, in review, ready to decide. */
+  step?: QuestionStep
+  /** Who decides it: the Decision it ends in inherits them. */
+  decider?: Person
   discussion?: { people: Person[]; replies: number; last: string }
 }
 
@@ -247,6 +253,7 @@ export const ITEMS: Item[] = [
   // Risks
   {
     id: 'r1', type: 'risk', word: 'Question', severity: 'Medium', status: 'proposed', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onProject, isNew: true,
+    step: 'raised',
     title: 'Initiatives and Topics: are those the names?',
     summary: 'Waiting on Katerina’s look at the prototype.',
     markedBy: MIKY,
@@ -265,12 +272,15 @@ export const ITEMS: Item[] = [
     summary: 'Once Folders leave the sidebar, who leads a topic and who can read it?',
     markedBy: MIKY,
     // Real: the options of the brief decision-briefs/who-leads-who-reads.html.
+    // Imagined: who favours which, and Katerina adding the third option in review.
     options: [
       { label: 'The team is the wall', gist: 'Each team reads only its own; a shared space is a third team with its own members.' },
-      { label: 'The space says who reads it', gist: 'Teams are member lists; each space is led by one team and names its readers.', lean: true },
-      { label: 'Talk by space, files by team', gist: 'Conversations follow the space, files keep their team’s readers.' },
+      { label: 'The space says who reads it', gist: 'Teams are member lists; each space is led by one team and names its readers.', lean: true, favouredBy: [MIKY, CLAUDE] },
+      { label: 'Talk by space, files by team', gist: 'Conversations follow the space, files keep their team’s readers.', favouredBy: [KATERINA], addedBy: KATERINA },
     ],
     optionsBy: CLAUDE,
+    step: 'review',
+    decider: MIKY,
     discussion: { people: [MIKY, KATERINA, CLAUDE], replies: 12, last: '2 Nov' },
     source: { app: 'Leaf', what: 'block', place: 'Who leads, who reads', author: MIKY, quote: 'Who leads a topic, and who can read it, once Folders are gone from the sidebar?', gone: true },
   },
@@ -319,7 +329,25 @@ export const ITEMS: Item[] = [
       { label: 'It stays folded', gist: 'Marks show only inside the thread until someone sends it up.' },
     ],
     optionsBy: CLAUDE,
+    step: 'options',
+    decider: MIKY,
     source: { app: 'Ship', what: 'comment', place: PROJECT, author: CLAUDE, quote: 'Does marking a reply bring its thread into the topic’s feed?' },
+  },
+  {
+    // Real: question A of this prototype's Read me, reviewed and waiting for Miky; who favours which is imagined.
+    id: 'r9', type: 'risk', word: 'Question', severity: 'High', status: 'open', at: '16 Nov', day: '2026-11-16', team: TEAM, about: onProject, acceptedBy: MIKY,
+    title: 'Is an insight’s category shared by every app, or each company’s own?',
+    summary: 'The accepted fields leave it out; severity is named as a company’s own, Blocker changes a shared field.',
+    markedBy: CLAUDE,
+    options: [
+      { label: 'Shared, with Blocker', gist: 'Category and Blocker join the fields every app reads; severity stays the company’s.', lean: true, favouredBy: [CLAUDE] },
+      { label: 'Each company’s own', gist: 'Ship ships defaults; another app may not show them.', favouredBy: [KATERINA] },
+    ],
+    optionsBy: CLAUDE,
+    step: 'decide',
+    decider: MIKY,
+    discussion: { people: [CLAUDE, KATERINA], replies: 4, last: 'today' },
+    source: { app: 'Ship', what: 'comment', place: PROJECT, author: CLAUDE, quote: 'Is an insight’s category a shared field or the company’s own?' },
   },
 ]
 
