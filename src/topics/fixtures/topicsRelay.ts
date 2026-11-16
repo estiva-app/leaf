@@ -45,7 +45,13 @@ function answer(filters: Filter[]): SignedEvent[] {
     (!f.kinds || f.kinds.includes(e.kind)) &&
     (!f.authors || f.authors.includes(e.pubkey)) &&
     Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1])))
-  return relay.held.filter((e) => filters.some((f) => matches(e, f)))
+  const found = relay.held.filter((e) => filters.some((f) => matches(e, f)))
+  // The list read (`"fields": "newest"`, SPEC §6.13) answers each record with the changes aimed at it; the fold keeps
+  // each field's newest.
+  const listed = filters.some((f) => (f as Record<string, unknown>).fields === 'newest')
+  if (!listed) return found
+  const addresses = new Set(found.map((e) => `${e.kind}:${e.pubkey}:${e.tags.find((t) => t[0] === 'd')?.[1]}`))
+  return [...found, ...relay.held.filter((e) => e.kind === 1851 && addresses.has(e.tags.find((t) => t[0] === 'a')?.[1] ?? ''))]
 }
 
 let n = 0

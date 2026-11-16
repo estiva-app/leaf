@@ -1,5 +1,5 @@
 import { estivaIdSigner, SignRefused } from '@estiva-app/identity'
-import { Relay, type PublishResult, type SignedEvent, type Signer, type UnsignedEvent } from '@estiva-app/protocol'
+import { Relay, type FileTimes, type PublishResult, type SignedEvent, type Signer, type UnsignedEvent } from '@estiva-app/protocol'
 import { heldToken, renew, sessionEnded } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
 
@@ -52,6 +52,13 @@ export async function query(filters: Record<string, unknown>[]): Promise<SignedE
   const b = bridge()
   if (!b) throw new Error('Not signed in to a relay.')
   return b.relay.query(filters)
+}
+
+/** The times read (SPEC §6.13, `"fields": "times"`), as interop's activity read takes it; only where the relay offers it. */
+export async function queryTimes(filters: Record<string, unknown>[]): Promise<FileTimes[]> {
+  const b = bridge()
+  if (!b) throw new Error('Not signed in to a relay.')
+  return b.relay.queryTimes(filters)
 }
 
 /** {@link query}, paged to the end: for a read that must be whole, which the relay's per-filter cap would cut. */

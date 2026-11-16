@@ -1,5 +1,7 @@
 import { projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
+import type { TimesFn } from '@estiva-app/interop'
 import { RELAY_URL } from '../config'
+import { queryTimes } from './bridge'
 import { fieldsOptIn } from './fieldsOptIn'
 
 /** The relay's NIP-11 document, which needs no sign-in; `null` in a build with no relay. */
@@ -29,6 +31,12 @@ function relayReads(): Promise<RelayFileReads | undefined> {
     },
   )
   return held
+}
+
+/** Test seam: forget the relay's NIP-11, as a new page would. */
+export function resetRelayReadsForTests(): void {
+  held = undefined
+  switchedHere = false
 }
 
 /**
@@ -70,6 +78,17 @@ export async function projectFields(): Promise<ProjectFields | undefined> {
  */
 export async function listReadOffered(): Promise<boolean> {
   return (await relayReads())?.list === true
+}
+
+/**
+ * The topics' activity read's `times`, when the relay answers the times read (NIP-11 `file_list.times`): ordering
+ * topics learns when the files on them changed, not their whole changes (ALO-22). Empty on any other relay, which is
+ * read as before.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
+ */
+export async function timesRead(): Promise<{ times?: TimesFn }> {
+  return (await relayReads())?.times === true ? { times: queryTimes } : {}
 }
 
 /**
