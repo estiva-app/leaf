@@ -97,21 +97,30 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
         <div className={`flex flex-col gap-0.5 pl-7 ${ended ? 'opacity-60' : ''}`}>
           <span className={`text-body-2 font-medium text-text-primary ${status === 'superseded' ? 'line-through' : ''}`}>{item.title}</span>
           {body && <span className="whitespace-pre-line text-body-2 text-text-secondary">{body}</span>}
-          {item.measures && <Measures measures={item.measures} />}
-          {item.stillOpen && (
-            <div className="flex flex-col gap-1 pt-1">
-              <span className="text-caption font-medium text-text-primary">Still open</span>
-              <ul className="flex list-disc flex-col gap-1 pl-5 text-body-2 text-text-secondary">
-                {item.stillOpen.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {item.artifact && <Artifact artifact={item.artifact} />}
+          <JournalExtras item={item} />
         </div>
       </div>
     </Card>
+  )
+}
+
+/** What a Journal entry carries past its words, the same in the Journal and in its detail: an Update's measures and what it leaves open, a Decision's brief. */
+export function JournalExtras({ item }: { item: Item }) {
+  return (
+    <>
+      {item.measures && <Measures measures={item.measures} />}
+      {item.stillOpen && (
+        <div className="flex flex-col gap-1 pt-1">
+          <span className="text-caption font-medium text-text-primary">Still open</span>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-body-2 text-text-secondary">
+            {item.stillOpen.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {item.artifact && <Artifact artifact={item.artifact} />}
+    </>
   )
 }
 
