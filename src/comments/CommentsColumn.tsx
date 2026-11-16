@@ -848,8 +848,13 @@ type CommentCardProps = Pick<ConversationCardProps, 'about' | 'replies' | 'resol
 
 /** A thread's comment on the kit's card, in Leaf's words: "Delete this message?", and Leaf's note with the replies that stay. */
 function LeafComment({ card, ...entry }: EntryProps & { card: CommentCardProps }) {
-  return <ConversationCard {...useEntry(entry)} {...card} noun="message" deleteNote={deleteNote(entry.own?.replies ?? 0)} />
+  const concept = useContext(ConceptComment)
+  const el = <ConversationCard {...useEntry(entry)} {...card} {...(concept ? { menu: concept.menu(entry.comment.id, entry.comment.body) } : {})} noun="message" deleteNote={deleteNote(entry.own?.replies ?? 0)} />
+  return concept ? <>{concept.wrap(entry.comment.id, el)}</> : el
 }
+
+/** CONCEPT ONLY (concept/insights-journal-risks): a story adds Mark as… to a comment's ⋯ and its marked line around it. Never merged. */
+export const ConceptComment = createContext<{ menu: (id: string, body: string) => ReactNode; wrap: (id: string, card: ReactNode) => ReactNode } | null>(null)
 
 /** A reply on the kit's card: "Delete this reply?", the kit's words and Leaf's, with Leaf's note. */
 function LeafReply({ id, ...entry }: EntryProps & { id: string }) {

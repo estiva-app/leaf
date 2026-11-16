@@ -1,4 +1,7 @@
-import { useCallback, useRef, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useRef, type ReactNode } from 'react'
+
+/** CONCEPT ONLY (concept/insights-journal-risks): a story adds its own rows to a block's menu — Mark as… — without copying the editor. Never merged. */
+export const ConceptBlockRows = createContext<((blockId: string) => ReactNode) | null>(null)
 import type { Editor } from '@tiptap/react'
 import { IconLink, IconMessage } from '@tabler/icons-react'
 import {
@@ -121,6 +124,7 @@ export function LiveDocument({
     [onCommit, format],
   )
   const people = useMentionPeople()
+  const conceptRows = useContext(ConceptBlockRows)
   const mentions = { people: () => people.people, uriOf: (person: MentionPerson) => (person.pubkey ? `nostr:${encodeNpub(person.pubkey)}` : null) }
   const blockRows =
     onCopyLink || onCommentOn
@@ -132,6 +136,7 @@ export function LiveDocument({
             <>
               {onCopyLink && <MenuItem label="Copy link" leading={<IconLink size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCopyLink(id)} />}
               {onCommentOn && <MenuItem label="Comment" leading={<IconMessage size={16} stroke={1.5} className="text-text-secondary" />} onClick={() => onCommentOn({ blocks: [id] })} />}
+              {conceptRows?.(id)}
             </>
           )
         }
