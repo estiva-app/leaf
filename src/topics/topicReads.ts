@@ -2,6 +2,7 @@ import { activityTopics, readTopicActivity, type ReadTopic, type TopicsRead } fr
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { heldTopics, loadTopics } from '../document/fileTopics'
 import { query, viewerPubkey } from '../relay/bridge'
+import { timesRead } from '../relay/projectFields'
 import { readMuted } from './muted'
 import { readTopicMembers } from './topicMembers'
 
@@ -113,7 +114,7 @@ function perTopicRead<T>(read: (topics: ReadTopic[]) => Promise<ReadonlyMap<stri
  * Each topic's newest activity, the one rule Peek, Ship and Leaf order topics by (interop's `readTopicActivity`,
  * TOPI-10): the sidebar's five and Your topics, and Explore's Active.
  */
-const activity = perTopicRead<number>(async (topics) => (await readTopicActivity(query, activityTopics(topics))).at)
+const activity = perTopicRead<number>(async (topics) => (await readTopicActivity(query, activityTopics(topics), await timesRead())).at)
 
 /**
  * How many people each topic lists: Explore's Members. Read once per topic in a tab, not again on return: it reads each

@@ -19,7 +19,7 @@ import type { PublishResult } from '@estiva-app/protocol'
 import { nip44 } from '../auth/nip44'
 import { publish, query as relayQuery, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
-import { archivedRootsOptions, listReadOffered } from '../relay/projectFields'
+import { archivedRootsOptions, listReadOffered, timesRead } from '../relay/projectFields'
 
 /** A topic that lists a file, as the file's Topics row draws it. */
 export interface TopicOfFile {
@@ -125,8 +125,8 @@ async function decryptOnce(ciphertext: string): Promise<string | undefined> {
 export async function loadYourTopics(): Promise<YourTopicsRead> {
   const me = viewerPubkey()
   if (!me) throw new Error('Sign in to read your topics.')
-  const listRead = await listReadOffered()
-  return readYourTopics(relayQuery, me, { cache: manifests, decrypt: decryptOnce, spaces: true, ...(listRead ? { listRead } : {}) })
+  const [listRead, times] = await Promise.all([listReadOffered(), timesRead()])
+  return readYourTopics(relayQuery, me, { cache: manifests, decrypt: decryptOnce, spaces: true, ...(listRead ? { listRead } : {}), ...times })
 }
 
 /** Test seam: forget the held topics, yours and every one. */
