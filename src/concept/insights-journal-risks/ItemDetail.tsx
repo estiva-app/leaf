@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { IconExternalLink, IconSparkles, IconUsers } from '@tabler/icons-react'
 import { Button, Card, Link, LinkPickers, MetaText, Select } from '@estiva-app/ui'
 import { STATUSES, type Status } from './MarkAs'
-import { ItemTag, JournalExtras, SourceAsMarked } from './ItemParts'
+import { AcceptReject, ItemTag, JournalExtras, SourceAsMarked, acceptedStatus } from './ItemParts'
 import { DecideDialog, InsightVisual, QuestionOptions, SeverityMark, needs, waited } from './ItemKinds'
 import { CATEGORIES, SEVERITIES, PEOPLE, type Item } from './fixtures'
 
@@ -56,8 +56,14 @@ export function ItemFields({ item, me = 'miky' }: { item: Item; me?: string }) {
             <Select size="small" ariaLabel="Severity" placeholder="Severity" value={severity} onChange={setSeverity} options={SEVERITIES.map((s) => ({ value: s, label: s }))} />
           </span>
         )}
+        {/* Whoever may answer a suggested item gets the button here too, not only in the list (review, 17 Nov). */}
+        {status === 'proposed' && !waitingOn && (
+          <span className="ml-auto">
+            <AcceptReject onAnswer={(yes) => setStatus(yes ? acceptedStatus(item) : 'rejected')} />
+          </span>
+        )}
       </div>
-      {/* Two short lines, never one long one: where it lives, then who marked and accepted it. */}
+      {/* Two short lines, never one long one: where it lives, then who added it. */}
       <div className="flex min-w-0 flex-col">
         <span className="min-w-0 truncate">
           <MetaText tone="muted">
@@ -67,12 +73,12 @@ export function ItemFields({ item, me = 'miky' }: { item: Item; me?: string }) {
         </span>
         <span className="min-w-0 truncate">
           <MetaText tone="muted">
-            {item.decidedBy ? 'Written' : 'Marked'} by {item.markedBy.name}, {item.at}
-            {item.acceptedBy && status !== 'proposed' ? ` · accepted by ${item.acceptedBy.name}` : ''}
+            Suggested by {item.markedBy.name}, {item.at}
+            {item.acceptedBy && status !== 'proposed' ? ` · added by ${item.acceptedBy.name}` : ''}
           </MetaText>
         </span>
       </div>
-      {waitingOn && <MetaText tone="muted">Waiting for {waitingOn} to accept</MetaText>}
+      {waitingOn && <MetaText tone="muted">Waiting for {waitingOn} to add it</MetaText>}
     </div>
   )
 }

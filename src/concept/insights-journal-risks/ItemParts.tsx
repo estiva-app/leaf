@@ -34,7 +34,7 @@ export function metaLine(item: Item) {
  * Accept (primary) and a secondary ✕ on a Proposed item, signed as you (Miky, 16 Nov, in place of Yes / No). A
  * suggested insight says Add: it is added to the Insights, not accepted (Miky, 17 Nov).
  */
-export function AcceptReject({ onAnswer, waitingOn, label = 'Accept' }: { onAnswer?: (accept: boolean) => void; waitingOn?: string; label?: string }) {
+export function AcceptReject({ onAnswer, waitingOn, label = 'Add' }: { onAnswer?: (accept: boolean) => void; waitingOn?: string; label?: string }) {
   if (waitingOn) return <MetaText tone="muted">Waiting for {waitingOn}</MetaText>
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -75,7 +75,8 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
   // A Decision naming someone else waits for them (Decided, 16 Nov).
   const waitingOn = proposed && item.decidedBy && item.decidedBy.key !== me ? item.decidedBy.name : undefined
   const ended = ENDED.includes(status)
-  const body = item.word === 'Update' ? (item.details ?? item.summary) : item.summary
+  // In a list, two lines at most (review, 17 Nov: a long Update read as a whole page); the rest opens with the entry.
+  const body = item.summary ?? item.details
   const where = item.source ? `${item.source.app} · ${item.source.place}` : item.decision ? 'From an open question' : 'Typed by hand'
   return (
     <Card fill="none" hover="fill" quietUntilHover onPress={onOpen} selected={selected}>
@@ -102,8 +103,9 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
             {item.title}
             <NewDot on={item.isNew} />
           </span>
-          {body && <span className="whitespace-pre-line text-body-2 text-text-secondary">{body}</span>}
-          <JournalExtras item={item} />
+          {body && <span className="line-clamp-2 text-body-2 text-text-secondary">{body}</span>}
+          {/* A Decision's Chosen and Not chosen stay; an Update's measures and open lines open with the entry. */}
+          {item.word !== 'Update' && <JournalExtras item={item} />}
         </div>
       </div>
     </Card>
@@ -244,7 +246,6 @@ export const ENDED: Status[] = ['outdated', 'superseded', 'resolved', 'rejected'
 const JOURNAL_FILTERS = [
   { id: 'decided', label: 'Decided' },
   { id: 'updates', label: 'Updates' },
-  { id: 'to-decide', label: 'To decide' },
 ]
 export function filterItems(items: Item[], filter: string) {
   if (filter === 'decided') return items.filter((i) => i.word === 'Decision' && (i.status === 'accepted' || i.status === 'superseded'))

@@ -37,9 +37,8 @@ export function InsightVisual({ visual }: { visual: Visual }) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 py-4">
         <ChartHead range={visual.range} />
-        {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: a dashboard tile's big number; the kit has no display size yet, the build adds one */}
-        <span className="text-[56px] font-semibold leading-none tabular-nums text-text-primary">{visual.value}</span>
-        <span className={cn('flex items-center gap-1 text-body-2', visual.up ? 'text-success-default' : 'text-error-default')}>
+        <span className="text-h2 font-semibold leading-none tabular-nums text-text-primary">{visual.value}</span>
+        <span className={cn('flex items-center gap-1 text-body-2', (visual.good ?? visual.up) ? 'text-success-default' : 'text-error-default')}>
           {visual.up ? <IconTrendingUp size={16} stroke={1.5} /> : <IconTrendingDown size={16} stroke={1.5} />}
           {visual.change}
         </span>
@@ -48,7 +47,7 @@ export function InsightVisual({ visual }: { visual: Visual }) {
   if (visual.kind === 'quote')
     return (
       <figure className="flex flex-1 flex-col justify-center gap-2 py-1">
-        <blockquote className="text-h3 font-normal leading-snug text-text-primary">“{visual.quote}”</blockquote>
+        <blockquote className="text-body-1 font-normal leading-snug text-text-primary">“{visual.quote}”</blockquote>
         <figcaption>
           <MetaText tone="muted">
             {visual.customer}, {visual.company}

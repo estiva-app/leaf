@@ -73,7 +73,9 @@ function withIds(node: Record<string, unknown>, id: string): Record<string, unkn
 const TABLE_INSIGHT: Item = { ...item('i2'), id: 't1', category: 'Product', title: 'Each app’s sidebar starts somewhere else', summary: 'Peek starts with Teams and Topics; Ship with Projects and Issues; Leaf with Documents.', source: { app: 'Leaf', what: 'block', place: 'Navigation notes', author: KATERINA_P, quote: 'App · Top of the sidebar · Folders — Peek: Teams and Topics, gone; Ship: Projects and Issues, listed; Leaf: Documents, listed.' } }
 const CHECKLIST_UPDATE: Item = { ...item('j3'), id: 'u1', title: 'Same sidebar everywhere: Peek done, Ship and Leaf next', summary: 'One of four done.', details: undefined, source: { app: 'Leaf', what: 'block', place: 'Navigation notes', author: KATERINA_P, quote: '☑ Teams and Topics at the top in Peek · ☐ The same sidebar in Ship · ☐ The same sidebar in Leaf · ☐ An open file selects its team and topic' } }
 /** The item a marked block opens. */
-const ITEM_OF: Record<string, Item> = { n1: item('i4'), n2: item('i1'), n3: TABLE_INSIGHT, n4: CHECKLIST_UPDATE, n5: item('r3'), n6: item('j1'), n7: item('r5') }
+// The Decision opened beside this document comes from this document's own callout, not from a Ship comment (review, 17 Nov).
+const CALLOUT_DECISION: Item = { ...item('j1'), source: { app: 'Leaf', what: 'block', place: 'Navigation notes', author: KATERINA_P, quote: textOf.n6 ?? '' } }
+const ITEM_OF: Record<string, Item> = { n1: item('i4'), n2: item('i1'), n3: TABLE_INSIGHT, n4: CHECKLIST_UPDATE, n5: item('r3'), n6: CALLOUT_DECISION, n7: item('r5') }
 
 /** The Leaf page "Navigation notes", Katerina's. */
 function navigationNotes(): ForeignObject {

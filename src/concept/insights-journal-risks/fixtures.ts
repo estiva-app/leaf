@@ -41,7 +41,7 @@ export const CATEGORIES: Category[] = ['Customer', 'Product', 'Technical', 'Proc
 
 /** An insight's own picture, sent by the tool it came from: PostHog's number, bars or line; a support desk's quote. */
 export type Visual =
-  | { kind: 'number'; range: string; value: string; change: string; up: boolean }
+  | { kind: 'number'; range: string; value: string; change: string; up: boolean; good?: boolean }
   | { kind: 'bars' | 'line'; range: string; points: number[]; labels: [string, string]; unit?: string; marker?: { at: number; label: string } }
   | { kind: 'quote'; quote: string; customer: string; company: string }
 
@@ -130,7 +130,7 @@ const onIssue = (title: string) => ({ kind: 'issue' as const, title })
 export const ITEMS: Item[] = [
   // Insights
   {
-    id: 'i1', type: 'insight', word: 'Insight', status: 'proposed', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onIssue('Ship and Leaf sidebar match Peek'), isNew: true,
+    id: 'i1', type: 'insight', word: 'Insight', category: 'Product', status: 'proposed', at: '13 Nov', day: '2026-11-13', team: TEAM, about: onIssue('Ship and Leaf sidebar match Peek'), isNew: true,
     title: 'Nothing on the left says where an open file belongs',
     summary: 'Katerina opened a file and could not tell which team or topic it was in: nothing on the left was selected.',
     markedBy: MIKY,
@@ -178,7 +178,7 @@ export const ITEMS: Item[] = [
     title: 'A Leaf page opens in 2.5 seconds',
     summary: 'Opening a Leaf page in Miky’s workspace took 38 seconds on 26 Oct; after the speed work, 2.5.',
     markedBy: POSTHOG,
-    visual: { kind: 'number', range: 'Today', value: '2.5 s', change: 'Was 38 s on 26 Oct', up: true },
+    visual: { kind: 'number', range: 'Today', value: '2.5 s', change: 'Was 38 s on 26 Oct', up: false, good: true },
     source: { app: 'PostHog', what: 'chart', place: 'Speed dashboard', author: POSTHOG, quote: 'Time to open a Leaf page, Miky’s workspace: 2.5 s (26 Oct: 38 s).' },
   },
   {
