@@ -30,13 +30,16 @@ export function metaLine(item: Item) {
   return `${sourceLine(item.source)} · ${by} · ${item.at}`
 }
 
-/** Accept (primary) and a secondary ✕ on a Proposed item, signed as you (Miky, 16 Nov, in place of Yes / No). */
-export function AcceptReject({ onAnswer, waitingOn }: { onAnswer?: (accept: boolean) => void; waitingOn?: string }) {
+/**
+ * Accept (primary) and a secondary ✕ on a Proposed item, signed as you (Miky, 16 Nov, in place of Yes / No). A
+ * suggested insight says Add: it is added to the Insights, not accepted (Miky, 17 Nov).
+ */
+export function AcceptReject({ onAnswer, waitingOn, label = 'Accept' }: { onAnswer?: (accept: boolean) => void; waitingOn?: string; label?: string }) {
   if (waitingOn) return <MetaText tone="muted">Waiting for {waitingOn}</MetaText>
   return (
     <div className="flex shrink-0 items-center gap-1">
       <Button size="small" variant="primary" onClick={() => onAnswer?.(true)}>
-        Accept
+        {label}
       </Button>
       <IconButton variant="muted" tooltip="Reject" aria-label="Reject" onClick={() => onAnswer?.(false)}>
         <IconX size={16} stroke={1.5} />
@@ -88,7 +91,7 @@ export function ItemEntry({ item, me = 'miky', onOpen, selected }: { item: Item;
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-2">
             {proposed ? (
-              <AcceptReject waitingOn={waitingOn} onAnswer={(yes) => setStatus(yes ? acceptedStatus(item) : 'rejected')} />
+              <AcceptReject waitingOn={waitingOn} label={item.type === 'insight' ? 'Add' : undefined} onAnswer={(yes) => setStatus(yes ? acceptedStatus(item) : 'rejected')} />
             ) : LIVE.includes(status) ? null : (
               <StatusOf item={{ type: item.type, status }} />
             )}
