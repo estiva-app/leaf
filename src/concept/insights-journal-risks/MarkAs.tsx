@@ -26,6 +26,20 @@ export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: s
   risk: { label: 'Risk', plural: 'Risks', tab: 'Risks & questions', line: 'border-error-default', text: 'text-error-default', icon: (s = 16) => <IconAlertTriangle size={s} stroke={1.5} /> },
 }
 
+/**
+ * Each type's colour as a CSS value, and a Question's own orange (Miky, 18 Nov: red reads as a problem, and an open
+ * question is just a question; a Concern and a Blocker stay red). The kit has no orange token yet: the concept mixes it
+ * from its amber and red, and the build asks Katerina for one.
+ */
+const TYPE_COLOUR: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
+export const QUESTION_COLOUR = 'color-mix(in srgb, var(--warning-default) 45%, var(--error-default))'
+export const wordColour = (word: MarkWord): string => (word === 'Question' ? QUESTION_COLOUR : TYPE_COLOUR[TYPE_OF[word]])
+/**
+ * The style that paints a word in its colour. @estiva-escape: a computed palette (the lint's own allowed case): the
+ * colour is picked per word and the orange has no token class yet; the build gets a kit token and a class.
+ */
+export const wordTone = (word: MarkWord, prop: 'color' | 'borderColor' | 'backgroundColor' = 'color') => ({ [prop]: wordColour(word) })
+
 /** A word's own icon where its type's would blur them (Miky, 16 Nov: Concern, Question and Blocker each need their own). */
 export const wordIcon = (word: MarkWord, size = 16): ReactNode =>
   word === 'Question' ? <IconHelpCircle size={size} stroke={1.5} /> : word === 'Blocker' ? <IconBarrierBlock size={size} stroke={1.5} /> : TYPE_META[TYPE_OF[word]].icon(size)
@@ -74,14 +88,14 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
   if (drawsLine(mark) && mark)
     return (
       <>
-        <MenuItem label={`Open ${mark.word}`} leading={<span className={TYPE_META[mark.type].text}>{TYPE_META[mark.type].icon()}</span>} trailing={<IconExternalLink size={14} stroke={1.5} className="text-text-secondary" />} onClick={onOpen} />
+        <MenuItem label={`Open ${mark.word}`} leading={<span style={wordTone(mark.word)}>{wordIcon(mark.word)}</span>} trailing={<IconExternalLink size={14} stroke={1.5} className="text-text-secondary" />} onClick={onOpen} />
         <MenuItem label="Unmark" leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />} onClick={onUnmark} />
       </>
     )
   return (
     <MenuSub label="Mark as" leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
       {WORDS.map((word) => (
-        <MenuItem key={word} label={word} leading={<span className={TYPE_META[TYPE_OF[word]].text}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
+        <MenuItem key={word} label={word} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
       ))}
     </MenuSub>
   )
@@ -104,7 +118,7 @@ export function MarkedLine({ mark, children }: { mark?: Mark; children: ReactNod
   if (!drawsLine(mark) || !mark) return <>{children}</>
   return (
     <WithTooltip label={`${mark.word} · ${mark.title}`} wrapperClassName="block">
-      <div className={`border-l-2 pl-3 ${TYPE_META[mark.type].line}`} data-marked={mark.type}>
+      <div className="border-l-2 pl-3" style={wordTone(mark.word, "borderColor")} data-marked={mark.type}>
         {children}
       </div>
     </WithTooltip>
@@ -129,7 +143,6 @@ export function ChangedLine({ children }: { children: ReactNode }) {
  * changed since your last visit says "Changed" in grey in the same place. The label opens the item beside the page.
  */
 export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed: string[] = [], place: 'inside' | 'gutter' = 'inside'): string {
-  const colour: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
   // `gutter`: in the page's right margin, where a page has one (Leaf); `inside`: the block's own right 96px (Ship's description, whose column meets the side panel).
   // `inside` keeps a 40px column for the label at the block's right, with the edge on its inner side, so the label sits
   // right of the edge as Leaf's does in its margin (Miky, 18 Nov: Ship had it left of the edge).
@@ -156,7 +169,9 @@ export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed
   return [
     ...Object.entries(marks).map(([id, m]) => {
       const t = (m in TYPE_META ? m : TYPE_OF[m as MarkWord]) as ItemType
-      return icon(id, renderToStaticMarkup(m in TYPE_META ? TYPE_META[t].icon(16) : wordIcon(m as MarkWord, 16)), colour[t])
+      return m in TYPE_META
+        ? icon(id, renderToStaticMarkup(TYPE_META[t].icon(16)), TYPE_COLOUR[t])
+        : icon(id, renderToStaticMarkup(wordIcon(m as MarkWord, 16)), wordColour(m as MarkWord))
     }),
     ...changed.filter((id) => !marks[id]).map((id) => word(id, 'Changed', 'var(--text-secondary)')),
   ].join('\n')
