@@ -23,7 +23,9 @@ void (async () => {
   if (boot.kind === 'shell') {
     root.render(
       <StrictMode>
-        <AuthShell state={boot.state} onContinue={() => void enterFromShell()} />
+        <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col">
+          <AuthShell state={boot.state} onContinue={() => void enterFromShell()} />
+        </ErrorBoundary>
       </StrictMode>,
     )
     return

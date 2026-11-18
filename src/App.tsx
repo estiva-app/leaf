@@ -36,7 +36,7 @@ import { TopicPage } from './pages/TopicPage'
 import { viewerPubkey } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
-import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
+import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname, type Route } from './route'
 import { useTabTitle } from './tabTitle'
 import { TopicsSection } from './topics/TopicsSection'
 import { useSidebarTopics } from './topics/useSidebarTopics'
@@ -57,6 +57,16 @@ export function App() {
 
 /** Where New document holds its fields through a passkey trip (AUT-5). */
 const NEW_DOCUMENT_HOLD = 'new-document'
+
+/**
+ * Which page is open, as the page boundary's key: the kind of page and the
+ * object it shows, never the address (a rename changes the slug, and must not
+ * draw the open document again).
+ */
+function pageKey(route: Route): string {
+  const which = 'd' in route ? route.d : 'naddr' in route ? route.naddr : 'ref' in route ? route.ref : ''
+  return `${route.page}:${which}`
+}
 
 /** The frame: the package's AppShell in its inset manner, the Folders tree in the sidebar, and the page open. */
 function Frame() {
@@ -298,7 +308,7 @@ function Frame() {
             its place, and the sidebar keeps working (PROD-4). Keyed by the
             page and the object it shows, never the address: a rename changes
             the slug, and must not draw the open document again. */}
-        <ErrorBoundary key={`${route.page}:${'d' in route ? route.d : 'naddr' in route ? route.naddr : 'ref' in route ? route.ref : ''}`}>
+        <ErrorBoundary key={pageKey(route)}>
           <CrashOnPurpose />
           {main}
         </ErrorBoundary>
