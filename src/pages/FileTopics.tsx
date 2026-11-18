@@ -70,11 +70,11 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
   useSyncExternalStore(subscribeYours, yoursNow)
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-2 text-body-2" data-file-topics>
-      <span className="text-text-secondary">Topics</span>
+      <span className="text-text-secondary">Initiatives</span>
       {topics === undefined ? (
         <SkeletonBar className="h-3.5 w-24" />
       ) : topics === 'failed' ? (
-        <span className="text-text-muted">Topics could not be read.</span>
+        <span className="text-text-muted">Initiatives could not be read.</span>
       ) : (
         <>
           {topics.length === 0 && <EmptyState scope="section" message="None" />}
@@ -93,7 +93,7 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
             </span>
           ))}
           <Button size="small" variant="muted" leadingIcon={<IconPlus size={14} stroke={1.5} />} onClick={() => setPicking(true)}>
-            Add to topic
+            Add to initiative
           </Button>
           {picking && (
             <AddToTopic
@@ -160,16 +160,16 @@ function AddToTopic({ listed, readChoices, choicesNow, onPick, onClose }: {
     topics
       .filter((topic) => !listed.includes(topic.address) && startsWords(topic.title, words))
       .map((topic) => ({ id: topic.address, label: topic.title, icon: <KindIcon kind="topic" tone="inherit" />, onSelect: () => onPick(topic) }))
-  const groups = typeof choices === 'object' ? [{ label: 'Your topics', rows: rows(choices.yours) }, { label: 'Other topics', rows: rows(choices.others) }].filter((group) => group.rows.length > 0) : []
+  const groups = typeof choices === 'object' ? [{ label: 'Your initiatives', rows: rows(choices.yours) }, { label: 'Other initiatives', rows: rows(choices.others) }].filter((group) => group.rows.length > 0) : []
   return (
-    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Add to topic">
+    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Add to initiative">
       <CommandPaletteSearch
         query={query}
         onQueryChange={setQuery}
-        placeholder="Find a topic…"
+        placeholder="Find an initiative…"
         groups={groups}
-        pending={choices === undefined ? 'Reading topics…' : undefined}
-        empty={choices === 'failed' ? 'Topics could not be read.' : words.length ? `No topic is called “${query.trim()}”.` : 'No topic to add it to.'}
+        pending={choices === undefined ? 'Reading initiatives…' : undefined}
+        empty={choices === 'failed' ? 'Initiatives could not be read.' : words.length ? `No initiative is called “${query.trim()}”.` : 'No initiative to add it to.'}
       />
     </CommandPalette>
   )

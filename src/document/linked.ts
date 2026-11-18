@@ -27,7 +27,8 @@ import { isTopicAddress, topicOpener } from '../topics/topicLinks'
 const KIND_WORDS: Record<number, { kind: LinkedKind; noun: string }> = {
   30850: { kind: 'project', noun: 'Project' },
   30851: { kind: 'issue', noun: 'Issue' },
-  30840: { kind: 'topic', noun: 'Topic' },
+  // An initiative, the apps' word for kind 30840 since 16 November (Katerina, 18 November, A6). `topic` stays the code's name.
+  30840: { kind: 'topic', noun: 'Initiative' },
   30842: { kind: 'page', noun: 'Document' },
 }
 

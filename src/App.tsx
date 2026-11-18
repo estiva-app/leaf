@@ -156,7 +156,7 @@ function Frame() {
   */
   const current = open ? fileKey(open.file) : onPage ? fileKey(onPage) : route.page === 'file' ? route.naddr : undefined
   const under = onPage?.parentRef ? findFileAt(folders, children, onPage.parentRef) : null
-  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore topics' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
+  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore initiatives' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.

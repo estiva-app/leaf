@@ -57,7 +57,7 @@ function show(address = ADDRESS) {
   )
 }
 
-const row = () => screen.findByText('Topics').then((label) => label.closest('[data-file-topics]') as HTMLElement)
+const row = () => screen.findByText('Initiatives').then((label) => label.closest('[data-file-topics]') as HTMLElement)
 const tag = (e: UnsignedEvent, name: string) => e.tags.filter((t) => t[0] === name).map((t) => t[1])
 
 beforeEach(() => {
@@ -88,17 +88,17 @@ describe('a file’s Topics row', () => {
     expect(screen.getByRole('link', { name: /Widgets/ }).getAttribute('href')).toBe('https://peek.estiva.app/topic/widgets')
   })
 
-  it('says None when no topic lists the file, and still offers Add to topic', async () => {
+  it('says None when no topic lists the file, and still offers Add to initiative', async () => {
     reads.topics = []
     show()
     expect(await screen.findByText('None')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Add to topic' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add to initiative' })).toBeTruthy()
   })
 
   it('says the topics could not be read when the read fails, rather than None', async () => {
     reads.topics = new Error('relay down')
     show()
-    expect(await screen.findByText('Topics could not be read.')).toBeTruthy()
+    expect(await screen.findByText('Initiatives could not be read.')).toBeTruthy()
     expect(screen.queryByText('None')).toBeNull()
   })
 
@@ -113,15 +113,15 @@ describe('a file’s Topics row', () => {
   it('draws nothing on a topic’s own page: a topic lists no topic', async () => {
     const { container } = show(`30840:${MIKY}:widgets`)
     await waitFor(() => expect(container.querySelector('[data-file-topics]')).toBeNull())
-    expect(screen.queryByText('Topics')).toBeNull()
+    expect(screen.queryByText('Initiatives')).toBeNull()
   })
 })
 
-describe('Add to topic and Remove', () => {
+describe('Add to initiative and Remove', () => {
   it('adds the file to a picked topic: a lists entry on that topic, in its Folder, signed by the reader', async () => {
     const user = userEvent.setup()
     show()
-    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    await user.click(await screen.findByRole('button', { name: 'Add to initiative' }))
     const palette = await screen.findByRole('dialog')
     const pick = await within(palette).findByText('Design review')
     // What the relay answers once it holds the add.
@@ -143,35 +143,35 @@ describe('Add to topic and Remove', () => {
   it('does not offer a topic that already lists the file', async () => {
     const user = userEvent.setup()
     show()
-    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    await user.click(await screen.findByRole('button', { name: 'Add to initiative' }))
     const palette = await screen.findByRole('dialog')
     await within(palette).findByText('Design review')
     expect(within(palette).queryByText('Widgets')).toBeNull()
   })
 
-  it('Add to topic draws the choices this tab holds at once, never “Reading topics…”, and keeps them when reading again fails', async () => {
+  it('Add to initiative draws the choices this tab holds at once, never “Reading initiatives…”, and keeps them when reading again fails', async () => {
     const user = userEvent.setup()
     reads.held = { yours: [DESIGN], others: [] }
     reads.choices = new Error('relay down')
     show()
-    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    await user.click(await screen.findByRole('button', { name: 'Add to initiative' }))
     const palette = await screen.findByRole('dialog')
     expect(within(palette).getByText('Design review')).toBeTruthy()
-    expect(within(palette).queryByText('Reading topics…')).toBeNull()
-    await waitFor(() => expect(within(palette).queryByText('Topics could not be read.')).toBeNull())
+    expect(within(palette).queryByText('Reading initiatives…')).toBeNull()
+    await waitFor(() => expect(within(palette).queryByText('Initiatives could not be read.')).toBeNull())
     expect(within(palette).getByText('Design review')).toBeTruthy()
   })
 
   it('finds a topic by the start of any word of its title', async () => {
     const user = userEvent.setup()
     show()
-    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    await user.click(await screen.findByRole('button', { name: 'Add to initiative' }))
     const palette = await screen.findByRole('dialog')
     await user.type(within(palette).getByRole('combobox'), 'rev')
     expect(await within(palette).findByText('Design review')).toBeTruthy()
     await user.clear(within(palette).getByRole('combobox'))
     await user.type(within(palette).getByRole('combobox'), 'eview')
-    expect(await within(palette).findByText('No topic is called “eview”.')).toBeTruthy()
+    expect(await within(palette).findByText('No initiative is called “eview”.')).toBeTruthy()
   })
 
   it('removes the file from a topic: a lists entry set to false, and the chip goes', async () => {
@@ -203,7 +203,7 @@ describe('Add to topic and Remove', () => {
     answers = [{ ok: false, reason: 'restricted: not a channel member' }]
     const user = userEvent.setup()
     show()
-    await user.click(await screen.findByRole('button', { name: 'Add to topic' }))
+    await user.click(await screen.findByRole('button', { name: 'Add to initiative' }))
     const pick = await within(await screen.findByRole('dialog')).findByText('Design review')
     reads.topics = 'pending'
     await user.click(pick)

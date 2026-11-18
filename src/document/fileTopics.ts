@@ -43,7 +43,7 @@ export interface TopicChoices {
 function asDrawn(address: string, folder: string, object: ForeignObject): TopicOfFile {
   // https only: the link comes from a manifest anyone may publish until WOR-2.
   const openUrl = object.openUrl && /^https:\/\//i.test(object.openUrl) ? object.openUrl : undefined
-  return { address, folder, title: object.slots.title?.value || 'Untitled topic', openUrl, archived: isArchived(object) }
+  return { address, folder, title: object.slots.title?.value || 'Untitled initiative', openUrl, archived: isArchived(object) }
 }
 
 const byTitle = (a: TopicOfFile, b: TopicOfFile) => a.title.localeCompare(b.title)
@@ -124,7 +124,7 @@ async function decryptOnce(ciphertext: string): Promise<string | undefined> {
  */
 export async function loadYourTopics(): Promise<YourTopicsRead> {
   const me = viewerPubkey()
-  if (!me) throw new Error('Sign in to read your topics.')
+  if (!me) throw new Error('Sign in to read your initiatives.')
   const [listRead, times] = await Promise.all([listReadOffered(), timesRead()])
   return readYourTopics(relayQuery, me, { cache: manifests, decrypt: decryptOnce, spaces: true, ...(listRead ? { listRead } : {}), ...times })
 }
@@ -146,7 +146,7 @@ export function resetTopicChoicesForTests(): void {
  */
 export async function loadTopics(): Promise<TopicsRead> {
   const me = viewerPubkey()
-  if (!me) throw new Error('Sign in to read your topics.')
+  if (!me) throw new Error('Sign in to read your initiatives.')
   return readTopics(queryAll, me, { cache: manifests, parentsListRead: await listReadOffered() })
 }
 
@@ -169,7 +169,7 @@ export function topicChoicesNow(): TopicChoices | undefined {
  * each open, so a topic made or archived since shows; the palette draws {@link topicChoicesNow} until this lands.
  */
 export async function readTopicChoices(): Promise<TopicChoices> {
-  if (!viewerPubkey()) throw new Error('Sign in to add it to a topic.')
+  if (!viewerPubkey()) throw new Error('Sign in to add it to an initiative.')
   // Only the Folders' ids are used: their record channels are not placed (interop's listFolders, 149 s for the agent).
   let foldersError: unknown
   const [, folders] = await Promise.all([
@@ -182,13 +182,13 @@ export async function readTopicChoices(): Promise<TopicChoices> {
   const { value, error } = heldTopics.snapshot()
   if (folders) addableIn = new Set(folders.map((folder) => folder.id))
   if (value && addableIn) return choicesOf(value, addableIn)
-  throw error ?? foldersError ?? new Error('Topics could not be read.')
+  throw error ?? foldersError ?? new Error('Initiatives could not be read.')
 }
 
 /** Put a file on a topic's list, or take it off: one `lists:<d>` entry on the topic, signed by the reader. */
 export async function setListedInTopic(topic: Pick<TopicOfFile, 'address' | 'folder'>, file: string, listed: boolean): Promise<PublishResult> {
   const pubkey = viewerPubkey()
-  if (!pubkey) return { ok: false, reason: 'Sign in to change its topics.' }
+  if (!pubkey) return { ok: false, reason: 'Sign in to change its initiatives.' }
   const plan = listed ? planListInTopic : planRemoveFromTopic
   const [entry] = plan(pubkey, Date.now(), { topic: { address: topic.address, folder: topic.folder }, file })
   const result = await publish(entry)

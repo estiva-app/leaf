@@ -12,13 +12,13 @@ describe('Leaf', () => {
     expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy()
   })
 
-  it('opens Explore topics at /topics, named so in the browser tab (TOPI-4)', async () => {
+  it('opens Explore initiatives at /topics, named so in the browser tab (TOPI-4)', async () => {
     window.history.pushState(null, '', '/topics')
     try {
       render(<App />)
-      expect(screen.getAllByText('Explore topics').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Explore initiatives').length).toBeGreaterThan(0)
       expect(screen.queryByText('Nothing here yet.')).toBeNull()
-      await waitFor(() => expect(document.title).toBe('Explore topics – Leaf'))
+      await waitFor(() => expect(document.title).toBe('Explore initiatives – Leaf'))
     } finally {
       window.history.pushState(null, '', '/')
     }
