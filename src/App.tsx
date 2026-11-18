@@ -2,6 +2,7 @@ import {
   AppProvider,
   AppShell,
   EmptyState,
+  ErrorBoundary,
   IdentityMenu,
   NavItem,
   NavTree,
@@ -11,6 +12,7 @@ import {
   useToast,
   type Identity,
 } from '@estiva-app/ui'
+import { CrashOnPurpose, ScreenSteps } from '@/lib/errorReports'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
@@ -291,7 +293,14 @@ function Frame() {
           </Sidebar>
         }
       >
-        {main}
+        <ScreenSteps />
+        {/* A page that crashes shows "Something went wrong … try again" in
+            its place, and the sidebar keeps working (PROD-4). Keyed by the
+            kind of page, so opening another kind draws it afresh. */}
+        <ErrorBoundary key={route.page} label="page">
+          <CrashOnPurpose />
+          {main}
+        </ErrorBoundary>
       </AppShell>
       {(making || handoffFolder) && (
         <NewDocumentDialog
