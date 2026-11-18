@@ -862,3 +862,13 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     ])
   })
 })
+
+describe('the team a page is in, in its bar (D7)', () => {
+  it('names the team whose list holds the page once, as the chip with the team icon after its name', async () => {
+    const folders = [{ id: FOLDER, name: 'Launch team', hasState: true, addresses: [ADDRESS] }] as unknown as FolderSummary[]
+    render(<ToastProvider><FilePage file={doc()} loading={false} folders={folders} /></ToastProvider>)
+    const named = await screen.findAllByText('Launch team')
+    expect(named).toHaveLength(1)
+    expect(named[0].closest('a, span, div')?.parentElement?.querySelector('svg.tabler-icon-users')).toBeTruthy()
+  })
+})

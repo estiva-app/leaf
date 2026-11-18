@@ -13,6 +13,7 @@ import { lookOf, useTopicPage } from '../topics/useTopicPage'
 import { CommentCard } from '../comments/CommentCard'
 import { CardActsProvider } from '../document/linked'
 import { ReferencesProvider } from '../document/references'
+import { TeamChip } from './TeamChip'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -55,11 +56,11 @@ export function TopicPage({
   }, [address, title, peekUrl, sendsOn])
   useTabTitle(page && !sendsOn ? page.title : undefined)
 
-  if (state === 'unavailable') return <NoAccessNotice what="topic" />
+  if (state === 'unavailable') return <NoAccessNotice what="initiative" />
   // The topic's conversation is in the column beside the page, as on Ship's topic page, in place of the link to Peek;
   // the header's button shows or hides it, as on a document.
   const toggle = (
-    <Toolbar aria-label="Topic actions" surface={false}>
+    <Toolbar aria-label="Initiative actions" surface={false}>
       <ToolbarButton
         // Ship's words on a topic's page: a topic has a conversation, not comments.
         tooltip={comments.open ? 'Hide conversation' : 'Show conversation'}
@@ -98,20 +99,29 @@ export function TopicPage({
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
         <Panel
-          title={page?.title ?? 'Topic'}
-          header={<PageHeader title={page?.title ?? ''} leading={<KindIcon kind="topic" />} actions={page && !sendsOn ? toggle : undefined} />}
+          title={page?.title ?? 'Initiative'}
+          header={
+            <PageHeader
+              title={page?.title ?? ''}
+              leading={<KindIcon kind="topic" />}
+              // Its team, the one chip after its name, as on Peek's initiative page (Katerina, 18 November, D4).
+              after={team && !sendsOn ? <TeamChip name={team} /> : undefined}
+              actions={page && !sendsOn ? toggle : undefined}
+            />
+          }
           bodyClassName="px-12 pt-10 pb-24"
         >
           <div data-topic-page className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {state === 'failed' ? (
-              <EmptyState scope="page" message="This topic didn’t load." action={{ label: 'Try again', onClick: retry }} />
+              <EmptyState scope="page" message="This initiative didn’t load." action={{ label: 'Try again', onClick: retry }} />
             ) : !page || sendsOn ? (
               <SkeletonList rows={6} />
             ) : (
               <>
                 <div className="flex flex-col gap-1">
                   <h1 className="text-h1 text-text-primary">{page.title}</h1>
-                  {(team || page.archived) && <span className="text-caption text-text-muted">{[team, page.archived ? 'Archived' : undefined].filter(Boolean).join(' · ')}</span>}
+                  {/* The team is the bar's chip now (D4), said once; an archived initiative still says so here. */}
+                  {page.archived && <span className="text-caption text-text-muted">Archived</span>}
                 </div>
                 {page.summary && <p className="text-body-2 text-text-secondary">{page.summary}</p>}
                 {files === 'loading' || files === undefined ? (

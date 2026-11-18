@@ -28,6 +28,7 @@ import { FileTopicsOf } from './FileTopics'
 import { archivedNoticeOf, deletedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
+import { TeamChip } from './TeamChip'
 import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
 import { useDirectory } from '../comments/people'
 import { exactly } from '../home/recent'
@@ -132,7 +133,10 @@ function DocumentView({
   // A deleted project (SPEC §6.5) is read-only too: its link still opens, on the kit's notice of who deleted it (ALO-6).
   const locked = isArchived(file) || !!file.deleted
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
-  const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
+  const listedIn = listedInOf(file, folders)
+  const setArchived = useSetArchived(file, listedIn, onChanged)
+  // The team whose list holds it: the one chip after its name, as Peek draws a Ship or Leaf file (Katerina, 18 November, D7).
+  const team = listedIn ? folders?.find((folder) => folder.id === listedIn)?.name : undefined
   // Every archived file shows the kit's notice, Peek's and Ship's, in the line's place (a3257366), once the file above
   // it is read. Another app's file too, with no Unarchive and no Open (Katerina, 4 November): the same card in every
   // app, and Leaf cannot unarchive another app's file. A Leaf page's offers Unarchive, or opens the page above it is
@@ -282,13 +286,21 @@ function DocumentView({
     return ok
   }
   // The page's bar is the kit's PageHeader (ONE-5, step 5), in the panel's own bar's place, so the bar and the
-  // scrolling text are one panel as before: the name, cut to one line; another app's file with "Open" right after it;
+  // scrolling text are one panel as before: the name, cut to one line; its team's chip, then, for another app's file, "Open";
   // then its last edit, who is in it, and the page's own buttons, each where the kit puts it (Katerina, 3 November).
   // A Leaf page's ⋯ menu is last (LED-4).
   const header = (
     <PageHeader
       title={title}
-      after={opener && file.appName ? <OpenIn opener={opener} appName={file.appName} /> : undefined}
+      after={
+        team || (opener && file.appName) ? (
+          <>
+            {/* Its team, the one chip, then Open, in Peek's order (Katerina, 17 November). */}
+            {team && <TeamChip name={team} />}
+            {opener && file.appName && <OpenIn opener={opener} appName={file.appName} />}
+          </>
+        ) : undefined
+      }
       time={time}
       members={<Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />}
       actions={

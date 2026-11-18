@@ -248,8 +248,8 @@ describe("a topic's page in Leaf", () => {
     const d = topic('Made since', [])
     down = true
     show(d)
-    expect(await screen.findByText('This topic didn’t load.')).toBeTruthy()
-    expect(screen.queryByText("You can't open this topic")).toBeNull()
+    expect(await screen.findByText('This initiative didn’t load.')).toBeTruthy()
+    expect(screen.queryByText("You can't open this initiative")).toBeNull()
     down = false
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('heading', { name: 'Made since' })).toBeTruthy()
@@ -273,6 +273,19 @@ describe("a topic's page in Leaf", () => {
   it("says it can't be opened when no topic the reader can read has that id", async () => {
     topic('Widgets', [])
     show(uuid(999))
-    expect(await screen.findByText("You can't open this topic")).toBeTruthy()
+    expect(await screen.findByText("You can't open this initiative")).toBeTruthy()
+  })
+})
+
+describe("an initiative's team, in its page's bar (D4)", () => {
+  it('names its team once, as the chip with the team icon after its name, not as a line under its title', async () => {
+    const d = topic('Widgets', [])
+    show(d)
+    expect(await screen.findByRole('heading', { name: 'Widgets' })).toBeTruthy()
+    const named = await screen.findAllByText('Estiva HQ')
+    expect(named).toHaveLength(1)
+    // Not in the page's body, where the grey line under the title was.
+    expect(named[0].closest('[data-topic-page]')).toBeNull()
+    expect(named[0].closest('a, span, div')?.parentElement?.querySelector('svg.tabler-icon-users')).toBeTruthy()
   })
 })
