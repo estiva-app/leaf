@@ -10,6 +10,7 @@ import {
   resolveForeignObject,
   resolveForeignObjects,
   resolveManifest,
+  stageTagFor,
   textOf,
   writeChange,
   type ForeignObject,
@@ -162,6 +163,9 @@ export async function profileOf(pubkey: string): Promise<{ displayName?: string;
   return lookup[pubkey] ?? null
 }
 
+/** What a chosen option means, as interop's `stageTagFor` gives it: `["stage", field, stage]`, one of the four. */
+type StageTag = NonNullable<ReturnType<typeof stageTagFor>>
+
 /**
  * A change to one field of a document — `kind:1851`, SPEC §6.2, the same event
  * Ship's `buildChange` makes: `a`, `field`, `value`, `h`, then the body's
@@ -182,6 +186,8 @@ export function buildChange(
     contentFormat?: string
     /** The change this one follows for its field, or the record's id for its first (SPEC §6.2); only where the relay keeps the file in order. */
     prev?: string
+    /** What the chosen option means, `["stage", field, stage]`, written last (SPEC §6.2, §7.3): interop's `stageTagFor`. */
+    stage?: StageTag
   },
 ): UnsignedEvent {
   return {
@@ -200,6 +206,7 @@ export function buildChange(
       ['ts', String(Math.floor(createdAtMs))],
       ...(args.prev ? [['prev', args.prev]] : []),
       ...attachmentsInDocument(args.value, args.contentFormat).map(imetaTag),
+      ...(args.stage ? [args.stage] : []),
     ],
     content: '',
   }
@@ -256,6 +263,7 @@ async function writeInOrder(
   prev: string,
   contentFormat?: string,
   base?: { value: string; format?: string },
+  stage?: StageTag,
 ): Promise<WriteChangeResult> {
   const [, owner, ...d] = file.address.split(':')
   const fields = await projectFields()
@@ -266,7 +274,7 @@ async function writeInOrder(
       ...(contentFormat ? { format: contentFormat } : {}),
       prev,
       ...(base ? { base } : {}),
-      build: (input) => buildChange(pubkey, input.createdAtMs, { target: file.address, field, value: input.value, folder: file.folder, contentFormat: input.format, prev: input.prev }),
+      build: (input) => buildChange(pubkey, input.createdAtMs, { target: file.address, field, value: input.value, folder: file.folder, contentFormat: input.format, prev: input.prev, stage }),
       sign: changeWriter.sign,
       publish: changeWriter.publish,
       query,
@@ -430,19 +438,22 @@ export async function saveCardChoice(
     (action.control === 'select' || action.control === 'pubkey')
   if (!shared || file.archived || !file.address || !file.folder) return { ok: false, reason: 'This can’t be changed from here.' }
   if (action.control === 'select' && !action.options?.some((option) => option.value === value)) return { ok: false, reason: 'This can’t be changed from here.' }
+  // What the chosen status means, as its owner's app declares it, so every app counts it the same (SPEC §7.3, EAC-5).
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-companys-statuses-are-its-own-layer-of-a-types-properties.md
+  const stage = action.control === 'select' ? stageTagFor(action.field!, value, action.options) : undefined
   // A project read by its fields: after the change the choice's field follows; a crossing one is set again on top (ALO-6).
   if (await byFields(file.address)) {
     const prev = prevFor(file, action.field!)
-    const result = prev ? await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev) : { ok: false as const, refused: 'no change to follow' }
+    const result = prev ? await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev, undefined, undefined, stage) : { ok: false as const, refused: 'no change to follow' }
     if (result.ok) return { ok: true }
     console.warn('[relay] change refused', result)
     return { ok: false, reason: 'Could not change it.' }
   }
-  const result = await publish(buildChange(pubkey, Date.now(), { target: file.address, field: action.field!, value, folder: file.folder }))
+  const result = await publish(buildChange(pubkey, Date.now(), { target: file.address, field: action.field!, value, folder: file.folder, stage }))
   if (result.ok) return { ok: true }
   // Refused because the relay switched since this tab read it: once more, in order (ALO-8).
   const prev = await prevAfterSwitch(file.address, action.field!, result)
-  if (prev && (await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev)).ok) return { ok: true }
+  if (prev && (await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev, undefined, undefined, stage)).ok) return { ok: true }
   console.warn('[relay] change refused', result)
   return { ok: false, reason: 'Could not change it.' }
 }

@@ -141,14 +141,15 @@ describe('a tab open across the switch saves a project by itself (ALO-8)', () =>
     expect(tagOf(relay.sent[0], 'value')).toContain('TWO')
   })
 
-  it('writes a card choice refused at the switch again after its current change', async () => {
+  it('writes a card choice refused at the switch again after its current change, with what the status means', async () => {
     const status = theirs('status', 'todo')
     relay.switched = true
-    const card = { ...FILE, archived: undefined, parentField: undefined, actions: [{ id: 'set-status', field: 'status', control: 'select', options: [{ value: 'todo' }, { value: 'done' }] }] }
+    const card = { ...FILE, archived: undefined, parentField: undefined, actions: [{ id: 'set-status', field: 'status', control: 'select', options: [{ value: 'todo', stage: 'open' }, { value: 'done', stage: 'done' }] }] }
     expect(await save.saveCardChoice(card as never, 'set-status', 'done')).toEqual({ ok: true })
     expect(relay.sent).toHaveLength(2)
     expect(tagOf(relay.sent[1], 'field')).toBe('status')
     expect(tagOf(relay.sent[1], 'prev')).toBe(status.id)
+    expect(relay.sent[1].tags.at(-1)).toEqual(['stage', 'status', 'done'])
     expect(tagOf(newest(ADDRESS, 'status')!, 'value')).toBe('done')
   })
 
