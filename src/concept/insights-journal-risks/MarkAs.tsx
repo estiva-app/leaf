@@ -16,6 +16,9 @@ export type ItemType = 'insight' | 'journal' | 'risk'
 export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question' | 'Blocker'
 
 export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk' }
+/** A marked block's label in a document (Miky, 18 Nov): the word's emoji, not the word. */
+export const WORD_EMOJI: Record<MarkWord, string> = { Insight: '💡', Decision: '⚖️', Update: '📝', Concern: '⚠️', Question: '❓', Blocker: '🚧' }
+const TYPE_EMOJI: Record<ItemType, string> = { insight: '💡', journal: '📝', risk: '⚠️' }
 export const WORDS: MarkWord[] = ['Insight', 'Decision', 'Update', 'Concern', 'Question', 'Blocker']
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
@@ -129,21 +132,25 @@ export function ChangedLine({ children }: { children: ReactNode }) {
 export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed: string[] = [], place: 'inside' | 'gutter' = 'inside'): string {
   const colour: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
   // `gutter`: in the page's right margin, where a page has one (Leaf); `inside`: the block's own right 96px (Ship's description, whose column meets the side panel).
-  const where = place === 'gutter' ? 'position:relative}' : 'position:relative;padding-right:96px}'
-  const at = place === 'gutter' ? 'left:calc(100% + 12px)' : 'right:0'
-  // What is marked (Miky, 16 Nov: "not clear what is marked"): a faint edge down the block's right side, under the
+  // `inside` keeps a 40px column for the label at the block's right, with the edge on its inner side, so the label sits
+  // right of the edge as Leaf's does in its margin (Miky, 18 Nov: Ship had it left of the edge).
+  const where = place === 'gutter' ? 'position:relative}' : 'position:relative;padding-right:40px}'
+  const at = place === 'gutter' ? 'left:calc(100% + 12px)' : 'right:4px'
+  // What is marked (Miky, 16 Nov: "not clear what is marked"): a faint edge down the block's right side, beside the
   // label, fading as it goes down, and a wash that fades in from that edge — the block's whole height, never its left
   // side, where the handle is.
-  const edge = place === 'gutter' ? 'right:-4px' : 'right:-8px'
+  const edge = place === 'gutter' ? 'right:-4px' : 'right:32px'
+  // The label is the word's emoji (Miky, 18 Nov: "more subtle and enough; people learn the meaning quickly"); hover on
+  // the block's label opens the item, which names it. "Changed" stays a grey word.
   const label = (id: string, words: string, c: string, wash: boolean) =>
     `[data-block-id="${id}"]{${where}` +
     `[data-block-id="${id}"]{background:linear-gradient(to left, color-mix(in srgb, ${c} ${wash ? 7 : 4}%, transparent), transparent 45%)}` +
     `[data-block-id="${id}"]::before{content:"";position:absolute;top:0;bottom:0;${edge};width:2px;border-radius:1px;pointer-events:none;background:linear-gradient(to bottom, color-mix(in srgb, ${c} ${wash ? 70 : 45}%, transparent), transparent)}` +
-    `[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:2px;${at};font-size:12px;line-height:18px;font-weight:500;padding:0 6px;border-radius:4px;white-space:nowrap;color:${c};${wash ? `background:color-mix(in srgb, ${c} 14%, transparent);cursor:pointer;` : ''}}`
+    `[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:1px;${at};font-size:${wash ? 15 : 12}px;line-height:20px;font-weight:500;white-space:nowrap;color:${c};${wash ? 'cursor:pointer;' : ''}}`
   return [
     ...Object.entries(marks).map(([id, m]) => {
       const t = (m in TYPE_META ? m : TYPE_OF[m as MarkWord]) as ItemType
-      return label(id, m in TYPE_META ? TYPE_META[t].label : m, colour[t], true)
+      return label(id, m in TYPE_META ? TYPE_EMOJI[t] : WORD_EMOJI[m as MarkWord], colour[t], true)
     }),
     ...changed.filter((id) => !marks[id]).map((id) => label(id, 'Changed', 'var(--text-secondary)', false)),
   ].join('\n')
