@@ -193,7 +193,7 @@ function Frame({ groups, selected, children }: { groups: NavTreeGroup[]; selecte
   )
 }
 
-/** The issue opened from the tree: the tree lists pages, projects and issues, and no topics. */
+/** The issue opened from the tree: the tree lists pages, projects and issues, and no initiatives. */
 export const InTheTree: Story = {
   args: { file: shipIssue() },
   render: (args) => (
