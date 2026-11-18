@@ -296,8 +296,9 @@ function Frame() {
         <ScreenSteps />
         {/* A page that crashes shows "Something went wrong … try again" in
             its place, and the sidebar keeps working (PROD-4). Keyed by the
-            kind of page, so opening another kind draws it afresh. */}
-        <ErrorBoundary key={route.page} label="page">
+            page and the object it shows, never the address: a rename changes
+            the slug, and must not draw the open document again. */}
+        <ErrorBoundary key={`${route.page}:${'d' in route ? route.d : 'naddr' in route ? route.naddr : 'ref' in route ? route.ref : ''}`}>
           <CrashOnPurpose />
           {main}
         </ErrorBoundary>
