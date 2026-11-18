@@ -2,14 +2,14 @@ import type { FileLook, FolderSummary, ForeignObject } from '@estiva-app/interop
 import { archivedLine } from '@estiva-app/conversation'
 import { Button, Card, Divider, EmptyState, KindIcon, NoAccessNotice, PageHeader, Panel, SectionLabel, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { IconArchive, IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, useState, type ReactNode, type RefObject } from 'react'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import { useSideColumn } from './sideColumn'
 import { rowOf } from '../folders/tree'
 import { replace } from '../route'
 import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
-import { lookOf, useTopicPage } from '../topics/useTopicPage'
+import { lookOf, useTopicPage, type TopicPageState } from '../topics/useTopicPage'
 import { CommentCard } from '../comments/CommentCard'
 import { CardActsProvider } from '../document/linked'
 import { ReferencesProvider } from '../document/references'
@@ -38,7 +38,6 @@ export function TopicPage({
   treeRead: boolean
 }) {
   const { state, retry } = useTopicPage(d, inTree, treeRead)
-  const [showArchived, setShowArchived] = useState(false)
   // Shown or hidden as a document's comments are, remembered on this browser across both (LED-3).
   const { comments } = useSideColumn()
   const page = typeof state === 'object' ? state : null
@@ -56,6 +55,51 @@ export function TopicPage({
   }, [address, title, peekUrl, sendsOn])
   useTabTitle(page && !sendsOn ? page.title : undefined)
 
+  const team = page ? folders?.find((folder) => folder.id === page.folder)?.name : undefined
+  // Drawn once the topic is known and stays here: a space goes on to Peek, and a topic that did not load has none.
+  const conversation = page && !sendsOn && (
+    <CommentsColumn
+      key={page.address}
+      doc={{ address: page.address, folder: page.folder }}
+      addressable={false}
+      editor={null}
+      docBody={noBody}
+      draft={null}
+      onDraft={noDraft}
+      // An archived topic's conversation only shows, with the line every app says in the box's place (Ship's too).
+      closed={page.archived ? (archivedLine({}, undefined, { in: 'Peek', to: 'reply' }) ?? '') : undefined}
+      hidden={!comments.open}
+      topic
+    />
+  )
+  return <TopicPageView state={state} sendsOn={sendsOn} team={team} comments={comments} conversation={conversation} onRetry={retry} />
+}
+
+/**
+ * The initiative's page as it draws, handed what it shows: the page above keeps the reads, the address bar and the tab's
+ * title. `conversation` is the column beside it, shown or hidden by the header's button.
+ */
+export function TopicPageView({
+  state,
+  sendsOn = false,
+  team,
+  comments,
+  conversation,
+  onRetry,
+}: {
+  state: TopicPageState
+  /** A space on a host beside Peek's: the page goes on to Peek, a skeleton until it does. */
+  sendsOn?: boolean
+  /** Its team's name, as the tree read the teams. */
+  team?: string
+  /** The column beside the page, open or not, remembered with a document's (LED-3). */
+  comments: { open: boolean; onOpenChange: (open: boolean) => void }
+  /** The initiative's conversation, drawn in that column. */
+  conversation?: ReactNode
+  onRetry: () => void
+}) {
+  const [showArchived, setShowArchived] = useState(false)
+  const page = typeof state === 'object' ? state : null
   if (state === 'unavailable') return <NoAccessNotice what="initiative" />
   // The topic's conversation is in the column beside the page, as on Ship's topic page, in place of the link to Peek;
   // the header's button shows or hides it, as on a document.
@@ -71,27 +115,13 @@ export function TopicPage({
       </ToolbarButton>
     </Toolbar>
   )
-  const team = page ? folders?.find((folder) => folder.id === page.folder)?.name : undefined
   const files = page?.files
-  // Drawn once the topic is known and stays here: a space goes on to Peek, and a topic that did not load has none.
-  const conversation = page && !sendsOn && (
+  const column = conversation && (
     <div className={comments.open ? 'contents' : 'hidden'} hidden={!comments.open}>
       <Divider orientation="vertical" />
       {/* The kit's one column, 384px, the page's full height, as a document's and as Ship's topic page places it. */}
       <div className="flex flex-none flex-col" data-comments-column>
-        <CommentsColumn
-          key={page.address}
-          doc={{ address: page.address, folder: page.folder }}
-          addressable={false}
-          editor={null}
-          docBody={noBody}
-          draft={null}
-          onDraft={noDraft}
-          // An archived topic's conversation only shows, with the line every app says in the box's place (Ship's too).
-          closed={page.archived ? (archivedLine({}, undefined, { in: 'Peek', to: 'reply' }) ?? '') : undefined}
-          hidden={!comments.open}
-          topic
-        />
+        {conversation}
       </div>
     </div>
   )
@@ -113,7 +143,7 @@ export function TopicPage({
         >
           <div data-topic-page className="mx-auto flex w-full max-w-3xl flex-col gap-4">
             {state === 'failed' ? (
-              <EmptyState scope="page" message="This initiative didn’t load." action={{ label: 'Try again', onClick: retry }} />
+              <EmptyState scope="page" message="This initiative didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
             ) : !page || sendsOn ? (
               <SkeletonList rows={6} />
             ) : (
@@ -127,7 +157,7 @@ export function TopicPage({
                 {files === 'loading' || files === undefined ? (
                   <SkeletonList rows={3} />
                 ) : files === 'failed' ? (
-                  <EmptyState scope="section" message="What it lists didn’t load." action={{ label: 'Try again', onClick: retry }} />
+                  <EmptyState scope="section" message="What it lists didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
                 ) : (
                   <>
                     {files.live.length > 0 ? (
@@ -154,7 +184,7 @@ export function TopicPage({
           </div>
         </Panel>
       </div>
-      {conversation}
+      {column}
     </div>
   )
 }
