@@ -121,7 +121,7 @@ export function DocumentMenu({
       result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the team’s top.`,
       result.stillListed && 'It is still listed in a team; reload and try again.',
     ].filter(Boolean)
-    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success', ...(after.length ? { failure: 'not-moved' } : {}) })
+    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success', ...(after.length ? { failure: result.unmoved > 0 ? 'not-moved' : 'not-deleted' } : {}) })
     return true
   }
 
