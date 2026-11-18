@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, mocked, userEvent, within } from 'storybook/test'
-import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
+import { BODY_SLOT, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { descriptionTextToBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { useThreads } from '../comments/useThreads'
@@ -72,6 +72,14 @@ type Story = StoryObj<typeof meta>
 export const LeafPage: Story = {
   play: async ({ canvasElement }) => {
     await expect(await within(canvasElement).findByText('Edited 2 hours ago by Katerina')).toBeVisible()
+  },
+}
+
+/** In its team: the team whose list holds it, the one chip right after its name, as Peek draws a Ship or Leaf file (D7). */
+export const InItsTeam: Story = {
+  args: { folders: [{ id: FOLDER, name: 'Launch team', hasState: true, addresses: [`30842:${MIKY}:launch-plan`] }] as unknown as FolderSummary[] },
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText('Launch team')).toBeVisible()
   },
 }
 
