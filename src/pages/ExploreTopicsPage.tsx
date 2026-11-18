@@ -212,9 +212,10 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
     if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error' })
     else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error' })
     else {
-      // Peek's words for a Join on its Explore (Katerina, 18 November, E1), no Undo, as Peek's has none there. The level is
-      // the one Leaf's Join writes, All, which Peek's bell calls Everything (Peek's own Join lands at Important).
-      showToast({ label: `You joined ${title}. Notifications: Everything.`, type: 'success' })
+      // Peek's words for a Join on its Explore (Katerina, 18 November, E1), no Undo, as Peek's has none there. It lands at
+      // Important, as Peek's (her "let's make it to important"); a level you chose before stays, and is said as Peek's bell
+      // says All: Everything.
+      showToast({ label: `You joined ${title}. Notifications: ${result.level === 'all' ? 'Everything' : 'Important'}.`, type: 'success' })
       setJoined((now) => new Map(now).set(address, topic.following.in))
     }
     // Read the topics again, so the joined one moves to Your topics now (Miky, 10 Nov).

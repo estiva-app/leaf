@@ -96,17 +96,19 @@ describe('Explore initiatives', () => {
 })
 
 describe('Join on Explore initiatives', () => {
-  it('signs your follow of the topic at All and sends it, then shows the topic under Your initiatives', async () => {
+  it('signs your own member change on the initiative, as Peek’s Join does (no level chosen, so Important), then shows it under Your initiatives', async () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
     fireEvent.click(tab(/Other initiatives/))
     fireEvent.click(within(rowOf('Zebra launch')).getByRole('button', { name: 'Join' }))
 
     await waitFor(() => expect(relay.sent).toHaveLength(1))
-    const [follow] = relay.sent
-    expect(follow.kind).toBe(1851)
-    expect(follow.pubkey).toBe(ME)
-    expect(follow.tags).toEqual(expect.arrayContaining([['a', topics.zebra], ['h', HQ], ['field', `follow:${ME}`], ['value', 'all']]))
+    const [join] = relay.sent
+    expect(join.kind).toBe(1851)
+    expect(join.pubkey).toBe(ME)
+    expect(join.tags).toEqual(expect.arrayContaining([['a', topics.zebra], ['h', HQ], ['field', `member:${ME}`], ['value', 'true']]))
+    // No level is chosen for you: nothing writes follow:<you>, so Important is what lights.
+    expect(join.tags.some(([name, value]) => name === 'field' && value.startsWith('follow:'))).toBe(false)
     // The topics are read again at once: it leaves Other initiatives for Your initiatives, with no Join.
     await waitFor(() => expect(rows()).toEqual(['Apple roadmap', 'Quiet']))
     fireEvent.click(tab(/Your initiatives/))
@@ -187,7 +189,17 @@ describe('What Join says, on Explore initiatives', () => {
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
     fireEvent.click(tab(/^All/))
     fireEvent.click(within(rowOf('Zebra launch')).getByRole('button', { name: 'Join' }))
-    // Leaf's Join follows at All, which Peek's bell calls Everything.
-    expect((await screen.findAllByText('You joined Zebra launch. Notifications: Everything.')).length).toBeGreaterThan(0)
+    // It lands at Important, as Peek's Join (Katerina, 18 November: "let's make it to important").
+    expect((await screen.findAllByText('You joined Zebra launch. Notifications: Important.')).length).toBeGreaterThan(0)
+  })
+
+  it('says Everything when you had chosen All on the initiative you muted: Join keeps your own level', async () => {
+    // You chose All on "Quiet" before muting it: a member change does not choose for you, so All is what lights again.
+    relay.held.push(sign({ kind: 1851, pubkey: ME, created_at: 1_700_000_200, tags: [['a', topics.quiet], ['field', `follow:${ME}`], ['value', 'all'], ['h', HQ], ['p', ME]], content: '' }))
+    open()
+    await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
+    fireEvent.click(tab(/Other initiatives/))
+    fireEvent.click(within(rowOf('Quiet')).getByRole('button', { name: 'Join' }))
+    expect((await screen.findAllByText('You joined Quiet. Notifications: Everything.')).length).toBeGreaterThan(0)
   })
 })
