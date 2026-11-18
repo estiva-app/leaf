@@ -87,6 +87,7 @@ import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
 import { useMarkRead } from './useMarkRead'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** The newest of these comments, in ms; undefined when there are none. */
 function newestAt(items: readonly { at: number }[]): number | undefined {
@@ -521,6 +522,7 @@ function useEntry({ comment, names, now, nameOf, pictures, bots, page, viewer, o
   const [deleteRefused, setDeleteRefused] = useState<string>()
   // A refused ✕ leaves the card and says why, as a refused reaction does.
   const [removeRefused, setRemoveRefused] = useState<string | null>(null)
+  useReportFailure(deleteRefused || removeRefused ? 'not-deleted' : undefined)
   const removing = useRef(false)
   const removeSentCard = async (value: string) => {
     // One ✕ at a time: a second click before the answer would write the same edit again.
@@ -917,6 +919,7 @@ function ThreadComment(props: ThreadProps) {
   const { thread, where, editor, names, pictures, bots, now, people, onResolve, onReopen, closed } = props
   const { entry } = useThreadEntries(props)
   const [resolveRefused, setResolveRefused] = useState<string>()
+  useReportFailure(resolveRefused ? 'not-resolved' : undefined)
   // Its comment gone, the thread has nothing to resolve or reopen (SPEC §6.5).
   const gone = !thread.root
   const named = (pubkey: string) => people.nameOf(pubkey) ?? names[pubkey] ?? 'Someone'
@@ -1055,6 +1058,7 @@ export interface CommentsColumnProps {
 /** The comments column of a Leaf document, or a topic's conversation. */
 export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed, hidden = false, topic = false }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
+  useReportFailure(failed ? 'not-loaded' : undefined)
   const reading = topic && !hidden && threads !== null
   useMarkRead(reading ? [fileContext(doc.address)] : [], reading ? newestAt(threads.flatMap((t) => (t.root ? [t.root] : []))) : undefined)
   const { showToast } = useToast()
@@ -1222,7 +1226,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   }
   const reopen = async (thread: Thread) => {
     const result = await resolve(thread, false)
-    if (!result.ok) showToast({ label: refusalSentence('reopened', result.reason), type: 'error' })
+    if (!result.ok) showToast({ label: refusalSentence('reopened', result.reason), type: 'error', failure: 'not-saved' })
   }
   const viewer = viewerPubkey() ?? undefined
   const toggleReaction = async (comment: CommentItem, emoji: string, mine?: string): Promise<WriteResult> => {

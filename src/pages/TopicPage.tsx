@@ -13,6 +13,7 @@ import { lookOf, useTopicPage } from '../topics/useTopicPage'
 import { CommentCard } from '../comments/CommentCard'
 import { CardActsProvider } from '../document/linked'
 import { ReferencesProvider } from '../document/references'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -55,6 +56,7 @@ export function TopicPage({
   }, [address, title, peekUrl, sendsOn])
   useTabTitle(page && !sendsOn ? page.title : undefined)
 
+  useReportFailure(state === 'failed' || page?.files === 'failed' ? 'not-loaded' : undefined)
   if (state === 'unavailable') return <NoAccessNotice what="topic" />
   // The topic's conversation is in the column beside the page, as on Ship's topic page, in place of the link to Peek;
   // the header's button shows or hides it, as on a document.

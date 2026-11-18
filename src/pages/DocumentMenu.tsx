@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { Failure } from '@estiva-app/platform'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { IconDotsVertical } from '@tabler/icons-react'
 import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, MoveDialog, ToolbarButton, useToast, type MovePlace } from '@estiva-app/ui'
@@ -38,7 +39,7 @@ export function useSetArchived(file: ForeignObject, listedIn: string | undefined
   return async function setArchived(archived: boolean, resolution?: string): Promise<boolean> {
     const result = await archiveDocument(file, archived, resolution)
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: archived ? 'not-archived' : 'not-restored' })
       return false
     }
     if (listedIn) void onChanged?.(listedIn)
@@ -86,7 +87,8 @@ export function DocumentMenu({
   // The places the open Move offered, by Folder: what the kit's choice names, with the path the toast says.
   const placesRead = useRef<Record<string, MoveTarget[]>>({})
   const title = titleOf(file)
-  const refuse = (label: string) => showToast({ label, type: 'error' })
+  // `failure` names what did not happen, from the reporter's fixed list: the label carries titles and the relay's words (PROD-5).
+  const refuse = (label: string, failure: Failure) => showToast({ label, type: 'error', failure })
   // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
   const [movedTo, setMovedTo] = useState<string>()
   const listedIn = movedTo ?? listedInOf(file, folders)
@@ -99,7 +101,7 @@ export function DocumentMenu({
     if (reading.current) return
     reading.current = true
     void what
-      .then(open, () => refuse(failed))
+      .then(open, () => refuse(failed, 'not-loaded'))
       .finally(() => {
         reading.current = false
       })
@@ -110,7 +112,7 @@ export function DocumentMenu({
     const plan = await readDeletePlan(file).catch(() => shown)
     const result = await deleteDocument(file, plan)
     if (!result.ok) {
-      refuse(result.reason)
+      refuse(result.reason, 'not-deleted')
       return false
     }
     navigate(plan.to ? pagePath({ ...plan.to, title: titleOf(plan.to) }) : '/')
@@ -119,7 +121,7 @@ export function DocumentMenu({
       result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the team’s top.`,
       result.stillListed && 'It is still listed in a team; reload and try again.',
     ].filter(Boolean)
-    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success' })
+    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success', ...(after.length ? { failure: 'not-moved' } : {}) })
     return true
   }
 
@@ -166,7 +168,7 @@ export function DocumentMenu({
       try {
         from = (await readMovePlace(file, folders)).from
       } catch {
-        refuse('The team it is in could not be read, so nothing was moved. Try again.')
+        refuse('The team it is in could not be read, so nothing was moved. Try again.', 'not-moved')
         return false
       }
       stale.current = false
@@ -174,14 +176,14 @@ export function DocumentMenu({
     const result = await moveDocument(file, { from, to, parent: parent.address })
     if (!result.ok) {
       stale.current = !!result.changed
-      refuse(result.reason)
+      refuse(result.reason, 'not-moved')
       return false
     }
     setMovedTo(to.id)
     // Both ends, the Folder it went to first, so the open page is found in one of them throughout.
     for (const id of new Set([to.id, ...from.map((folder) => folder.id)])) await onChanged?.(id)
     const half = halfMovedWords(to.name, result)
-    if (half) refuse(half)
+    if (half) refuse(half, 'not-moved')
     else showToast({ label: `Moved to ${parent.path.at(-1) ?? to.name}`, type: 'success' })
     return true
   }

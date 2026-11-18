@@ -6,6 +6,7 @@ import { dOf, EXPLORE_TOPICS_PATH } from '../route'
 import { topicPath } from './topicLinks'
 import { TOPICS_SHOWN } from './sidebarTopics'
 import type { SidebarTopicsState } from './useSidebarTopics'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * The sidebar's Topics (LTN-2, TOPI-4, the approved story on `concept/topics-level-up`): your five newest topics
@@ -34,6 +35,7 @@ export function TopicsSection({
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   // No icon: it is a way in, not another kind of topic (Miky, 6 Nov).
   const explore = <NavItem href={EXPLORE_TOPICS_PATH} label="Explore topics" active={exploreNow} />
+  useReportFailure(topics === 'failed' ? 'not-loaded' : undefined)
   if (topics === 'loading')
     return (
       <NavTree title="Topics">

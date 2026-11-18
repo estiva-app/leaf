@@ -8,6 +8,7 @@ import { joinTopic } from '../topics/joinTopic'
 import { topicTitleOf, yourTopics } from '../topics/sidebarTopics'
 import { useHeldTopics, useMuted, useTopicActivity, useTopicMembers } from '../topics/topicReads'
 import { TopicRow } from '../topics/TopicRow'
+import { useReportFailure } from '@/lib/failureReports'
 
 const TABS: Record<TopicsTab, string> = { all: 'All', yours: 'Your topics', others: 'Other topics', archived: 'Archived' }
 
@@ -46,6 +47,7 @@ export function ExploreTopicsView({
   // Drawn afresh each time it opens, so "now" is when it opened, as Home's.
   const [opened] = useState(() => Date.now())
   const asked = query.trim()
+  useReportFailure(lists === 'failed' ? 'not-loaded' : undefined)
   const shown = typeof lists === 'string' ? [] : lists[tab].filter((topic) => !asked || findsTopic(topic.title, asked))
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
@@ -148,8 +150,8 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
     })
     const title = topicTitleOf(topic)
     // As Peek's Join says it. Joined while the mute stays: Join stays too, so a second click takes the mute out.
-    if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error' })
-    else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error' })
+    if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error', failure: 'not-joined' })
+    else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error', failure: 'not-saved' })
     else setJoined((now) => new Map(now).set(address, topic.following.in))
     // Read the topics again, so the joined one moves to Your topics now (Miky, 10 Nov).
     if (result.ok) void heldTopics.reload(loadTopics)
