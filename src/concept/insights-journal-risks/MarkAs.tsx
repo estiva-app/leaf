@@ -7,10 +7,11 @@
  * team, its issue or project, and a title from its first line; a notice offers Open. A marked block or message
  * has a thin line in its type's colour; "changed since your last visit" a neutral grey one.
  */
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconNotebook, IconX } from '@tabler/icons-react'
-import { MenuItem, MenuSub, Toast, WithTooltip, type PickerOption } from '@estiva-app/ui'
+import { MenuItem, MenuSub, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 export type ItemType = 'insight' | 'journal' | 'risk'
 /** The six words a person picks; each makes one of the three types (Blocker added for Risks, Miky, 16 Nov). */
@@ -159,6 +160,37 @@ export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed
     }),
     ...changed.filter((id) => !marks[id]).map((id) => word(id, 'Changed', 'var(--text-secondary)')),
   ].join('\n')
+}
+
+/**
+ * The word above a marked block's icon while the pointer is on it (Miky, 18 Nov: hover says "Insight"), in the kit's
+ * tooltip pill. The icon is drawn by CSS, so no WithTooltip can wrap it; the concept watches the pointer instead, and
+ * the build gives the editor a real icon to wrap.
+ */
+export function useMarkHover(marks: Record<string, ItemType | MarkWord>, place: 'inside' | 'gutter' = 'inside'): ReactNode {
+  const [at, setAt] = useState<{ word: string; x: number; y: number }>()
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement | null)?.closest?.('[data-block-id]') as HTMLElement | null
+      const m = el?.dataset.blockId ? marks[el.dataset.blockId] : undefined
+      if (!el || !m) return setAt(undefined)
+      const r = el.getBoundingClientRect()
+      // The icon's centre: 20px past the block in the gutter, 12px in from its right edge inside it.
+      const x = place === 'gutter' ? r.right + 20 : r.right - 12
+      const onIcon = Math.abs(e.clientX - x) <= 12 && e.clientY >= r.top && e.clientY <= r.top + 24
+      setAt(onIcon ? { word: m in TYPE_META ? TYPE_META[m as ItemType].label : m, x, y: r.top } : undefined)
+    }
+    document.addEventListener('mousemove', move)
+    return () => document.removeEventListener('mousemove', move)
+  }, [marks, place])
+  if (!at) return null
+  // @estiva-escape(no-rebuilt-behaviour): concept only: the icon is a CSS pseudo-element nothing can wrap; the build draws a real icon inside WithTooltip
+  return createPortal(
+    <span className="pointer-events-none fixed z-50" style={{ left: at.x, top: at.y - 4, transform: 'translate(-50%, -100%)' }}>
+      <Tooltip label={at.word} />
+    </span>,
+    document.body,
+  )
 }
 
 /** The marked block whose label was clicked, if any: a click on `::after` lands on the block, in its right 96px or past it. */

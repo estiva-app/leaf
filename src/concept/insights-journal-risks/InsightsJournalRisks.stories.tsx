@@ -13,7 +13,7 @@ import { FilePage } from '../../pages/FilePage'
 import { answer, factsOf } from '../../pages/fixtures/relay'
 import { KATERINA, MIKY, PROFILES, threadsOn } from '../../pages/fixtures/shipFiles'
 import { ConceptSide } from '../../pages/FilePage'
-import { MarkAsRows, MarkedLine, MarkedNotice, TYPE_OF, blockLineCss, drawsLine, markedBlockAt, type ItemType, type Mark, type MarkWord } from './MarkAs'
+import { MarkAsRows, MarkedLine, MarkedNotice, TYPE_OF, blockLineCss, drawsLine, markedBlockAt, useMarkHover, type ItemType, type Mark, type MarkWord } from './MarkAs'
 import { ITEMS, KATERINA as KATERINA_P, TEAM, type Item } from './fixtures'
 import { ItemPanel } from './ItemPanel'
 
@@ -133,11 +133,13 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
   const rows = (id: string, text: string) => <MarkAsRows mark={marks[id]} onMark={(w) => mark(id, text, w)} onUnmark={() => unmark(id)} />
   const labels = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && textOf[id] ? [[id, m.word]] : [])))
   const opened = open ? ITEM_OF[open] : undefined
+  const hover = useMarkHover(labels, 'gutter')
   return (
     <ConceptBlockRows.Provider value={(id) => rows(id, textOf[id] ?? '')}>
       <ConceptComment.Provider value={{ menu: (id, body) => rows(id, body), wrap: (id, card) => <MarkedLine mark={marks[id]}>{card}</MarkedLine> }}>
         <ConceptSide.Provider value={opened ? <ItemPanel key={opened.id} item={opened} onClose={() => setOpen(undefined)} /> : null}>
           <style>{blockLineCss(labels, changed, 'gutter')}</style>
+          {hover}
           {/* @estiva-escape(no-raw-interactive): concept only, the margin label is CSS on the editor's own block, so its click is read here */}
           <div className="contents" onClickCapture={(e) => { const id = markedBlockAt(e, labels); if (id) setOpen(id) }}>
             {children}
