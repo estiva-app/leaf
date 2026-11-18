@@ -1,28 +1,43 @@
 import type { FolderSummary } from '@estiva-app/interop'
-import { EmptyState, Panel, SearchInput, SkeletonList, Tabs, useToast } from '@estiva-app/ui'
+import { Button, EmptyState, KindIcon, ListTable, ListTableRow, MembersPill, Panel, SearchInput, SkeletonList, Tabs, useToast, type AvatarGroupMember, type ListTableColumn } from '@estiva-app/ui'
 import { IconTarget } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useDirectory } from '../comments/people'
 import { heldTopics, loadTopics } from '../document/fileTopics'
+import { whenOf } from '../home/recent'
 import { findsTopic, topicsByTab, type TopicRowData, type TopicsTab } from '../topics/exploreTopics'
 import { joinTopic } from '../topics/joinTopic'
 import { topicTitleOf, yourTopics } from '../topics/sidebarTopics'
 import { useHeldTopics, useMuted, useTopicActivity, useTopicMembers } from '../topics/topicReads'
-import { TopicRow } from '../topics/TopicRow'
 
-const TABS: Record<TopicsTab, string> = { all: 'All', yours: 'Your topics', others: 'Other topics', archived: 'Archived' }
+/** Peek's Explore initiatives, word for word (Katerina, 18 November: "everywhere a topic is mentioned, we should use Initiatives"). */
+const TABS: Record<TopicsTab, string> = { all: 'All', yours: 'Your initiatives', others: 'Other initiatives', archived: 'Archived' }
 
-/** What an empty tab says; with no topic shown at all, every open tab says the first. */
+/** What an empty tab says; with no initiative shown at all, every open tab says the first. */
 const EMPTY: Record<TopicsTab, string> = {
-  all: 'No topics yet.',
-  yours: 'You’re in no topics yet.',
-  others: 'No other topics.',
-  archived: 'No archived topics.',
+  all: 'No initiatives yet.',
+  yours: 'You’re in no initiatives yet.',
+  others: 'No other initiatives.',
+  archived: 'No archived initiatives.',
 }
 
+/** Nobody Leaf can name: a dash, as Peek's page draws them. */
+const NO_FACE = (): AvatarGroupMember => ({ name: '—' })
+
+/** Peek's columns: its team stays longest; who is in it and when it was last active give way first in a narrow window (Katerina, 16 November). */
+const COLUMNS: ListTableColumn[] = [
+  { label: 'Team', width: 'large' },
+  // The members pill's width: three faces and the number (Katerina, 17 November).
+  { label: 'Members', width: 'large', keep: 'low' },
+  { label: 'Active', width: 'medium', keep: 'low' },
+]
+
 /**
- * Explore topics as it draws (TOPI-4): Ship's Topics view (estiva-ship `src/views/TopicsView.tsx`) in Leaf's page, as
- * Home is drawn — a search beside tabs All, Your topics, Other topics and Archived, each with its count, and Join on a
- * topic you are not in. The lists' order is the caller's.
+ * Explore initiatives as it draws (TOPI-4): Peek's page (peek `ExploreTopicsView`, Katerina, 18 November: "just like in
+ * Peek") in Leaf's page, as Home is drawn — a search beside tabs All, Your initiatives, Other initiatives and Archived,
+ * each with its count, over the kit's list table: each initiative's name and summary, its team, who is in it (up to
+ * three faces and the number) and when it was last active, and Join on one you are not in. The lists' order is the
+ * caller's.
  */
 export function ExploreTopicsView({
   lists,
@@ -31,16 +46,19 @@ export function ExploreTopicsView({
   onRetry,
   onJoin,
   joining,
+  faceOf = NO_FACE,
 }: {
   /** `loading` before the topics read lands, `failed` when it did not. */
   lists: Record<TopicsTab, TopicRowData[]> | 'loading' | 'failed'
   tab: TopicsTab
   onTab: (tab: TopicsTab) => void
   onRetry: () => void
-  /** Join a topic you are not in. */
+  /** Join an initiative you are not in. */
   onJoin: (address: string) => void
-  /** The topics whose Join is on its way. */
+  /** The initiatives whose Join is on its way. */
   joining?: ReadonlySet<string>
+  /** A person's face by their key, for each row's members pill. Default a dash: the number alone tells. */
+  faceOf?: (pubkey: string) => AvatarGroupMember
 }) {
   const [query, setQuery] = useState('')
   // Drawn afresh each time it opens, so "now" is when it opened, as Home's.
@@ -50,43 +68,36 @@ export function ExploreTopicsView({
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title="Explore topics" bodyClassName="px-12 pt-10 pb-24">
-          <div data-surface="explore-topics" className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+        <Panel title="Explore initiatives" bodyClassName="px-12 pt-10 pb-24">
+          {/* 24px between the tabs and the list, the kit's step between a page's parts, as Peek's (Katerina, 16 November: 16 was too tight). */}
+          <div data-surface="explore-topics" className="mx-auto flex w-full max-w-3xl flex-col gap-6">
             {lists === 'loading' ? (
               <SkeletonList rows={8} />
             ) : lists === 'failed' ? (
-              <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message="Topics didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
+              <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message="Initiatives didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <Tabs<TopicsTab> aria-label="Topics" tabs={(Object.keys(TABS) as TopicsTab[]).map((id) => ({ id, label: TABS[id], count: lists[id].length }))} active={tab} onChange={onTab} />
+                  <Tabs<TopicsTab> aria-label="Explore initiatives" tabs={(Object.keys(TABS) as TopicsTab[]).map((id) => ({ id, label: TABS[id], count: lists[id].length }))} active={tab} onChange={onTab} />
                   <div className="w-64">
-                    <SearchInput placeholder="Find a topic" aria-label="Find a topic" value={query} onChange={(event) => setQuery(event.target.value)} />
+                    <SearchInput placeholder="Find an initiative" aria-label="Find an initiative" value={query} onChange={(event) => setQuery(event.target.value)} />
                   </div>
                 </div>
                 {shown.length === 0 ? (
-                  <EmptyState scope="section" message={asked ? `No topic matches “${asked}”.` : lists.all.length === 0 && tab !== 'archived' ? EMPTY.all : EMPTY[tab]} />
+                  <EmptyState scope="section" message={asked ? `No initiative matches “${asked}”.` : lists.all.length === 0 && tab !== 'archived' ? EMPTY.all : EMPTY[tab]} />
                 ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="hidden items-center gap-3 px-3 text-caption text-text-muted sm:flex">
-                      <span className="flex-1 pl-7">Name</span>
-                      <span className="w-28">Team</span>
-                      <span className="w-20">Members</span>
-                      <span className="w-24">Active</span>
-                      <span className="w-16" />
-                    </div>
-                    <div className="flex flex-col gap-px">
-                      {shown.map((topic) => (
-                        <TopicRow
-                          key={topic.address}
-                          topic={topic}
-                          now={opened}
-                          joining={joining?.has(topic.address)}
-                          {...(!topic.yours && !topic.archived ? { onJoin: () => onJoin(topic.address) } : {})}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <ListTable aria-label="Explore initiatives" columns={COLUMNS} end>
+                    {shown.map((topic) => (
+                      <InitiativeRow
+                        key={topic.address}
+                        topic={topic}
+                        now={opened}
+                        faceOf={faceOf}
+                        joining={joining?.has(topic.address) ?? false}
+                        {...(!topic.yours && !topic.archived ? { onJoin: () => onJoin(topic.address) } : {})}
+                      />
+                    ))}
+                  </ListTable>
                 )}
               </>
             )}
@@ -98,7 +109,51 @@ export function ExploreTopicsView({
 }
 
 /**
- * Explore topics, which the sidebar's Explore topics opens at `/topics` (TOPI-4), as Ship's Topics page: every topic you
+ * One initiative, as Peek's Explore row: the kit's list row with its name and summary, its team, who is in it — the kit's
+ * members pill, nothing to press, up to three faces and the number (Katerina, 17 November) — when anything last
+ * happened in it, and Join on a live one you are not in. The Archived tab says it is archived; the row does not say it
+ * again. It opens the initiative's page here (LTN-3), an archived one read-only.
+ */
+function InitiativeRow({
+  topic,
+  now,
+  faceOf,
+  joining,
+  onJoin,
+}: {
+  topic: TopicRowData
+  /** What Active counts back from, in ms: when the page opened. */
+  now: number
+  faceOf: (pubkey: string) => AvatarGroupMember
+  joining: boolean
+  onJoin?: () => void
+}) {
+  return (
+    <ListTableRow
+      data-topic={topic.address}
+      href={topic.href}
+      label={topic.title}
+      {...(topic.summary ? { description: topic.summary } : {})}
+      icon={<KindIcon kind="topic" />}
+      cells={[
+        topic.team,
+        topic.members === undefined ? undefined : topic.members === 0 ? '0' : <MembersPill readOnly members={(topic.people ?? []).slice(0, 3).map(faceOf)} count={topic.members} />,
+        topic.active ? whenOf(topic.active * 1000, now) : undefined,
+      ]}
+      end={
+        // Outlined on a list's rows, where many are on screen; a place's own header has it primary (kit Button, 16 November).
+        onJoin && (
+          <Button size="small" variant="outlined" onClick={onJoin} disabled={joining}>
+            Join
+          </Button>
+        )
+      }
+    />
+  )
+}
+
+/**
+ * Explore initiatives, which the sidebar's Explore initiatives opens at `/topics` (TOPI-4), as Peek's: every initiative you
  * can open, from the tab's one topics read (the sidebar's and Add to topic's), read afresh on open, opening on Your
  * topics, newest first as the sidebar orders them. Your topics' order waits for their activity, shared with the
  * sidebar; a tab's Members and Active are read when it is shown. A topic you join moves to Your topics once the topics
@@ -106,6 +161,12 @@ export function ExploreTopicsView({
  */
 export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary[] | undefined }) {
   const { showToast } = useToast()
+  // Who is in each row, by face: the workspace's people as every page here reads them; one not among them is a dash.
+  const directory = useDirectory()
+  const faceOf = useMemo(() => (pubkey: string): AvatarGroupMember => {
+    const person = directory[pubkey]
+    return person ? { name: person.displayName, ...(person.picture ? { picture: person.picture } : {}), ...(person.bot ? { bot: true } : {}) } : NO_FACE()
+  }, [directory])
   const [tab, setTab] = useState<TopicsTab>('yours')
   const [joining, setJoining] = useState<ReadonlySet<string>>(new Set())
   /** Joined here, each with whether you followed it before: its row loses Join at once, and counts you once. */
@@ -150,7 +211,12 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
     // As Peek's Join says it. Joined while the mute stays: Join stays too, so a second click takes the mute out.
     if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error' })
     else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error' })
-    else setJoined((now) => new Map(now).set(address, topic.following.in))
+    else {
+      // Peek's words for a Join on its Explore (Katerina, 18 November, E1), no Undo, as Peek's has none there. The level is
+      // the one Leaf's Join writes, All, which Peek's bell calls Everything (Peek's own Join lands at Important).
+      showToast({ label: `You joined ${title}. Notifications: Everything.`, type: 'success' })
+      setJoined((now) => new Map(now).set(address, topic.following.in))
+    }
     // Read the topics again, so the joined one moves to Your topics now (Miky, 10 Nov).
     if (result.ok) void heldTopics.reload(loadTopics)
   }
@@ -163,6 +229,7 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
       onRetry={() => void heldTopics.reload(loadTopics)}
       onJoin={(address) => void onJoin(address)}
       joining={joining}
+      faceOf={faceOf}
     />
   )
 }

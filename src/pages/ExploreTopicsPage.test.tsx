@@ -3,9 +3,9 @@ import { parseMutedBlob } from '@estiva-app/conversation'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HQ, ME, MIKY, archive, file, markSpace, muteList, nip44, relay, said, topic } from '../topics/fixtures/topicsRelay'
+import { HQ, ME, MIKY, archive, file, markSpace, muteList, nip44, relay, said, sign, topic } from '../topics/fixtures/topicsRelay'
 
-/* TOPI-4: Explore topics as a person sees it — its tabs, search and rows — and Join as the relay receives it. */
+/* TOPI-4: Explore initiatives as a person sees it — its tabs, search and rows — and Join as the relay receives it. */
 
 vi.mock('../relay/bridge', async () => (await import('../topics/fixtures/topicsRelay')).bridge)
 // Estiva ID's encryption is a round trip: the fixture's stand-in writes `enc:<plaintext>`, so what Join encrypted is read back below.
@@ -57,19 +57,19 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe('Explore topics', () => {
-  it('opens on Your topics, newest first; Other topics and All A–Z; Archived apart, with no Join; never a space; each tab counted', async () => {
+describe('Explore initiatives', () => {
+  it('opens on Your initiatives, newest first; Other initiatives and All A–Z; Archived apart, with no Join; never a space; each tab counted', async () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
     // The count is the tab's last word: exactly it, so 15 never passes for 5.
-    expect(tab(/Your topics/).textContent).toMatch(/^Your topics\D*2$/)
+    expect(tab(/Your initiatives/).textContent).toMatch(/^Your initiatives\D*2$/)
     // A topic you muted is not yours: it is with the others, to join again.
-    expect(tab(/Other topics/).textContent).toMatch(/^Other topics\D*3$/)
+    expect(tab(/Other initiatives/).textContent).toMatch(/^Other initiatives\D*3$/)
     expect(tab(/^All/).textContent).toMatch(/^All\D*5$/)
     expect(tab(/Archived/).textContent).toMatch(/^Archived\D*1$/)
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
 
-    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(tab(/Other initiatives/))
     expect(rows()).toEqual(['Apple roadmap', 'Quiet', 'Zebra launch'])
     expect(screen.getAllByRole('button', { name: 'Join' })).toHaveLength(3)
     fireEvent.click(tab(/^All/))
@@ -86,20 +86,20 @@ describe('Explore topics', () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
     fireEvent.click(tab(/^All/))
-    const search = screen.getByLabelText('Find a topic')
+    const search = screen.getByLabelText('Find an initiative')
     fireEvent.change(search, { target: { value: 'q4-pl' } })
     expect(rows()).toEqual(['Q4-plan'])
     fireEvent.change(search, { target: { value: 'lan' } })
     expect(rows()).toEqual([])
-    expect(screen.getByText('No topic matches “lan”.')).toBeTruthy()
+    expect(screen.getByText('No initiative matches “lan”.')).toBeTruthy()
   })
 })
 
-describe('Join on Explore topics', () => {
-  it('signs your follow of the topic at All and sends it, then shows the topic under Your topics', async () => {
+describe('Join on Explore initiatives', () => {
+  it('signs your follow of the topic at All and sends it, then shows the topic under Your initiatives', async () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
-    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(tab(/Other initiatives/))
     fireEvent.click(within(rowOf('Zebra launch')).getByRole('button', { name: 'Join' }))
 
     await waitFor(() => expect(relay.sent).toHaveLength(1))
@@ -107,9 +107,9 @@ describe('Join on Explore topics', () => {
     expect(follow.kind).toBe(1851)
     expect(follow.pubkey).toBe(ME)
     expect(follow.tags).toEqual(expect.arrayContaining([['a', topics.zebra], ['h', HQ], ['field', `follow:${ME}`], ['value', 'all']]))
-    // The topics are read again at once: it leaves Other topics for Your topics, with no Join.
+    // The topics are read again at once: it leaves Other initiatives for Your initiatives, with no Join.
     await waitFor(() => expect(rows()).toEqual(['Apple roadmap', 'Quiet']))
-    fireEvent.click(tab(/Your topics/))
+    fireEvent.click(tab(/Your initiatives/))
     expect(rows()).toContain('Zebra launch')
     expect(within(rowOf('Zebra launch')).queryByRole('button', { name: 'Join' })).toBeNull()
   })
@@ -117,7 +117,7 @@ describe('Join on Explore topics', () => {
   it('takes a topic you muted off your mute list, leaving the rest of it, so it is yours again', async () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
-    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(tab(/Other initiatives/))
     fireEvent.click(within(rowOf('Quiet')).getByRole('button', { name: 'Join' }))
 
     await waitFor(() => expect(relay.sent.some((event) => event.kind === 30078)).toBe(true))
@@ -126,7 +126,7 @@ describe('Join on Explore topics', () => {
     expect(list.tags).toContainEqual(['d', 'estiva:muted:v1'])
     // The stand-in's "ciphertext" is `enc:` before what was encrypted.
     expect(parseMutedBlob(list.content.replace(/^enc:/, ''))?.keys).toEqual([mutedPage])
-    fireEvent.click(tab(/Your topics/))
+    fireEvent.click(tab(/Your initiatives/))
     await waitFor(() => expect(rows()).toContain('Quiet'))
   })
 
@@ -134,7 +134,7 @@ describe('Join on Explore topics', () => {
     relay.refuse = 'blocked: you are not in this team'
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
-    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(tab(/Other initiatives/))
     fireEvent.click(within(rowOf('Apple roadmap')).getByRole('button', { name: 'Join' }))
 
     expect((await screen.findAllByText('Nothing changed: “Apple roadmap” could not be joined. blocked: you are not in this team')).length).toBeGreaterThan(0)
@@ -148,7 +148,7 @@ describe('Join on Explore topics', () => {
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
     nip44.refuseDecrypt = true
-    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(tab(/Other initiatives/))
     fireEvent.click(within(rowOf('Quiet')).getByRole('button', { name: 'Join' }))
 
     expect((await screen.findAllByText('Joined “Quiet”, but it is still muted. Join again to unmute it.')).length).toBeGreaterThan(0)
@@ -159,11 +159,35 @@ describe('Join on Explore topics', () => {
     relay.refuseKinds = [30078]
     open()
     await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
-    fireEvent.click(tab(/Other topics/))
+    fireEvent.click(tab(/Other initiatives/))
     fireEvent.click(within(rowOf('Quiet')).getByRole('button', { name: 'Join' }))
 
     expect((await screen.findAllByText('Joined “Quiet”, but it is still muted. Join again to unmute it.')).length).toBeGreaterThan(0)
     expect(relay.sent.map((event) => event.kind)).toEqual([1851])
     expect(relay.attempted.map((event) => event.kind)).toEqual([1851, 30078])
+  })
+})
+
+describe('Who is in an initiative, on Explore initiatives', () => {
+  it('draws the faces of the people it lists beside their number, as Peek’s page does', async () => {
+    // Miky made "Zebra launch", so it lists Miky: one face, with Miky's picture, and the number 1.
+    relay.held.push(sign({ kind: 0, pubkey: MIKY, created_at: 1_700_000_000, tags: [], content: JSON.stringify({ name: 'Ada Lin', picture: 'https://example.test/ada.png' }) }))
+    open()
+    await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
+    fireEvent.click(tab(/^All/))
+    const pill = await waitFor(() => within(rowOf('Zebra launch')).getByRole('img', { name: '1 member' }))
+    await waitFor(() => expect(pill.querySelector('img[src="https://example.test/ada.png"]')).toBeTruthy())
+    expect(pill.textContent).toContain('1')
+  })
+})
+
+describe('What Join says, on Explore initiatives', () => {
+  it('says you joined it and at which level, in Peek’s words, once the relay took it', async () => {
+    open()
+    await waitFor(() => expect(rows()).toEqual(['Hiring', 'Q4-plan']))
+    fireEvent.click(tab(/^All/))
+    fireEvent.click(within(rowOf('Zebra launch')).getByRole('button', { name: 'Join' }))
+    // Leaf's Join follows at All, which Peek's bell calls Everything.
+    expect((await screen.findAllByText('You joined Zebra launch. Notifications: Everything.')).length).toBeGreaterThan(0)
   })
 })

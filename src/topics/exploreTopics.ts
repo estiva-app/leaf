@@ -2,7 +2,7 @@ import { byActivity, isArchived, type TopicsRead } from '@estiva-app/interop'
 import { isYours, topicTitleOf } from './sidebarTopics'
 import { topicPath } from './topicLinks'
 
-/** One row on Explore topics (TOPI-4), as Ship's `TopicRowData`: the same columns in every app. */
+/** One row on Explore initiatives (TOPI-4), as Ship's `TopicRowData`: the same columns in every app. */
 export interface TopicRowData {
   address: string
   title: string
@@ -14,6 +14,8 @@ export interface TopicRowData {
   team?: string
   /** How many people it lists (record a-place-lists-who-chose-a-level-and-its-teams-members); `undefined` until read. */
   members?: number
+  /** Who it lists, by key, in the listing's order: the members pill's faces. Read with `members`. */
+  people?: readonly string[]
   /** When anything last happened in it, Unix seconds (the shared rule, TOPI-10); `undefined` until read. */
   active?: number
   archived: boolean
@@ -27,8 +29,8 @@ export type TopicsTab = 'all' | 'yours' | 'others' | 'archived'
 export interface TopicFacts {
   /** Each topic's newest activity (interop's `readTopicActivity`). */
   at?: ReadonlyMap<string, number>
-  /** `undefined` for a topic whose people could not be judged. */
-  members?: ReadonlyMap<string, number | undefined>
+  /** Who each one lists, by key; `undefined` for one whose people could not be judged. */
+  members?: ReadonlyMap<string, readonly string[] | undefined>
   /** A team's name, by its id. */
   teamName?: (id: string) => string | undefined
 }
@@ -57,7 +59,7 @@ export function topicsByTab(read: TopicsRead, facts: TopicFacts = {}, muted?: Re
     const title = topicTitleOf(topic)
     const archived = isArchived(topic.object)
     const team = facts.teamName?.(topic.folder)
-    const members = facts.members?.get(topic.address)
+    const people = facts.members?.get(topic.address)
     const active = facts.at?.get(topic.address)
     const summary = topic.object.slots.subtitle?.value?.trim()
     const row: TopicRowData = {
@@ -67,7 +69,7 @@ export function topicsByTab(read: TopicsRead, facts: TopicFacts = {}, muted?: Re
       ...(summary ? { summary } : {}),
       href: topicPath(topic.address, title),
       ...(team ? { team } : {}),
-      ...(members !== undefined ? { members } : {}),
+      ...(people !== undefined ? { members: people.length, people } : {}),
       ...(active ? { active } : {}),
       archived,
       yours: topic.yours && !muted?.has(topic.address),

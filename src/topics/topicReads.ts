@@ -117,10 +117,10 @@ function perTopicRead<T>(read: (topics: ReadTopic[]) => Promise<ReadonlyMap<stri
 const activity = perTopicRead<number>(async (topics) => (await readTopicActivity(query, activityTopics(topics), await timesRead())).at)
 
 /**
- * How many people each topic lists: Explore's Members. Read once per topic in a tab, not again on return: it reads each
- * topic's whole roster and changes, and a count a minute old orders nothing.
+ * Who each initiative lists, by key: Explore's Members, its faces and its number. Read once per initiative in a tab, not
+ * again on return: it reads each one's whole roster and changes, and a list a minute old orders nothing.
  */
-const members = perTopicRead<number | undefined>((topics) => readTopicMembers(topics), { onReturn: false })
+const members = perTopicRead<string[] | undefined>((topics) => readTopicMembers(topics), { onReturn: false })
 
 export const useTopicActivity = activity.useRead
 export const useTopicMembers = members.useRead

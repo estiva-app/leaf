@@ -44,17 +44,19 @@ function answersFilter(event: SignedEvent, filter: Filter): boolean {
 }
 
 /**
- * How many people each topic lists, for Explore topics' Members (TOPI-4, as Ship's `readTopicMembers`): conversation's
- * `placeListing`, the rule Peek's people list draws — who chose a level, was added or made it, and its team's members.
+ * Who each initiative lists, by key, in the listing's order, for Explore initiatives' Members (TOPI-4, as Ship's
+ * `readTopicMembers`): conversation's `placeListing`, the rule Peek's people list draws — who chose a level, was added or
+ * made it, and its team's members. The keys, not only the count, so the members pill draws up to three faces beside the
+ * number, as Peek's `topicMembersAsViewer` does (Katerina, 17 November: "the members and their avatars is known already").
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-place-lists-who-chose-a-level-and-its-teams-members.md
  *
  * One paged read for every topic asked: each topic's `placeFilters` without the viewer's private teams list (a topic's
  * listing never needs it), merged by shape. A failed read rejects: a failed read is not "nobody".
  */
-export async function readTopicMembers(topics: readonly ReadTopic[]): Promise<Map<string, number | undefined>> {
+export async function readTopicMembers(topics: readonly ReadTopic[]): Promise<Map<string, string[] | undefined>> {
   if (topics.length === 0) return new Map()
   const me = viewerPubkey()
-  if (!me) throw new Error('Sign in to read who is in a topic.')
+  if (!me) throw new Error('Sign in to read who is in an initiative.')
   const asked = topics.map((topic) => {
     const place = { address: topic.address, team: topic.folder }
     try {
@@ -67,13 +69,13 @@ export async function readTopicMembers(topics: readonly ReadTopic[]): Promise<Ma
   })
   const events = await queryAll(mergedFilters(asked.flatMap(({ filters }) => filters ?? [])))
   return new Map(
-    asked.map(({ topic, place, filters }): [string, number | undefined] => {
+    asked.map(({ topic, place, filters }): [string, string[] | undefined] => {
       if (!filters) return [topic.address, undefined]
       const mine = events.filter((event) => filters.some((filter) => answersFilter(event, filter)))
       const roster = mine.filter((event) => event.kind === KIND_ROSTER || ROSTER_COMMANDS.includes(event.kind))
       const listing = mine.filter((event) => event.kind === KIND_FOLDER_STATE || event.kind === KIND_FOLDER_COMMAND)
       const own = mine.filter((event) => !roster.includes(event) && !listing.includes(event))
-      return [topic.address, placeListing(place, { events: own, roster, listing }).length]
+      return [topic.address, placeListing(place, { events: own, roster, listing }).map((listed) => listed.pubkey)]
     }),
   )
 }
