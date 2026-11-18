@@ -1,11 +1,11 @@
 import type { FileLook, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { archivedLine } from '@estiva-app/conversation'
-import { Button, Card, Divider, EmptyState, KindIcon, NoAccessNotice, PageHeader, Panel, SectionLabel, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { IconArchive, IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { useEffect, useState, type ReactNode, type RefObject } from 'react'
+import { CollapsibleSection, Divider, EmptyState, KindIcon, ListTable, ListTableRow, NoAccessNotice, PageHeader, Panel, SectionHeader, SkeletonList, Toolbar, ToolbarButton, thingKindOf, type ListTableColumn } from '@estiva-app/ui'
+import { IconMessage, IconMessageOff } from '@tabler/icons-react'
+import { Fragment, useEffect, type ReactNode, type RefObject } from 'react'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import { useSideColumn } from './sideColumn'
-import { rowOf } from '../folders/tree'
+import { isDocument, rowOf, typeOf } from '../folders/tree'
 import { replace } from '../route'
 import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
@@ -98,7 +98,6 @@ export function TopicPageView({
   conversation?: ReactNode
   onRetry: () => void
 }) {
-  const [showArchived, setShowArchived] = useState(false)
   const page = typeof state === 'object' ? state : null
   if (state === 'unavailable') return <NoAccessNotice what="initiative" />
   // The topic's conversation is in the column beside the page, as on Ship's topic page, in place of the link to Peek;
@@ -148,36 +147,15 @@ export function TopicPageView({
               <SkeletonList rows={6} />
             ) : (
               <>
-                <div className="flex flex-col gap-1">
-                  <h1 className="text-h1 text-text-primary">{page.title}</h1>
-                  {/* The team is the bar's chip now (D4), said once; an archived initiative still says so here. */}
-                  {page.archived && <span className="text-caption text-text-muted">Archived</span>}
-                </div>
+                {/* Its name is said once, in the bar (Katerina, 18 November, brainstorm 1.A); an archived one still says so first. */}
+                {page.archived && <span className="text-caption text-text-muted">Archived</span>}
                 {page.summary && <p className="text-body-2 text-text-secondary">{page.summary}</p>}
                 {files === 'loading' || files === undefined ? (
                   <SkeletonList rows={3} />
                 ) : files === 'failed' ? (
                   <EmptyState scope="section" message="What it lists didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
                 ) : (
-                  <>
-                    {files.live.length > 0 ? (
-                      <Rows files={files.live} looks={files.looks} readOnly={!!page.archived} />
-                    ) : (
-                      <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />
-                    )}
-                    {files.archived.length > 0 &&
-                      (showArchived || files.live.length === 0 ? (
-                        <section className="flex flex-col gap-2">
-                          <SectionLabel tone="muted">Archived</SectionLabel>
-                          <Rows files={files.archived} looks={files.looks} readOnly={!!page.archived} />
-                        </section>
-                      ) : (
-                        // A button, not the story's link: it opens nothing, it shows the rows below (as Ship's topic page).
-                        <Button size="small" variant="muted" leadingIcon={<IconArchive size={14} stroke={1.5} />} className="self-start" onClick={() => setShowArchived(true)}>
-                          Archived · {files.archived.length}
-                        </Button>
-                      ))}
-                  </>
+                  <Listed files={files} readOnly={!!page.archived} />
                 )}
               </>
             )}
@@ -193,42 +171,106 @@ export function TopicPageView({
 const noBody: RefObject<HTMLDivElement | null> = { current: null }
 const noDraft = () => {}
 
-/** What a topic lists, in its order: a row as Leaf's sidebar draws one (its icon, its title and, for another app's file, its type), or its card. */
-function Rows({ files, looks, readOnly }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook>; readOnly: boolean }) {
-  // The cards take the files as the page read them, not one read each; on an archived topic their status and owner only show.
-  const read = Object.fromEntries(files.flatMap((file) => (file.naddr ? [[`nostr:${file.naddr}`, file]] : [])))
+type Kind = 'page' | 'project' | 'issue' | 'file'
+
+/** The kinds in the page's order, each under its own heading. "Files": another app's, its type in a column. */
+const KINDS: { kind: Kind; title: string }[] = [
+  { kind: 'page', title: 'Pages' },
+  { kind: 'project', title: 'Projects' },
+  { kind: 'issue', title: 'Issues' },
+  { kind: 'file', title: 'Files' },
+]
+
+/** Which heading a file is under: a page of Leaf's, a project, an issue, or another app's file. */
+function kindOf(file: ForeignObject): Kind {
+  if (isDocument(file)) return 'page'
+  const thing = thingKindOf(file.kind)
+  return thing === 'project' || thing === 'issue' ? thing : 'file'
+}
+
+/** A file whose heading does not name its kind says its type in this column; under Pages, Projects or Issues, nothing. */
+const TYPE_COLUMN: ListTableColumn[] = [{ label: 'Type', width: 'medium' }]
+
+/**
+ * **What an initiative lists, by kind** (Katerina, 18 November, brainstorm 1.A: the page in Peek's team-page look): one
+ * part per kind, under the kit's heading with its count, the initiative's own order kept inside each, as the record
+ * asks of an app that groups its files ("an app that groups them, by kind say, keeps it inside each group"). A file
+ * shown as a row is the kit's list row; one shown as a card stays its card (TOPI-5: Leaf draws the look the initiative
+ * chose, or its own app's), in its place among the rows. The archived ones are one fold at the end, open when nothing
+ * else is listed.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md
+ */
+function Listed({ files, readOnly }: { files: { live: ForeignObject[]; archived: ForeignObject[]; looks: ReadonlyMap<string, FileLook> }; readOnly: boolean }) {
+  // The cards take the files as the page read them, not one read each; on an archived initiative their status and owner only show.
+  const all = [...files.live, ...files.archived]
+  const read = Object.fromEntries(all.flatMap((file) => (file.naddr ? [[`nostr:${file.naddr}`, file]] : [])))
   return (
     <ReferencesProvider value={read}>
       <CardActsProvider value={!readOnly}>
-        <RowList files={files} looks={looks} />
+        {/* 24px between its parts, as Peek's team page and Explore (Katerina, 16 November). */}
+        <div className="flex flex-col gap-6">
+          {files.live.length === 0 && <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />}
+          {KINDS.map(({ kind, title }) => {
+            const ofKind = files.live.filter((file) => kindOf(file) === kind)
+            if (ofKind.length === 0) return null
+            return (
+              <section key={kind} className="flex flex-col gap-1" data-topic-kind={kind}>
+                <SectionHeader title={title} count={ofKind.length} hover="none" />
+                <Runs files={ofKind} looks={files.looks} label={title} typed={kind === 'file'} />
+              </section>
+            )
+          })}
+          {files.archived.length > 0 && (
+            <CollapsibleSection title="Archived" count={files.archived.length} defaultOpen={files.live.length === 0}>
+              <Runs files={files.archived} looks={files.looks} label="Archived" typed />
+            </CollapsibleSection>
+          )}
+        </div>
       </CardActsProvider>
     </ReferencesProvider>
   )
 }
 
-/** The rows and cards themselves. */
-function RowList({ files, looks }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook> }) {
+/**
+ * Files in their order, as rows and cards: each stretch of rows one kit list, each card its own, so a card keeps its
+ * place between the rows. `typed` adds the Type column where the heading does not say the kind (Files, Archived).
+ */
+function Runs({ files, looks, label, typed }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook>; label: string; typed: boolean }) {
+  const runs: ({ card: ForeignObject } | { rows: ForeignObject[] })[] = []
+  for (const file of files) {
+    // Its card where the initiative shows it as one, or its own app draws it so (TOPI-5).
+    if (file.naddr && lookOf(file, file.address ? looks.get(file.address) : undefined) === 'card') runs.push({ card: file })
+    else {
+      const last = runs[runs.length - 1]
+      if (last && 'rows' in last) last.rows.push(file)
+      else runs.push({ rows: [file] })
+    }
+  }
   return (
-    <div className="flex flex-col gap-px">
-      {files.map((file) => {
-        const row = rowOf(file)
-        // Its card where the topic shows it as one, or its own app draws it so (TOPI-5): the kit's card, as under a comment.
-        // It opens where the row did. A written link counts only as a whole https URL on an app's host, so the row's
-        // path goes in absolute; else the card would open at the address a manifest gives, which anyone may publish.
-        if (file.naddr && lookOf(file, file.address ? looks.get(file.address) : undefined) === 'card')
+    <>
+      {runs.map((run, index) => {
+        if ('card' in run) {
+          const row = rowOf(run.card)
+          // The kit's card, as under a comment. It opens where the row would. A written link counts only as a whole https
+          // URL on an app's host, so the row's path goes in absolute; else the card would open at the address a manifest
+          // gives, which anyone may publish.
           return (
-            <div key={row.id} data-topic-file={file.address} className="py-1.5">
-              <CommentCard uri={`nostr:${file.naddr}`} opensAt={new URL(row.href, window.location.origin).href} />
+            <div key={row.id} data-topic-file={run.card.address} className="py-1.5">
+              <CommentCard uri={`nostr:${run.card.naddr}`} opensAt={new URL(row.href, window.location.origin).href} />
             </div>
           )
+        }
         return (
-          <Card key={row.id} href={row.href} hover="fill" quietUntilHover className="flex items-center gap-3 px-3 py-2">
-            <span className="flex shrink-0">{row.icon}</span>
-            <span className="min-w-0 flex-1 truncate text-body-2 text-text-primary">{row.label}</span>
-            {row.hint && <span className="shrink-0">{row.hint}</span>}
-          </Card>
+          <Fragment key={`rows-${index}`}>
+            <ListTable aria-label={label} columns={typed ? TYPE_COLUMN : []} headings={false}>
+              {run.rows.map((file) => {
+                const row = rowOf(file)
+                return <ListTableRow key={row.id} data-topic-file={file.address} href={row.href} label={row.label} icon={<KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />} cells={typed ? [typeOf(file)] : []} />
+              })}
+            </ListTable>
+          </Fragment>
         )
       })}
-    </div>
+    </>
   )
 }
