@@ -9,8 +9,9 @@
  * own events), and every crash an `ErrorBoundary` catches.
  */
 import { useEffect, useLayoutEffect, useState } from 'react'
-import { createErrorReporter } from '@estiva-app/platform'
-import { reportCrashesTo } from '@estiva-app/ui'
+import { createErrorReporter, type Failure } from '@estiva-app/platform'
+import { reportCrashesTo, reportFailuresTo } from '@estiva-app/ui'
+import { reportDrawnFailuresTo, reportRefusalsTo } from '@/lib/failureReports'
 import { ID_CONFIG } from '@/config'
 import { currentToken } from '@/auth/estivaId'
 import { routeOf, usePathname, type Route } from '@/route'
@@ -47,6 +48,10 @@ export const errorReporter = createErrorReporter({
 export function startErrorReports(): void {
   errorReporter.listen(window)
   reportCrashesTo((error) => errorReporter.report(error, 'boundary'))
+  // A failure Leaf shows (every error toast, a warning that names what failed) and a write the relay refuses (PROD-5).
+  reportFailuresTo((failure) => errorReporter.failure((failure ?? 'unnamed') as Failure))
+  reportRefusalsTo((code) => errorReporter.refused(code))
+  reportDrawnFailuresTo((failure) => errorReporter.failure(failure))
   window.__crashOnPurpose = crashOnPurpose
 }
 

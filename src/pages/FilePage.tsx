@@ -155,7 +155,7 @@ function DocumentView({
         restorable
           ? async () => {
               const result = await setDeleted(target.current, false)
-              if (!result.ok) showToast({ label: 'Could not restore it. Try again.', type: 'error' })
+              if (!result.ok) showToast({ label: 'Could not restore it. Try again.', type: 'error', failure: 'not-restored' })
             }
           : undefined
       }
@@ -177,7 +177,7 @@ function DocumentView({
       unadded.current = result.refused
       if (result.refused.length > 0) {
         const names = result.refused.map((pubkey) => knownName(pubkey) ?? 'someone').join(', ')
-        showToast({ label: `Could not add ${names}. Leaf tries again when you next save.`, type: 'error' })
+        showToast({ label: `Could not add ${names}. Leaf tries again when you next save.`, type: 'error', failure: 'not-added' })
       }
       return true
     },
@@ -188,17 +188,17 @@ function DocumentView({
   useEffect(() => {
     named.current = title
   }, [title])
-  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error' }), [showToast])
+  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error', failure: 'not-saved' }), [showToast])
   async function rename(value: string): Promise<boolean> {
     const next = value.trim()
     if (!next || next === title) return true
     // Archived while it was being typed: read-only now, nothing is written, and it says so (PEEKM-8).
     if (locked) {
-      showToast({ label: `Not renamed. ${fieldLine ?? 'It was archived.'}`, type: 'error' })
+      showToast({ label: `Not renamed. ${fieldLine ?? 'It was archived.'}`, type: 'error', failure: 'not-renamed' })
       return false
     }
     const result = await saveField(target.current, 'title', next)
-    if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
+    if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error', failure: 'not-renamed' })
     return result.ok
   }
   // The summary: the folded `summary` field, which interop draws as `subtitle` (SPEC §6.12, §7.2). A slot cut at
@@ -272,13 +272,13 @@ function DocumentView({
     const answers = await Promise.all(people.map((person) => setMember(file, person, true)))
     facts.reread()
     if (answers.every(Boolean)) return true
-    showToast({ label: 'Could not add everyone. Try again.', type: 'error' })
+    showToast({ label: 'Could not add everyone. Try again.', type: 'error', failure: 'not-added' })
     return false
   }
   async function setMine(member: boolean): Promise<boolean> {
     const ok = !!me && (await setMember(file, me, member))
     facts.reread()
-    if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error' })
+    if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error', failure: member ? 'not-joined' : 'not-left' })
     return ok
   }
   // The page's bar is the kit's PageHeader (ONE-5, step 5), in the panel's own bar's place, so the bar and the

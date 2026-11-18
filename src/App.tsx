@@ -40,6 +40,7 @@ import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, ro
 import { useTabTitle } from './tabTitle'
 import { TopicsSection } from './topics/TopicsSection'
 import { useSidebarTopics } from './topics/useSidebarTopics'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
 type Unlisted = { address: string; folder: string; folderName: string }
@@ -179,6 +180,8 @@ function Frame() {
     nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
   */
   const settled = workspace.folders !== null && !workspace.failed
+  // Drawn rather than toasted: the sidebar's "could not be read", and a document made but not listed (PROD-5).
+  useReportFailure(workspace.failed ? 'not-loaded' : unlisted ? 'not-added' : undefined)
   const handoffFolder = handoff && settled ? takers.find((f) => f.id === handoff) : undefined
   const refused = !!handoff && settled && !handoffFolder
 
@@ -187,7 +190,7 @@ function Frame() {
     if (!refused || toldRefused.current) return
     toldRefused.current = true
     // A Folder this person cannot read, or one that takes no document: nothing is written.
-    showToast({ label: 'You can’t add a document to that team.', type: 'error' })
+    showToast({ label: 'You can’t add a document to that team.', type: 'error', failure: 'not-created' })
     replace('/')
   }, [refused, showToast])
 
@@ -204,7 +207,7 @@ function Frame() {
     const go = handoff ? replace : navigate
     const result = await createDocument({ folder, title, summary, parent: inside && { address: inside.address, folder: inside.folder } })
     if (!result.ok && !result.made) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: 'not-created' })
       return false
     }
     if (!result.ok) {
@@ -226,7 +229,7 @@ function Frame() {
   async function relist(made: Unlisted) {
     const result = await listDocument({ folder: made.folder, address: made.address })
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: 'not-added' })
       return
     }
     await workspace.reloadFolder(made.folder)

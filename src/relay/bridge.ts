@@ -2,6 +2,7 @@ import { estivaIdSigner, SignRefused } from '@estiva-app/identity'
 import { Relay, type FileTimes, type PublishResult, type SignedEvent, type Signer, type UnsignedEvent } from '@estiva-app/protocol'
 import { heldToken, renew, sessionEnded } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
+import { heardRefusal } from '../lib/failureReports'
 
 /**
  * The relay's HTTP bridge, for reads and writes that are one request each: the
@@ -25,7 +26,8 @@ function bridge(): Held | null {
     token: () => heldToken()?.accessToken,
     renew,
   })
-  held = { relay: new Relay(RELAY_URL, signer), signer, pubkey: token.pubkey }
+  // Every refused write is reported by its reason code, busy answers included (PROD-5).
+  held = { relay: new Relay(RELAY_URL, signer, { onRefused: heardRefusal }), signer, pubkey: token.pubkey }
   return held
 }
 type Held = { relay: Relay; signer: Signer; pubkey: string }

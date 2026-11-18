@@ -3,6 +3,7 @@ import { FieldLine } from '@estiva-app/ui'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { SummaryCount } from './SummaryCount'
 import { summaryText } from './summary'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * A page's summary under its title, edited where it stands, as in a document: with a count past about 240 and a refused save said under it.
@@ -43,6 +44,7 @@ export function PageSummary({
   // The text being written, for the count; null when you are not in it.
   const [typing, setTyping] = useState<string | null>(null)
   const [refused, setRefused] = useState<string>()
+  useReportFailure(refused ? 'not-saved' : undefined)
   // The text the reason is about: the reason stays until that text changes.
   const attempted = useRef<string | null>(null)
   // What the field holds now, as last typed: a refusal that answers older text says nothing.

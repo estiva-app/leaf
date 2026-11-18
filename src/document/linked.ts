@@ -158,7 +158,7 @@ export function useFileChoices(
     choose({ on: read, actionId, value })
     const result = await saveCardChoice(read, actionId, value)
     // The picker goes back to what the relay holds, so say why rather than let it look like a slip.
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
     if (reread) await reread()
     if (!result.ok || reread) choose(null)
   }
