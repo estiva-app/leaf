@@ -37,7 +37,7 @@ vi.mock('../relay/projectFields', () => ({
   openReadOption: async () => ({ openRead: [30850] }),
 }))
 
-import { saveField, saveText, setDeleted, noteRead, onMerged } from './save'
+import { saveCardChoice, saveField, saveText, setDeleted, noteRead, onMerged } from './save'
 
 const OWNER = 'b'.repeat(64)
 const THEM = 'c'.repeat(64)
@@ -84,6 +84,15 @@ describe('a project read by its fields, saved from Leaf (ALO-6)', () => {
     expect(tag(sent, 'field')).toBe('title')
     expect(tag(sent, 'prev')).toBe(ROOT.id)
     expect(tag(sent, 'O')).toBe('p1')
+  })
+
+  it('writes a status picked on its card in order, with what the status means last (EAC-5)', async () => {
+    const file = opened('')
+    const card = { ...file, archived: undefined, parentField: undefined, actions: [{ id: 'set-status', field: 'status', control: 'select', options: [{ value: 'planned', stage: 'open' }, { value: 'completed', stage: 'done' }] }] }
+    expect(await saveCardChoice(card as never, 'set-status', 'completed')).toEqual({ ok: true })
+    const [sent] = relay.sent
+    expect(tag(sent, 'prev')).toBe(ROOT.id)
+    expect(sent.tags.at(-1)).toEqual(['stage', 'status', 'done'])
   })
 
   it('sets a title again on top of one someone else saved since it was opened, asking nobody', async () => {

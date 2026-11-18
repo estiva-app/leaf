@@ -163,6 +163,9 @@ export async function profileOf(pubkey: string): Promise<{ displayName?: string;
   return lookup[pubkey] ?? null
 }
 
+/** What a chosen option means, as interop's `stageTagFor` gives it: `["stage", field, stage]`, one of the four. */
+type StageTag = NonNullable<ReturnType<typeof stageTagFor>>
+
 /**
  * A change to one field of a document — `kind:1851`, SPEC §6.2, the same event
  * Ship's `buildChange` makes: `a`, `field`, `value`, `h`, then the body's
@@ -184,7 +187,7 @@ export function buildChange(
     /** The change this one follows for its field, or the record's id for its first (SPEC §6.2); only where the relay keeps the file in order. */
     prev?: string
     /** What the chosen option means, `["stage", field, stage]`, written last (SPEC §6.2, §7.3): interop's `stageTagFor`. */
-    stage?: string[]
+    stage?: StageTag
   },
 ): UnsignedEvent {
   return {
@@ -260,7 +263,7 @@ async function writeInOrder(
   prev: string,
   contentFormat?: string,
   base?: { value: string; format?: string },
-  stage?: string[],
+  stage?: StageTag,
 ): Promise<WriteChangeResult> {
   const [, owner, ...d] = file.address.split(':')
   const fields = await projectFields()
