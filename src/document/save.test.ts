@@ -116,6 +116,17 @@ describe('a change from a card', () => {
     ])
   })
 
+  it('writes what the chosen status means last, as its owner declares it, and nothing for an option with no stage', async () => {
+    const staged = issue({
+      actions: [{ id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo', stage: 'open' }, { value: 'done', label: 'Done', stage: 'done' }, { value: 'someday', label: 'Someday' }] }],
+    } as Partial<ForeignObject>)
+    publish.mockClear()
+    expect(await saveCardChoice(staged, 'set-status', 'done')).toEqual({ ok: true })
+    expect(publish.mock.calls.at(-1)![0].tags.at(-1)).toEqual(['stage', 'status', 'done'])
+    expect(await saveCardChoice(staged, 'set-status', 'someday')).toEqual({ ok: true })
+    expect(publish.mock.calls.at(-1)![0].tags.some((t: string[]) => t[0] === 'stage')).toBe(false)
+  })
+
   it('writes nothing for a file archived itself or with its project', async () => {
     publish.mockClear()
     expect((await saveCardChoice(issue({ archived: { by: 'f3', at: 1 } } as Partial<ForeignObject>), 'set-status', 'done')).ok).toBe(false)
