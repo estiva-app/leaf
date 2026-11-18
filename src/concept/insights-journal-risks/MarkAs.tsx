@@ -8,6 +8,7 @@
  * has a thin line in its type's colour; "changed since your last visit" a neutral grey one.
  */
 import type { ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconNotebook, IconX } from '@tabler/icons-react'
 import { MenuItem, MenuSub, Toast, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
@@ -16,9 +17,6 @@ export type ItemType = 'insight' | 'journal' | 'risk'
 export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question' | 'Blocker'
 
 export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk' }
-/** A marked block's label in a document (Miky, 18 Nov): the word's emoji, not the word. */
-export const WORD_EMOJI: Record<MarkWord, string> = { Insight: '💡', Decision: '⚖️', Update: '📝', Concern: '⚠️', Question: '❓', Blocker: '🚧' }
-const TYPE_EMOJI: Record<ItemType, string> = { insight: '💡', journal: '📝', risk: '⚠️' }
 export const WORDS: MarkWord[] = ['Insight', 'Decision', 'Update', 'Concern', 'Question', 'Blocker']
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
@@ -140,19 +138,26 @@ export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed
   // label, fading as it goes down, and a wash that fades in from that edge — the block's whole height, never its left
   // side, where the handle is.
   const edge = place === 'gutter' ? 'right:-4px' : 'right:32px'
-  // The label is the word's emoji (Miky, 18 Nov: "more subtle and enough; people learn the meaning quickly"); hover on
-  // the block's label opens the item, which names it. "Changed" stays a grey word.
-  const label = (id: string, words: string, c: string, wash: boolean) =>
+  // The label is the word's icon alone, the same line icon Ship's lists draw, in its type's colour (Miky, 18 Nov: the word
+  // is not needed, people learn the icon quickly; emoji were "too realistic"). The editor draws the blocks, so the icon is
+  // the React one rendered to SVG and used as a mask. Hover on the block's label opens the item, which names it.
+  // "Changed" stays a grey word.
+  const edgeAndWash = (id: string, c: string, wash: boolean) =>
     `[data-block-id="${id}"]{${where}` +
     `[data-block-id="${id}"]{background:linear-gradient(to left, color-mix(in srgb, ${c} ${wash ? 7 : 4}%, transparent), transparent 45%)}` +
-    `[data-block-id="${id}"]::before{content:"";position:absolute;top:0;bottom:0;${edge};width:2px;border-radius:1px;pointer-events:none;background:linear-gradient(to bottom, color-mix(in srgb, ${c} ${wash ? 70 : 45}%, transparent), transparent)}` +
-    `[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:1px;${at};font-size:${wash ? 15 : 12}px;line-height:20px;font-weight:500;white-space:nowrap;color:${c};${wash ? 'cursor:pointer;' : ''}}`
+    `[data-block-id="${id}"]::before{content:"";position:absolute;top:0;bottom:0;${edge};width:2px;border-radius:1px;pointer-events:none;background:linear-gradient(to bottom, color-mix(in srgb, ${c} ${wash ? 70 : 45}%, transparent), transparent)}`
+  const icon = (id: string, svg: string, c: string) => {
+    const url = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`
+    return edgeAndWash(id, c, true) + `[data-block-id="${id}"]::after{content:"";position:absolute;top:3px;${at};width:16px;height:16px;background:${c};-webkit-mask:${url} center/contain no-repeat;mask:${url} center/contain no-repeat;cursor:pointer}`
+  }
+  const word = (id: string, text: string, c: string) =>
+    edgeAndWash(id, c, false) + `[data-block-id="${id}"]::after{content:"${text}";position:absolute;top:1px;${at};font-size:12px;line-height:20px;font-weight:500;white-space:nowrap;color:${c}}`
   return [
     ...Object.entries(marks).map(([id, m]) => {
       const t = (m in TYPE_META ? m : TYPE_OF[m as MarkWord]) as ItemType
-      return label(id, m in TYPE_META ? TYPE_EMOJI[t] : WORD_EMOJI[m as MarkWord], colour[t], true)
+      return icon(id, renderToStaticMarkup(m in TYPE_META ? TYPE_META[t].icon(16) : wordIcon(m as MarkWord, 16)), colour[t])
     }),
-    ...changed.filter((id) => !marks[id]).map((id) => label(id, 'Changed', 'var(--text-secondary)', false)),
+    ...changed.filter((id) => !marks[id]).map((id) => word(id, 'Changed', 'var(--text-secondary)')),
   ].join('\n')
 }
 
