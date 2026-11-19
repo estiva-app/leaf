@@ -129,7 +129,8 @@ function DocumentView({
   const writes = writableFields(file)
   // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
   // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), from the ⋯ menu (LED-4).
-  // A deleted project (SPEC §6.5) is read-only too: its link still opens, on the kit's notice of who deleted it (ALO-6).
+  // A deleted project or issue (SPEC §6.5) is read-only too: its link still opens, on the kit's notice of who deleted it
+  // and its Restore (ALO-6, ISS-6).
   const locked = isArchived(file) || !!file.deleted
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
   const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)

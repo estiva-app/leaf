@@ -84,9 +84,10 @@ function heldOf(address: string) {
 
 /** Hold what a read of a project or an issue says each field's next change follows, and the text it shows. */
 export function noteRead(file: Pick<ForeignObject, 'address' | 'prevs' | 'eventId' | 'slots'>): void {
-  if (!isSwitchedKind(file.address) || !file.prevs) return
+  if (!isSwitchedKind(file.address)) return
   const one = heldOf(file.address!)
-  for (const [field, id] of Object.entries(file.prevs)) if (id && field !== TEXT_FIELD) one.prevs[field] = id
+  for (const [field, id] of Object.entries(file.prevs ?? {})) if (id && field !== TEXT_FIELD) one.prevs[field] = id
+  // A file nobody has changed since it was made names no change at all: its empty text follows its first record (ISS-6).
   const text = prevOf(file, TEXT_FIELD)
   if (text) one.texts.set(file.slots[BODY_SLOT]?.value ?? '', text)
 }

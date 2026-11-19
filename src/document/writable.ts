@@ -1,6 +1,5 @@
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
-import { isRowOnly } from '../relay/rowOnly'
 import type { DocumentField } from './save'
 
 const FIELDS: readonly DocumentField[] = ['title', 'summary', 'description']
@@ -9,7 +8,9 @@ const FIELDS: readonly DocumentField[] = ['title', 'summary', 'description']
  * The fields of a file Leaf writes: all three on its own documents, and on another app's file each one its owner's
  * projection shares — an action that changes that field, found by the field it changes and never by its id or the
  * file's kind (SPEC §7.3). The text only as a block document, and only where the page shows it: a `body` slot that
- * reads the `description`, so Leaf never writes a text it does not draw.
+ * reads the `description`, so Leaf never writes a text it does not draw. No `body` slot at all is a text not written
+ * yet, or not read yet (a row of the list read, whose page reads it whole): the page draws it empty, to be written in
+ * (Miky, ISS-6), not a dead end.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
@@ -21,8 +22,9 @@ export function writableFields(file: ForeignObject): ReadonlySet<DocumentField> 
     if (action.declaredBy || action.control !== 'text') continue
     const field = FIELDS.find((f) => f === action.field)
     if (!field) continue
-    // A row read by the list read has its text unread and so no `body` slot; its page reads it whole before writing.
-    const shown = isRowOnly(file) || file.slots[BODY_SLOT]?.field === 'description'
+    // interop leaves out a slot whose value is empty: a body that reads another field is the only one Leaf skips.
+    const body = file.slots[BODY_SLOT]
+    const shown = !body || body.field === 'description'
     if (field === 'description' && (action.format !== BLOCK_DOCUMENT_FORMAT || !shown)) continue
     shared.add(field)
   }

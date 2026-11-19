@@ -124,6 +124,19 @@ describe.each([
     expect(tag(newest(ADDRESS, 'title')!, 'value')).toBe('My name')
   })
 
+  it(`writes the first words of a ${noun} nobody has changed since it was made, after its first record (ISS-6)`, async () => {
+    // Read with no change at all: no `prevs`, and no body, since its text is empty.
+    ROOT.tags = [['d', 'p1'], ['h', FOLDER]]
+    const file = { address: ADDRESS, folder: FOLDER, eventId: ROOT.id, slots: {} }
+    noteRead(file as never)
+    const words = doc(['b1', 'First words'])
+    expect(await saveText(file as never, { content: words, format: FORMAT }, { content: '' })).toEqual({ ok: true, refused: [] })
+    const [sent] = relay.sent
+    expect(tag(sent, 'field')).toBe('description')
+    expect(tag(sent, 'prev')).toBe(ROOT.id)
+    expect(tag(sent, 'value')).toBe(words)
+  })
+
   it("merges a text onto someone's newer save of another block, keeping both", async () => {
     const base = doc(['b1', 'one'], ['b2', 'two'])
     const file = opened(base)
