@@ -121,17 +121,40 @@ export function ownPath(returnTo: string | null | undefined): string | null {
 }
 
 const listeners = new Set<() => void>()
+const openListeners = new Set<() => void>()
+let openPath: string | undefined
+
+/**
+ * Calls back each time a person opens another page inside Leaf: a link, Back
+ * or Forward to another path. Not a redirect in place ({@link replace}) or a
+ * jump within the same page (`#block-…`). The page-open timer starts here.
+ */
+export function onOpen(listener: () => void): () => void {
+  if (openPath === undefined) {
+    openPath = window.location.pathname
+    window.addEventListener('popstate', () => {
+      if (window.location.pathname !== openPath) for (const open of openListeners) open()
+      openPath = window.location.pathname
+    })
+  }
+  openListeners.add(listener)
+  return () => openListeners.delete(listener)
+}
 
 /** Go to `href` without a reload: AppProvider's `navigate`, for every link the package draws. */
 export function navigate(href: string): void {
   if (href === window.location.pathname) return
+  const before = window.location.pathname
   window.history.pushState(null, '', href)
+  if (openPath !== undefined) openPath = window.location.pathname
+  if (window.location.pathname !== before) for (const open of openListeners) open()
   for (const listener of listeners) listener()
 }
 
 /** Be at `href` in place of where this tab is, so Back does not return to it: a link that has done its job. */
 export function replace(href: string): void {
   window.history.replaceState(null, '', href)
+  if (openPath !== undefined) openPath = window.location.pathname
   for (const listener of listeners) listener()
 }
 
