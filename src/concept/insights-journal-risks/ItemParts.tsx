@@ -48,7 +48,7 @@ export function AcceptReject({ onAnswer, waitingOn, label = 'Add' }: { onAnswer?
   )
 }
 
-export const acceptedStatus = (item: Pick<Item, 'type'>): Status => (item.type === 'risk' ? 'open' : 'accepted')
+export const acceptedStatus = (item: Pick<Item, 'type'>): Status => (item.type === 'risk' || item.type === 'todo' ? 'open' : 'accepted')
 
 /** An item's tag in its header, as Peek's mark label sits after the name: the type's icon and colour, an Insight's category or the word. */
 export function ItemTag({ item }: { item: Item }) {
@@ -196,6 +196,8 @@ const MARKER: Record<ItemType, { border: string; fill: string }> = {
   insight: { border: 'border-warning-default', fill: 'bg-warning-default' },
   journal: { border: 'border-info-default', fill: 'bg-info-default' },
   risk: { border: 'border-error-default', fill: 'bg-error-default' },
+  todo: { border: 'border-success-default', fill: 'bg-success-default' },
+  highlight: { border: 'border-border-strong', fill: 'bg-border-strong' },
 }
 /** A Question's square is orange, not its type's red (Miky, 18 Nov), until it ends and goes grey. */
 const markerOrange = (item: Item) =>
@@ -233,8 +235,8 @@ export function FilterRow({ type, value, onChange, items }: { type: ItemType; va
     const tabs = [{ id: 'all', label: 'All', count: items.length }, ...JOURNAL_FILTERS.map((f) => ({ id: f.id, label: f.label, count: filterItems(items, f.id).length }))]
     return <Tabs tabs={tabs} active={value} onChange={onChange} size="small" />
   }
-  const end ={ insight: 'Outdated', journal: 'Superseded', risk: 'Resolved' }[type]
-  const live = type === 'risk' ? 'Open' : 'Accepted'
+  const end = { insight: 'Outdated', journal: 'Superseded', risk: 'Resolved', todo: 'Done, dropped', highlight: 'Sorted' }[type]
+  const live = type === 'risk' || type === 'todo' ? 'Open' : 'Accepted'
   const tabs = [
     { id: 'all', label: 'All', count: items.length },
     { id: 'live', label: live, count: filterItems(items, 'live').length },
@@ -245,7 +247,7 @@ export function FilterRow({ type, value, onChange, items }: { type: ItemType; va
 }
 
 export const LIVE: Status[] = ['accepted', 'open']
-export const ENDED: Status[] = ['outdated', 'superseded', 'resolved', 'rejected']
+export const ENDED: Status[] = ['outdated', 'superseded', 'resolved', 'rejected', 'done', 'dropped']
 const JOURNAL_FILTERS = [
   { id: 'decided', label: 'Decided' },
   { id: 'updates', label: 'Updates' },
@@ -276,6 +278,8 @@ export function ListStateView({ state, type, children }: { state: ListState; typ
             insight: 'No insights yet. Mark a message, a comment or a block as an Insight and it shows here.',
             journal: 'Nothing in the journal yet. Mark a message, a comment or a block as a Decision or an Update.',
             risk: 'No risks yet. Mark a message, a comment or a block as a Concern or a Question.',
+            todo: 'No to-dos yet. Mark a message, a comment or a block as a To-do.',
+            highlight: 'Nothing to sort.',
           }[type]
         }
       />

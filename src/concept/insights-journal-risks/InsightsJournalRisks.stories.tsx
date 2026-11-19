@@ -201,6 +201,14 @@ export const MarkedCallouts: Story = {
   render: page({ n5: marked('risk', 'Question', item('r3').title, 'open'), n6: marked('journal', 'Decision', item('j1').title, 'proposed') }),
 }
 
+/**
+ * Trial (Miky, 19 Nov): the list highlighted, not sorted yet (grey: its block menu offers Sort as…), and the checklist
+ * marked as a To-do (green), which Ship then lists under the project's Scope to decide.
+ */
+export const MarkedHighlightAndToDo: Story = {
+  render: page({ n2: marked('highlight', 'Highlight', 'Are there highlights the seven words don’t cover?', 'proposed'), n4: marked('todo', 'To-do', 'Finish the checklist before the prototype review', 'open') }),
+}
+
 /** A marked callout above a paragraph changed since your last visit: "Question" in red, "Changed" in grey, both in the margin. */
 export const MarkedBesideChanged: Story = { render: page({ n5: marked('risk', 'Question', item('r3').title, 'open') }, { changed: ['n7'] }) }
 
