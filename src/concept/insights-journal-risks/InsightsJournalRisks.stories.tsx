@@ -135,6 +135,8 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
   // Marking as you write (trial, Miky 19 Nov): a symbol alone in a block and Enter, or Ctrl/⌘ + . and a symbol, marks
   // the block the caret is in, a new one included.
   const page = useRef<HTMLDivElement>(null)
+  const marksNow = useRef(marks)
+  marksNow.current = marks
   const [typed, setTyped] = useState<string[]>([])
   const picker = useTypedMark(page, {
     block: '[data-block-id]',
@@ -143,6 +145,12 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
       if (!id) return
       setTyped((t) => [...t, id])
       mark(id, el.textContent || 'A new block', w)
+    },
+    onUnmark: (el) => {
+      const id = el.dataset.blockId
+      if (!id || !marksNow.current[id]) return false
+      unmark(id)
+      return true
     },
   })
   const labels = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && (textOf[id] || typed.includes(id)) ? [[id, m.word]] : [])))
