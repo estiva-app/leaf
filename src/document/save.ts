@@ -21,7 +21,7 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, t
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
-import { archivedWithOptions, byFields, fieldsFor, isSwitchedKind, listReadOffered, openReadOption, readRelayAgain, switchedSinceLoad } from '../relay/projectFields'
+import { archivedWithOptions, byFields, fieldsFor, isListedKind, isSwitchedKind, listReadOffered, openReadOption, readRelayAgain, switchedSinceLoad } from '../relay/projectFields'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 import { markRowOnly } from '../relay/rowOnly'
 import { documentPath } from '../route'
@@ -63,7 +63,8 @@ export async function readDocuments(naddrs: readonly string[]): Promise<Record<s
 export async function readFileRows(addresses: readonly string[]): Promise<Record<string, ForeignObject>> {
   const listRead = await listReadOffered()
   const read = await resolveForeignRoots(addresses, query, manifests, { archivedWith: true, ...(listRead ? { listRead: true } : {}) })
-  if (listRead) markRowOnly(read)
+  // Only the kinds Leaf writes another app's text of: any other keeps its own body-slot rule, text unread or not.
+  if (listRead) markRowOnly(read.filter((file) => isListedKind(file.address)))
   return Object.fromEntries(read.flatMap((file) => (file.address ? [[file.address, file] as const] : [])))
 }
 

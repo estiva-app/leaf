@@ -168,13 +168,14 @@ export async function openReadOption(): Promise<{ openRead?: readonly number[] }
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
  */
 export async function treeListRead(): Promise<{ listRead?: true; listReadKinds?: readonly number[] }> {
-  return (await projectFields()) ? { listRead: true, listReadKinds: LISTED_KINDS } : {}
+  const [projects, offered] = await Promise.all([projectFields(), listReadOffered()])
+  return projects && offered ? { listRead: true, listReadKinds: LISTED_KINDS } : {}
 }
 
 /** The kinds the tree reads by the list read once projects are switched: another app's files, not Leaf's pages. */
 const LISTED_KINDS = [PROJECT_KIND, ISSUE_KIND] as const
 
-/** Whether the tree read `address` by the list read: its row only, with no text and no actions (ISS-6). */
+/** Whether `address` is of a kind the tree and Home read by the list read: its row only, its text unread (ISS-6). */
 export function isListedKind(address: string | undefined): boolean {
   return LISTED_KINDS.some((kind) => !!address && address.startsWith(`${kind}:`))
 }

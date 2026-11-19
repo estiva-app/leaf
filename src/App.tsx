@@ -143,7 +143,8 @@ function Frame() {
   // A project or issue the tree read for its row only (ISS-6) has no text or actions: the page reads it by its address.
   const open = found && isRowOnly(found.file) ? null : found
   // `[` on the open page offers its Folder's files, as the tree read them.
-  useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
+  // The tree's copy names the Folder even when the page reads the file again by address.
+  useReferencePage({ address: found?.file.address, folder: found?.folder.contents?.files })
   // The file opened by its address, read on its own while the tree is still read and until the tree lists it (APP-3):
   // the tree's copy takes over then, keyed the same, so the open editor stays.
   const naddr = route.page === 'file' ? route.naddr : named.address ? naddrOf(named.address) : null
