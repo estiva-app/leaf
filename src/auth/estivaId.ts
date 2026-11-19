@@ -44,7 +44,11 @@ const client = ID_CONFIG
       pendingStore: () => (typeof sessionStorage === 'undefined' ? null : sessionStorage),
       keyPrefix: KEY_PREFIX,
       navigate: (url) => {
-        for (const leave of leavingListeners) leave()
+        // Nothing a listener does may keep the tab from signing in.
+        for (const leave of leavingListeners)
+          try {
+            leave()
+          } catch {}
         window.location.assign(url)
       },
     })
