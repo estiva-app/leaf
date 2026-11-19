@@ -34,6 +34,7 @@ const switched = vi.hoisted(() => new Set(['30850', '30851']))
 vi.mock('../relay/projectFields', () => {
   const on = (address?: string) => !!address && switched.has(address.split(':')[0]!)
   return {
+    projectFields: async () => (switched.has('30850') ? { text: true } : undefined),
     isProject: (address?: string) => !!address && address.startsWith('30850:'),
     isIssue: (address?: string) => !!address && address.startsWith('30851:'),
     isSwitchedKind: (address?: string) => !!address && /^3085[01]:/.test(address),
