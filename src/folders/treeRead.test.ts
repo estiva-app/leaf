@@ -11,9 +11,12 @@ vi.mock('../config', () => ({ RELAY_URL: 'https://relay.test' }))
 vi.mock('../relay/bridge', () => ({ viewerPubkey: () => 'a'.repeat(64), query: async () => [], publish: async () => ({ ok: true }), queryTimes: vi.fn() }))
 
 import * as workspace from './workspace'
-import * as rows from '../relay/rowOnly'
 import { resetRelayReadsForTests } from '../relay/projectFields'
 import { isListed } from './tree'
+
+// Read by a path the bundler leaves alone, so the test loads on code with no row-only mark and fails on what it reads.
+const ROW_ONLY = '../relay/rowOnly'
+const rows: { isRowOnly?: (file: unknown) => boolean } = await import(/* @vite-ignore */ ROW_ONLY).catch(() => ({}))
 
 const KEEPER = 'a'.repeat(64)
 const RELAY = 'f'.repeat(64)
