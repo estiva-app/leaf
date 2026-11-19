@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
+import { useTypedMark } from './TypedMark'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { mocked } from 'storybook/test'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
@@ -131,7 +132,20 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
   const mark = (id: string, text: string, word: MarkWord) => (setMarks((m) => ({ ...m, [id]: marked(TYPE_OF[word], word, firstLine(text)) })), setNotice(word))
   const unmark = (id: string) => setMarks((m) => ({ ...m, [id]: undefined }))
   const rows = (id: string, text: string) => <MarkAsRows mark={marks[id]} onMark={(w) => mark(id, text, w)} onUnmark={() => unmark(id)} />
-  const labels = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && textOf[id] ? [[id, m.word]] : [])))
+  // Marking as you write (trial, Miky 19 Nov): a symbol alone in a block and Enter, or Ctrl/⌘ + . and a symbol, marks
+  // the block the caret is in, a new one included.
+  const page = useRef<HTMLDivElement>(null)
+  const [typed, setTyped] = useState<string[]>([])
+  const picker = useTypedMark(page, {
+    block: '[data-block-id]',
+    onMark: (w, el) => {
+      const id = el.dataset.blockId
+      if (!id) return
+      setTyped((t) => [...t, id])
+      mark(id, el.textContent || 'A new block', w)
+    },
+  })
+  const labels = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && (textOf[id] || typed.includes(id)) ? [[id, m.word]] : [])))
   const opened = open ? ITEM_OF[open] : undefined
   const hover = useMarkHover(labels, 'gutter')
   return (
@@ -141,9 +155,10 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
           <style>{blockLineCss(labels, changed, 'gutter')}</style>
           {hover}
           {/* @estiva-escape(no-raw-interactive): concept only, the margin label is CSS on the editor's own block, so its click is read here */}
-          <div className="contents" onClickCapture={(e) => { const id = markedBlockAt(e, labels); if (id) setOpen(id) }}>
+          <div ref={page} className="contents" onClickCapture={(e) => { const id = markedBlockAt(e, labels); if (id) setOpen(id) }}>
             {children}
           </div>
+          {picker}
           {notice && <MarkedNotice word={notice} team={TEAM} onClose={() => setNotice(undefined)} />}
         </ConceptSide.Provider>
       </ConceptComment.Provider>
@@ -205,6 +220,13 @@ export const MarkedCallouts: Story = {
  * Trial (Miky, 19 Nov): the list highlighted, not sorted yet (grey: its block menu offers Sort as…), and the checklist
  * marked as a To-do (green), which Ship then lists under the project's Scope to decide.
  */
+/**
+ * Trial (Miky, 19 Nov): mark as you write. Click at the end of any paragraph, press Enter for a new block, type `?`
+ * alone and press Enter: the symbol goes and the block wears Question in the margin. Or press Ctrl/⌘ + . in any
+ * block and type a symbol (`!` `*` `?` `[]` `=` `:` `~` `!!`) or pick a row.
+ */
+export const MarkAsYouWrite: Story = { render: page({}) }
+
 export const MarkedHighlightAndToDo: Story = {
   render: page({ n2: marked('highlight', 'Highlight', 'Are there highlights the seven words don’t cover?', 'proposed'), n4: marked('todo', 'To-do', 'Finish the checklist before the prototype review', 'open') }),
 }
