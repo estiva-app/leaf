@@ -1,10 +1,10 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { useTypedMark } from './TypedMark'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { SURE, suggestFor, useTypedMark } from './TypedMark'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { mocked } from 'storybook/test'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { serializeBlockDocument, type SignedEvent } from '@estiva-app/protocol'
-import { ToastProvider } from '@estiva-app/ui'
+import { Toast, ToastProvider } from '@estiva-app/ui'
 import { ConceptComment } from '../../comments/CommentsColumn'
 import type { CommentItem, Thread } from '../../comments/comments'
 import { useThreads } from '../../comments/useThreads'
@@ -153,6 +153,37 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
       return true
     },
   })
+  // The model's suggestion when you pause in a block (Miky, 19 Nov; a document has no send): sure marks the block at
+  // once, with Undo; unsure is only offered, and goes when you ignore it. A block is offered once.
+  const [suggestion, setSuggestion] = useState<{ id: string; text: string; word: MarkWord; sure: boolean }>()
+  const offered = useRef<string[]>([])
+  useEffect(() => {
+    const root = page.current
+    if (!root) return
+    let t: ReturnType<typeof setTimeout>
+    const read = () => {
+      clearTimeout(t)
+      const n = window.getSelection()?.anchorNode
+      const el = (n?.nodeType === Node.ELEMENT_NODE ? (n as Element) : n?.parentElement)?.closest('[data-block-id]') as HTMLElement | null
+      const id = el?.dataset.blockId
+      t = setTimeout(() => {
+        const text = el?.textContent ?? ''
+        const s = suggestFor(text)
+        if (!id || !s || marksNow.current[id] || offered.current.includes(id)) return
+        offered.current.push(id)
+        setTyped((all) => [...all, id])
+        if (s.confidence >= SURE) mark(id, text, s.word)
+        setSuggestion({ id, text, word: s.word, sure: s.confidence >= SURE })
+      }, 900)
+    }
+    root.addEventListener('input', read)
+    return () => (root.removeEventListener('input', read), clearTimeout(t))
+  })
+  useEffect(() => {
+    if (!suggestion || suggestion.sure) return
+    const t = setTimeout(() => setSuggestion(undefined), 10_000)
+    return () => clearTimeout(t)
+  }, [suggestion])
   const labels = Object.fromEntries(Object.entries(marks).flatMap(([id, m]) => (m && drawsLine(m) && (textOf[id] || typed.includes(id)) ? [[id, m.word]] : [])))
   const opened = open ? ITEM_OF[open] : undefined
   const hover = useMarkHover(labels, 'gutter')
@@ -167,7 +198,17 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
             {children}
           </div>
           {picker}
-          {notice && <MarkedNotice word={notice} team={TEAM} onClose={() => setNotice(undefined)} />}
+          {suggestion ? (
+            <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+              {suggestion.sure ? (
+                <Toast label={`Suggested: this block is marked as ${suggestion.word}.`} type="success" actionLabel="Undo" onAction={() => (unmark(suggestion.id), setSuggestion(undefined))} />
+              ) : (
+                <Toast label={`Mark this block as ${suggestion.word}?`} type="neutral" actionLabel="Mark" onAction={() => (mark(suggestion.id, suggestion.text, suggestion.word), setSuggestion(undefined))} />
+              )}
+            </div>
+          ) : (
+            notice && <MarkedNotice word={notice} team={TEAM} onClose={() => setNotice(undefined)} />
+          )}
         </ConceptSide.Provider>
       </ConceptComment.Provider>
     </ConceptBlockRows.Provider>
