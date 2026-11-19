@@ -1,12 +1,12 @@
 import { isArchived, type ForeignObject } from '@estiva-app/interop'
 import { useEffect, useMemo, useState } from 'react'
-import { nameOf, onSaved, readDocuments } from '../document/save'
+import { nameOf, onSaved, readFileRows } from '../document/save'
 import { summaryText } from '../document/summary'
-import { naddrOf } from '../fileAddress'
 import { isDocument, isListed, titleOf, typeOf } from '../folders/tree'
 import type { WorkspaceFolder } from '../folders/useWorkspace'
 import { query, viewerPubkey } from '../relay/bridge'
-import { isProject, projectFields } from '../relay/projectFields'
+import { isIssue, isProject, isSwitchedKind, issueFields, projectFields, timesRead } from '../relay/projectFields'
+import { isRowOnly } from '../relay/rowOnly'
 import { ownSavesFilter, rankRecent, recentFilters, textTargets, type Page, type RecentRow } from './recent'
 
 /** One of Home's rows as it draws: the row, and the name of who changed it last. */
@@ -55,7 +55,7 @@ export function otherRowOf(file: ForeignObject | null, folders: WorkspaceFolder[
   const lister = (address: string | undefined) => folders.find(({ contents }) => contents?.files.some((f) => f.address === address))?.folder
   const where = lister(file.address) ?? lister(file.parentRef)
   const row = rowOf(file, where?.name ?? '', file.folder)
-  if (!byFields || !isProject(file.address) || !file.prevs) return row
+  if (!byFields || !isSwitchedKind(file.address) || !file.prevs) return row
   const changes = EDITS.map((field) => file.prevs![field]).filter((id): id is string => !!id)
   return { ...row, changes }
 }
@@ -71,8 +71,40 @@ async function othersOf(folders: WorkspaceFolder[], me: string | null): Promise<
   if (!me) return []
   const targets = textTargets(await query([ownSavesFilter(me)]))
   if (targets.length === 0) return []
-  const [read, fields] = await Promise.all([readDocuments(targets.map(naddrOf)), projectFields()])
-  return targets.map((t) => otherRowOf(read[naddrOf(t)] ?? null, folders, !!fields)).filter((row): row is Page => row !== null)
+  const [read, projects, issues] = await Promise.all([readFileRows(targets), projectFields(), issueFields()])
+  // A project or an issue read by its fields names its current changes, each by its own switch (ISS-6).
+  const switched = (address: string) => (isProject(address) ? !!projects : isIssue(address) ? !!issues : false)
+  const rows = targets.map((t) => otherRowOf(read[t] ?? null, folders, switched(t))).filter((row): row is Page => row !== null)
+  // A row read by the list read names no text change (§6.13): its newest edits come from the times read.
+  const edits = await editsOf(rows.filter((row) => row.changes && read[row.address] && isRowOnly(read[row.address]!)))
+  return rows.map((row) => (edits.has(row.address) ? { ...row, changes: [...new Set([...(row.changes ?? []), ...edits.get(row.address)!])] } : row))
+}
+
+/**
+ * The newest title, summary and text change of each of `rows`, by id, from the relay's times read (SPEC §6.13): when
+ * each changed, without the changes. Home reads those changes by id, as it reads a whole-read file's. Empty where
+ * the relay has no times read, or when it fails: the row then ranks by the changes it names.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
+ */
+export async function editsOf(rows: Pick<Page, 'address'>[]): Promise<Map<string, string[]>> {
+  const { times } = await timesRead()
+  if (!times || rows.length === 0) return new Map()
+  const byKind = new Map<number, string[]>()
+  for (const { address } of rows) {
+    const [kind, , d] = address.split(':')
+    byKind.set(Number(kind), [...(byKind.get(Number(kind)) ?? []), d])
+  }
+  const answers = await times([...byKind].map(([kind, ds]) => ({ fields: 'times', kinds: [kind], '#d': ds }))).catch(() => [])
+  const edits = new Map<string, string[]>()
+  for (const file of answers) {
+    const newest = EDITS.flatMap((field) => {
+      const changes = file.changes.filter((change) => change.fields.includes(field))
+      return changes.length ? [changes.reduce((a, b) => (b.created_at > a.created_at ? b : a)).id] : []
+    })
+    if (newest.length) edits.set(file.a, newest)
+  }
+  return edits
 }
 
 /**

@@ -1,8 +1,8 @@
-import { projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
+import { ISSUE_TYPE, fileFieldsOf, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
 import type { TimesFn } from '@estiva-app/interop'
 import { RELAY_URL } from '../config'
 import { queryTimes } from './bridge'
-import { fieldsOptIn } from './fieldsOptIn'
+import { fieldsOptIn, issueFieldsOptIn } from './fieldsOptIn'
 
 /** The relay's NIP-11 document, which needs no sign-in; `null` in a build with no relay. */
 async function relayInfo(): Promise<unknown> {
@@ -14,6 +14,9 @@ async function relayInfo(): Promise<unknown> {
 
 /** The kind a project is written as: the type the switch names, protocol's `PROJECT_TYPE` (TYPES.md). */
 export const PROJECT_KIND = 30850
+
+/** The kind an issue is written as: protocol's `ISSUE_TYPE`, switched apart from projects (ISS-6). */
+export const ISSUE_KIND = 30851
 
 let held: Promise<RelayFileReads | undefined> | undefined
 
@@ -71,6 +74,25 @@ export async function projectFields(): Promise<ProjectFields | undefined> {
 }
 
 /**
+ * Whether Leaf reads and writes issues by their fields (ISS-6): the issues' own switch, protocol's `fileFieldsOf` for
+ * `ISSUE_TYPE` — on once the relay keeps issues in order, or for a tab opened with `?issueFields=on` — apart from the
+ * projects', as Ship's and Peek's. Undefined is off.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
+ */
+export async function issueFields(): Promise<ProjectFields | undefined> {
+  const reads = await relayReads()
+  return reads ? fileFieldsOf(reads, ISSUE_TYPE, issueFieldsOptIn()) : undefined
+}
+
+/** The switch for the type of the file at `address`: a project's or an issue's, undefined for any other kind or when off. */
+export async function fieldsFor(address: string | undefined): Promise<ProjectFields | undefined> {
+  if (isProject(address)) return projectFields()
+  if (isIssue(address)) return issueFields()
+  return undefined
+}
+
+/**
  * Whether the relay answers the list read (SPEC §6.13), switched or not: finding a file's parents, and whether one of
  * them is archived, then reads each parent's current values rather than its every change (ALO-15).
  *
@@ -109,17 +131,51 @@ export async function archivedWithOptions(): Promise<{ archivedWith: true; listR
   return (await listReadOffered()) ? { archivedWith: true, listRead: true } : { archivedWith: true }
 }
 
-/** Whether `address` names a project: the one kind the switch covers. */
+/** Whether `address` names a project. */
 export function isProject(address: string | undefined): boolean {
   return !!address && address.startsWith(`${PROJECT_KIND}:`)
 }
 
-/** Whether `address` is a project read and written by its fields in this tab. */
-export async function byFields(address: string | undefined): Promise<boolean> {
-  return isProject(address) && !!(await projectFields())
+/** Whether `address` names an issue. */
+export function isIssue(address: string | undefined): boolean {
+  return !!address && address.startsWith(`${ISSUE_KIND}:`)
 }
 
-/** The kinds the open read opens, for interop's `openRead`: projects once switched. */
+/** Whether `address` names a file of a kind a switch covers: a project or an issue. */
+export function isSwitchedKind(address: string | undefined): boolean {
+  return isProject(address) || isIssue(address)
+}
+
+/** Whether `address` is a project or an issue read and written by its fields in this tab, each by its own switch. */
+export async function byFields(address: string | undefined): Promise<boolean> {
+  return !!(await fieldsFor(address))
+}
+
+/** The kinds the open read opens, for interop's `openRead`: projects once switched, issues once theirs is (ISS-6). */
 export async function openReadOption(): Promise<{ openRead?: readonly number[] }> {
-  return (await projectFields()) ? { openRead: [PROJECT_KIND] } : {}
+  const [projects, issues] = await Promise.all([projectFields(), issueFields()])
+  const kinds = [...(projects ? [PROJECT_KIND] : []), ...(issues ? [ISSUE_KIND] : [])]
+  return kinds.length ? { openRead: kinds } : {}
+}
+
+/**
+ * The tree's `listRead`, once projects are switched, as Peek's tree reads it (`listReadOption`): listing the teams and
+ * each team's files reads every file as its first record and its fields' current changes, not every change ever made
+ * to it — a project's issues under its row too. Before, a cold Leaf open read every old change of every listed file:
+ * 78 MB as Miky on 19 Nov, 48 MB of it projects' (ISS-6). Only the kinds Leaf lists and never edits from the tree:
+ * a Leaf page opens from the tree's copy, so it is read whole, its current text included.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
+ */
+export async function treeListRead(): Promise<{ listRead?: true; listReadKinds?: readonly number[] }> {
+  const [projects, offered] = await Promise.all([projectFields(), listReadOffered()])
+  return projects && offered ? { listRead: true, listReadKinds: LISTED_KINDS } : {}
+}
+
+/** The kinds the tree reads by the list read once projects are switched: another app's files, not Leaf's pages. */
+const LISTED_KINDS = [PROJECT_KIND, ISSUE_KIND] as const
+
+/** Whether `address` is of a kind the tree and Home read by the list read: its row only, its text unread (ISS-6). */
+export function isListedKind(address: string | undefined): boolean {
+  return LISTED_KINDS.some((kind) => !!address && address.startsWith(`${kind}:`))
 }
