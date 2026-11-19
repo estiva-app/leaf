@@ -21,7 +21,7 @@ import { ItemPanel } from './ItemPanel'
 /*
   CONCEPT — Insights, Journal and Risks in Leaf (prototype issue 009bc509). Leaf's real FilePage, as Pages/File page
   draws it, with the block menu's Mark as… (through ConceptBlockRows) and a comment's ⋯ Mark as… (through
-  ConceptComment). Marking is at once: the title is the block's or comment's first line, a notice offers Open.
+  ConceptComment). Marking is at once: the title starts as the block's or comment's first line and is edited in the notice, which offers Open.
 */
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
@@ -128,8 +128,10 @@ const marked = (type: ItemType, word: MarkWord, title: string, status: Mark['sta
 function Marking({ children, blocks = {}, comments = {}, changed = [], open: open0 }: { children: ReactNode; blocks?: Record<string, Mark>; comments?: Record<string, Mark>; changed?: string[]; open?: string }) {
   const [marks, setMarks] = useState<Record<string, Mark | undefined>>({ ...blocks, ...comments })
   const [open, setOpen] = useState<string | undefined>(open0)
-  const [notice, setNotice] = useState<MarkWord>()
-  const mark = (id: string, text: string, word: MarkWord) => (setMarks((m) => ({ ...m, [id]: marked(TYPE_OF[word], word, firstLine(text)) })), setNotice(word))
+  const [notice, setNotice] = useState<{ word: MarkWord; id: string }>()
+  // The title starts from the block's first line and is edited in the notice (record: an item shows its source as marked).
+  const mark = (id: string, text: string, word: MarkWord) => (setMarks((m) => ({ ...m, [id]: marked(TYPE_OF[word], word, firstLine(text)) })), setNotice({ word, id }))
+  const retitle = (id: string, title: string) => setMarks((m) => (m[id] ? { ...m, [id]: { ...m[id], title } } : m))
   const unmark = (id: string) => setMarks((m) => ({ ...m, [id]: undefined }))
   const rows = (id: string, text: string) => <MarkAsRows mark={marks[id]} onMark={(w) => mark(id, text, w)} onUnmark={() => unmark(id)} />
   // Marking as you write (trial, Miky 19 Nov): a symbol alone in a block and Enter, or Ctrl/⌘ + . and a symbol, marks
@@ -207,7 +209,7 @@ function Marking({ children, blocks = {}, comments = {}, changed = [], open: ope
               )}
             </div>
           ) : (
-            notice && <MarkedNotice word={notice} team={TEAM} onClose={() => setNotice(undefined)} />
+            notice && <MarkedNotice word={notice.word} team={TEAM} title={marks[notice.id]?.title} onTitle={(t) => retitle(notice.id, t)} onClose={() => setNotice(undefined)} />
           )}
         </ConceptSide.Provider>
       </ConceptComment.Provider>
