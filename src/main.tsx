@@ -8,9 +8,12 @@ import { SessionGate } from './auth/SessionGate'
 import { fieldsOptIn, issueFieldsOptIn } from './relay/fieldsOptIn'
 import { ErrorBoundary } from '@estiva-app/ui'
 import { startErrorReports } from './lib/errorReports'
+import { startPageTimings } from './lib/pageTimings'
 
 // A crash anywhere in Leaf is reported to Estiva ID, built from a fixed list (PROD-4).
 startErrorReports()
+// How long each page took to open, from the tab's start: before sign-in, which may leave for Estiva ID and come back.
+startPageTimings()
 
 // Settle who this load belongs to first, then render: the app itself is imported
 // only once sign-in is settled, so nothing in it evaluates as the wrong person.
