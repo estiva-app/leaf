@@ -1,5 +1,6 @@
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { KIND } from '@estiva-app/protocol'
+import { isRowOnly } from '../relay/rowOnly'
 import type { DocumentField } from './save'
 
 const FIELDS: readonly DocumentField[] = ['title', 'summary', 'description']
@@ -20,7 +21,9 @@ export function writableFields(file: ForeignObject): ReadonlySet<DocumentField> 
     if (action.declaredBy || action.control !== 'text') continue
     const field = FIELDS.find((f) => f === action.field)
     if (!field) continue
-    if (field === 'description' && (action.format !== BLOCK_DOCUMENT_FORMAT || file.slots[BODY_SLOT]?.field !== 'description')) continue
+    // A row read by the list read has its text unread and so no `body` slot; its page reads it whole before writing.
+    const shown = isRowOnly(file) || file.slots[BODY_SLOT]?.field === 'description'
+    if (field === 'description' && (action.format !== BLOCK_DOCUMENT_FORMAT || !shown)) continue
     shared.add(field)
   }
   return shared

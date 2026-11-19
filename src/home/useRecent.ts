@@ -1,12 +1,11 @@
 import { isArchived, type ForeignObject } from '@estiva-app/interop'
 import { useEffect, useMemo, useState } from 'react'
-import { nameOf, onSaved, readDocuments } from '../document/save'
+import { nameOf, onSaved, readFileRows } from '../document/save'
 import { summaryText } from '../document/summary'
-import { naddrOf } from '../fileAddress'
 import { isDocument, isListed, titleOf, typeOf } from '../folders/tree'
 import type { WorkspaceFolder } from '../folders/useWorkspace'
 import { query, viewerPubkey } from '../relay/bridge'
-import { isProject, projectFields } from '../relay/projectFields'
+import { isIssue, isProject, isSwitchedKind, issueFields, projectFields } from '../relay/projectFields'
 import { ownSavesFilter, rankRecent, recentFilters, textTargets, type Page, type RecentRow } from './recent'
 
 /** One of Home's rows as it draws: the row, and the name of who changed it last. */
@@ -55,7 +54,7 @@ export function otherRowOf(file: ForeignObject | null, folders: WorkspaceFolder[
   const lister = (address: string | undefined) => folders.find(({ contents }) => contents?.files.some((f) => f.address === address))?.folder
   const where = lister(file.address) ?? lister(file.parentRef)
   const row = rowOf(file, where?.name ?? '', file.folder)
-  if (!byFields || !isProject(file.address) || !file.prevs) return row
+  if (!byFields || !isSwitchedKind(file.address) || !file.prevs) return row
   const changes = EDITS.map((field) => file.prevs![field]).filter((id): id is string => !!id)
   return { ...row, changes }
 }
@@ -71,8 +70,10 @@ async function othersOf(folders: WorkspaceFolder[], me: string | null): Promise<
   if (!me) return []
   const targets = textTargets(await query([ownSavesFilter(me)]))
   if (targets.length === 0) return []
-  const [read, fields] = await Promise.all([readDocuments(targets.map(naddrOf)), projectFields()])
-  return targets.map((t) => otherRowOf(read[naddrOf(t)] ?? null, folders, !!fields)).filter((row): row is Page => row !== null)
+  const [read, projects, issues] = await Promise.all([readFileRows(targets), projectFields(), issueFields()])
+  // A project or an issue read by its fields names its current changes, each by its own switch (ISS-6).
+  const switched = (address: string) => (isProject(address) ? !!projects : isIssue(address) ? !!issues : false)
+  return targets.map((t) => otherRowOf(read[t] ?? null, folders, switched(t))).filter((row): row is Page => row !== null)
 }
 
 /**

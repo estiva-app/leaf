@@ -28,21 +28,27 @@ vi.mock('../relay/bridge', () => ({
     },
   },
 }))
-// The switch is protocol's `projectFieldsOf`, tested there; here it is on, as `?fields=on` on a fenced Folder makes it.
-vi.mock('../relay/projectFields', () => ({
-  PROJECT_KIND: 30850,
-  isProject: (address?: string) => !!address?.startsWith('30850:'),
-  byFields: async (address?: string) => !!address?.startsWith('30850:'),
-  projectFields: async () => ({ text: true }),
-  openReadOption: async () => ({ openRead: [30850] }),
-}))
+// Each type's switch is protocol's `fileFieldsOf`, tested there; here a kind in `switched` is on, as `?fields=on` or
+// `?issueFields=on` on a fenced team makes it, and the others are off.
+const switched = vi.hoisted(() => new Set(['30850', '30851']))
+vi.mock('../relay/projectFields', () => {
+  const on = (address?: string) => !!address && switched.has(address.split(':')[0]!)
+  return {
+    isSwitchedKind: (address?: string) => !!address && /^3085[01]:/.test(address),
+    byFields: async (address?: string) => on(address),
+    fieldsFor: async (address?: string) => (on(address) ? { text: true } : undefined),
+    openReadOption: async () => ({ openRead: [...switched].map(Number) }),
+    readRelayAgain: () => {},
+    switchedSinceLoad: () => false,
+  }
+})
 
 import { saveCardChoice, saveField, saveText, setDeleted, noteRead, onMerged } from './save'
 
 const OWNER = 'b'.repeat(64)
 const THEM = 'c'.repeat(64)
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
-const ADDRESS = `30850:${OWNER}:p1`
+let ADDRESS = `30850:${OWNER}:p1`
 const ROOT = { id: 'f'.repeat(64), kind: 30850, pubkey: OWNER, created_at: 1_760_000_000, tags: [['d', 'p1'], ['h', FOLDER]], content: '', sig: '' } as SignedEvent
 const tag = (event: { tags: string[][] }, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 const doc = (...paragraphs: [string, string][]) =>
@@ -74,9 +80,20 @@ const opened = (text: string, prevs: Record<string, string> = {}) => {
 beforeEach(() => {
   relay.events = [ROOT]
   relay.sent = []
+  switched.clear()
+  switched.add('30850').add('30851')
 })
 
-describe('a project read by its fields, saved from Leaf (ALO-6)', () => {
+// A project since ALO-6, an issue since ISS-6: the same saves, each kind by its own switch.
+describe.each([
+  ['project', 30850],
+  ['issue', 30851],
+])('a %s read by its fields, saved from Leaf', (noun, kind) => {
+  beforeEach(() => {
+    ADDRESS = `${kind}:${OWNER}:p1`
+    ROOT.kind = kind
+  })
+
   it('names the change a title follows, and the first record for its first change', async () => {
     const file = opened('')
     expect(await saveField(file, 'title', 'Renamed')).toEqual({ ok: true })
@@ -145,7 +162,7 @@ describe('a project read by its fields, saved from Leaf (ALO-6)', () => {
     expect(newest(ADDRESS, 'description')!.id).toBe(their.id)
   })
 
-  it('restores a deleted project with the deleted field set empty, after the delete', async () => {
+  it(`restores a deleted ${noun} with the deleted field set empty, after the delete`, async () => {
     const del = theirs('deleted', 'true', ROOT.id)
     const file = opened('', { deleted: del.id })
     expect(await setDeleted(file, false)).toEqual({ ok: true })
@@ -153,5 +170,25 @@ describe('a project read by its fields, saved from Leaf (ALO-6)', () => {
     expect(tag(sent, 'field')).toBe('deleted')
     expect(tag(sent, 'value')).toBe('')
     expect(tag(sent, 'prev')).toBe(del.id)
+  })
+})
+
+describe('an issue while only projects are switched (ISS-6)', () => {
+  beforeEach(() => {
+    ADDRESS = `30851:${OWNER}:p1`
+    ROOT.kind = 30851
+    switched.delete('30851')
+  })
+
+  it('writes its title as before, naming no change it follows', async () => {
+    const publish = vi.mocked((await import('../relay/bridge')).publish)
+    publish.mockClear()
+    const file = opened('')
+    expect(await saveField(file, 'title', 'Renamed')).toEqual({ ok: true })
+    expect(relay.sent).toEqual([])
+    const [event] = publish.mock.calls.at(-1)! as unknown as [UnsignedEvent]
+    expect(tag(event, 'a')).toBe(ADDRESS)
+    expect(tag(event, 'value')).toBe('Renamed')
+    expect(tag(event, 'prev')).toBeUndefined()
   })
 })

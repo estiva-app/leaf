@@ -1,4 +1,4 @@
-import { fieldsOptedIn } from '@estiva-app/protocol'
+import { ISSUE_TYPE, fieldsOptedIn, typeFieldsOptedIn } from '@estiva-app/protocol'
 
 const OPT_IN_KEY = 'leaf.projectFields'
 
@@ -17,4 +17,12 @@ function tabStorage(): Storage | undefined {
  */
 export function fieldsOptIn(search = ''): boolean {
   return fieldsOptedIn(search, tabStorage(), OPT_IN_KEY)
+}
+
+/**
+ * This tab's opt-in to reading and writing issues by their fields (ISS-6): `?issueFields=on|off`, kept for the tab
+ * only and apart from the projects' one (protocol's `typeFieldsOptedIn`), as Ship's and Peek's.
+ */
+export function issueFieldsOptIn(search = ''): boolean {
+  return typeFieldsOptedIn(ISSUE_TYPE, search, tabStorage())
 }

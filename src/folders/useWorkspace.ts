@@ -147,7 +147,7 @@ export function useWorkspace(): Workspace {
     if (!open || !naddr || asked.current.has(ref)) return
     asked.current.add(ref)
     setChildren((now) => ({ ...now, [ref]: null }))
-    void readChildren(naddr).then(
+    void readChildren(naddr, file.address).then(
       (read) => setChildren((now) => ({ ...now, [ref]: read })),
       () => {
         asked.current.delete(ref)

@@ -23,6 +23,7 @@ import { naddrOf } from './fileAddress'
 import { fileKey, findArchivedAt, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
+import { isRowOnly } from './relay/rowOnly'
 import { useReferencePage } from './document/referencePicker'
 import { profileOf } from './document/save'
 import { useRecent } from './home/useRecent'
@@ -131,7 +132,7 @@ function Frame() {
   const named = usePathAddress(
     route.page === 'path' ? route : route.page === 'document' && !listedDocument ? { word: 'document', ref: route.d } : null,
   )
-  const open =
+  const found =
     route.page === 'file'
       ? findFile(folders, children, route.naddr)
       : route.page === 'document'
@@ -139,6 +140,8 @@ function Frame() {
         : route.page === 'path' && named.address
           ? findFileAt(folders, children, named.address)
           : null
+  // A project or issue the tree read for its row only (ISS-6) has no text or actions: the page reads it by its address.
+  const open = found && isRowOnly(found.file) ? null : found
   // `[` on the open page offers its Folder's files, as the tree read them.
   useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
   // The file opened by its address, read on its own while the tree is still read and until the tree lists it (APP-3):

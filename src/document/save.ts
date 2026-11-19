@@ -9,6 +9,7 @@ import {
   prevsAfterSwitch,
   resolveForeignObject,
   resolveForeignObjects,
+  resolveForeignRoots,
   resolveManifest,
   stageTagFor,
   textOf,
@@ -20,8 +21,9 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, t
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
-import { PROJECT_KIND, archivedWithOptions, byFields, isProject, openReadOption, projectFields, readRelayAgain, switchedSinceLoad } from '../relay/projectFields'
+import { archivedWithOptions, byFields, fieldsFor, isSwitchedKind, listReadOffered, openReadOption, readRelayAgain, switchedSinceLoad } from '../relay/projectFields'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
+import { markRowOnly } from '../relay/rowOnly'
 import { documentPath } from '../route'
 
 /** A change to a file's field (SPEC §6.2); protocol has no name for it yet. */
@@ -51,6 +53,21 @@ export async function readDocuments(naddrs: readonly string[]): Promise<Record<s
 }
 
 /**
+ * Other apps' files as Home lists them, keyed by address: what each is now, without its comments, its children or its
+ * people, and by the list read where the relay offers it. A project costs its current values, never every change of
+ * every issue under it, which {@link readDocuments} reads: 4.3 MB of Miky's cold Home on 19 Nov (ISS-6). A file the
+ * reader cannot read, or one deleted, is absent.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ */
+export async function readFileRows(addresses: readonly string[]): Promise<Record<string, ForeignObject>> {
+  const listRead = await listReadOffered()
+  const read = await resolveForeignRoots(addresses, query, manifests, { archivedWith: true, ...(listRead ? { listRead: true } : {}) })
+  if (listRead) markRowOnly(read)
+  return Object.fromEntries(read.flatMap((file) => (file.address ? [[file.address, file] as const] : [])))
+}
+
+/**
  * Per project read by its fields, the change each field's next change follows, and each text this tab has shown or
  * saved with the change holding it (Ship's `textChanges`, ALO-5): a text save follows the change holding the text it
  * was edited from, and a merge with a newer one starts from it (§13.3). A text edited from one nobody here holds would
@@ -64,9 +81,9 @@ function heldOf(address: string) {
   return one
 }
 
-/** Hold what a read of a project says each field's next change follows, and the text it shows. */
+/** Hold what a read of a project or an issue says each field's next change follows, and the text it shows. */
 export function noteRead(file: Pick<ForeignObject, 'address' | 'prevs' | 'eventId' | 'slots'>): void {
-  if (!isProject(file.address) || !file.prevs) return
+  if (!isSwitchedKind(file.address) || !file.prevs) return
   const one = heldOf(file.address!)
   for (const [field, id] of Object.entries(file.prevs)) if (id && field !== TEXT_FIELD) one.prevs[field] = id
   const text = prevOf(file, TEXT_FIELD)
@@ -265,8 +282,8 @@ async function writeInOrder(
   base?: { value: string; format?: string },
   stage?: StageTag,
 ): Promise<WriteChangeResult> {
-  const [, owner, ...d] = file.address.split(':')
-  const fields = await projectFields()
+  const pointer = pointerOf(file.address)
+  const fields = await fieldsFor(file.address)
   try {
     const result = await writeChange({
       field,
@@ -279,13 +296,19 @@ async function writeInOrder(
       publish: changeWriter.publish,
       query,
       current: async (asked) =>
-        (await openFile(query, { kind: PROJECT_KIND, pubkey: owner!, d: d.join(':') }, { text: asked === TEXT_FIELD && !!fields?.text }))?.fields[asked]?.event,
+        (await openFile(query, pointer, { text: asked === TEXT_FIELD && !!fields?.text }))?.fields[asked]?.event,
     })
     if (result.ok && field !== TEXT_FIELD) heldOf(file.address).prevs[field] = result.id
     return result
   } catch (error) {
     return { ok: false, refused: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/** A project's or an issue's address as `openFile` and `prevsAfterSwitch` name it: its kind, author and `d`. */
+function pointerOf(address: string): { kind: number; pubkey: string; d: string } {
+  const [kind, pubkey, ...d] = address.split(':')
+  return { kind: Number(kind), pubkey: pubkey!, d: d.join(':') }
 }
 
 /** The change a field's next change follows: as this tab last read or wrote it, else as the file was read. */
@@ -303,7 +326,7 @@ function prevFor(file: Writable, field: string): string | undefined {
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
  */
 async function prevAfterSwitch(address: string, field: string, refused: PublishResult): Promise<string | undefined> {
-  if (refused.ok || !isProject(address) || !isSwitchRefusal(refused.reason)) return undefined
+  if (refused.ok || !isSwitchedKind(address) || !isSwitchRefusal(refused.reason)) return undefined
   readRelayAgain()
   if (!(await byFields(address))) return undefined
   return currentChange(address, field)
@@ -311,8 +334,7 @@ async function prevAfterSwitch(address: string, field: string, refused: PublishR
 
 /** The change `field`'s next change follows on the relay now: its current one, or the first record's (ALO-8). */
 async function currentChange(address: string, field: string): Promise<string | undefined> {
-  const [, owner, ...d] = address.split(':')
-  const prevs = await prevsAfterSwitch(query, { kind: PROJECT_KIND, pubkey: owner!, d: d.join(':') }, [field]).catch(() => undefined)
+  const prevs = await prevsAfterSwitch(query, pointerOf(address), [field]).catch(() => undefined)
   return prevs?.[field]
 }
 
