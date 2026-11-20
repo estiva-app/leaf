@@ -252,8 +252,9 @@ const LISTED_KINDS = [PROJECT_KIND, ISSUE_KIND, PAGE_KIND] as const
 
 /**
  * Whether `address` is of a kind the tree and Home may read by the list read: its row only, its text unread (ISS-6,
- * ALL-4). Only for files a read made with {@link treeListRead}'s `listRead`, which names the kinds it read that way.
+ * ALL-4). `kinds` is what the read named ({@link treeListRead}'s `listReadKinds`): a page read whole beside switched
+ * projects is not its row only.
  */
-export function isListedKind(address: string | undefined): boolean {
-  return LISTED_KINDS.some((kind) => !!address && address.startsWith(`${kind}:`))
+export function isListedKind(address: string | undefined, kinds: readonly number[] = LISTED_KINDS): boolean {
+  return kinds.some((kind) => !!address && address.startsWith(`${kind}:`))
 }

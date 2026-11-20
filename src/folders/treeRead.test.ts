@@ -85,12 +85,12 @@ async function relay(filters: Filter[]): Promise<NostrEvent[]> {
   return [...roots, ...filesOf(events).filter((file) => roots.includes(file.root)).flatMap((file) => file.events.slice(1))]
 }
 
-function relayKeeps(inOrder: string[], lists = true) {
+function relayKeeps(inOrder: string[], lists = true, reads = { newest: true, text: true, times: true }) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => ({
       ok: true,
-      json: async () => ({ files: { requires_prev: inOrder }, ...(lists ? { file_list: { newest: true, text: true, times: true } } : {}) }),
+      json: async () => ({ files: { requires_prev: inOrder }, ...(lists ? { file_list: reads } : {}) }),
     })),
   )
 }
@@ -122,6 +122,16 @@ describe("the tree's read of a team, once projects are switched (ISS-6)", () => 
     const contents = await workspace.readFolder(TEAM, relay)
     expect(asked.some((f) => 'fields' in f && f.kinds?.includes(30842))).toBe(true)
     expect(rows.isRowOnly?.(contents.files.find((f) => f.slots.title?.value === 'Notes')!)).toBe(true)
+  })
+
+  it('reads a page whole, its text included, beside switched projects on a relay with no times read', async () => {
+    relayKeeps(['osnova.project'], true, { newest: true, text: true, times: false })
+    const contents = await workspace.readFolder(TEAM, relay)
+    const notes = contents.files.find((f) => f.slots.title?.value === 'Notes')!
+    expect(asked.some((f) => 'fields' in f && f.kinds?.includes(30842))).toBe(false)
+    expect(notes.slots.body?.value).toBe('Newer words')
+    expect(rows.isRowOnly?.(notes)).toBe(false)
+    expect(rows.isRowOnly?.(contents.files.find((f) => f.slots.title?.value === 'Season plan')!)).toBe(true)
   })
 
   it('reads every file whole on a relay that offers no list read (control)', async () => {
