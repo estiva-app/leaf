@@ -72,6 +72,7 @@ vi.mock('./folders/workspace', async () => {
 
 const { App } = await import('./App')
 const { naddrOf } = await import('./fileAddress')
+const { markRowOnly } = await import('./relay/rowOnly')
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text nodes, and ProseMirror calls them on every change. */
 beforeAll(() => {
@@ -146,6 +147,19 @@ describe("a document's link", () => {
     expect(window.location.pathname).toBe(`/document/plan-${D}`)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).toBeTruthy()
+  })
+
+  it('opens a page the tree read for its row only by its address, with its text (ALL-4)', async () => {
+    const address = `30842:${'a'.repeat(64)}:${D}`
+    const row = { ...page('a'.repeat(64), naddrOf(address), ''), slots: { title: { value: 'Plan' } } } as ForeignObject
+    markRowOnly([row])
+    listed[QA] = [row]
+    relay.documents = [{ kind: 30842, pubkey: 'a'.repeat(64), d: D }]
+    relay.read[naddrOf(address)] = page('a'.repeat(64), naddrOf(address), 'Its current text.')
+    window.history.replaceState(null, '', `/document/plan-${D}`)
+    render(<App />)
+    expect(await screen.findByText('Its current text.')).toBeTruthy()
+    expect(screen.queryByText("You can't open this page")).toBeNull()
   })
 
   it('shows the page by its link while the Folders are still being read (APP-3)', async () => {

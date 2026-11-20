@@ -130,7 +130,8 @@ function Frame() {
   // A document's own link is read by its `d` at once, beside the tree, so its text shows before the tree is read
   // (APP-3) — and an archived page, which every listing drops, still opens by its link (LED-4).
   const named = usePathAddress(
-    route.page === 'path' ? route : route.page === 'document' && !listedDocument ? { word: 'document', ref: route.d } : null,
+    // A page the tree read for its row only (ALL-4) is read by its `d` too: the tree's copy has no text to open.
+    route.page === 'path' ? route : route.page === 'document' && (!listedDocument || isRowOnly(listedDocument.file)) ? { word: 'document', ref: route.d } : null,
   )
   const found =
     route.page === 'file'
