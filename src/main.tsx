@@ -5,7 +5,7 @@ import { AuthShell } from './auth/AuthShell'
 import { bootAuth, enterFromShell } from './auth/boot'
 import { followOtherTabs } from './auth/estivaId'
 import { SessionGate } from './auth/SessionGate'
-import { documentFieldsOptIn, fieldsOptIn, issueFieldsOptIn, topicFieldsOptIn } from './relay/fieldsOptIn'
+import { fieldsOptIn, issueFieldsOptIn } from './relay/fieldsOptIn'
 import { ErrorBoundary } from '@estiva-app/ui'
 import { startErrorReports } from './lib/errorReports'
 import { startPageTimings } from './lib/pageTimings'
@@ -22,9 +22,6 @@ void (async () => {
   fieldsOptIn(window.location.search)
   // `?issueFields=on`, the same for issues, apart from projects (ISS-6).
   issueFieldsOptIn(window.location.search)
-  // `?documentFields=on` and `?topicFields=on`, the same for pages and a topic's file list (ALL-4).
-  documentFieldsOptIn(window.location.search)
-  topicFieldsOptIn(window.location.search)
   const root = createRoot(document.getElementById('root')!)
   const boot = await bootAuth()
   if (boot.kind === 'leaving') return

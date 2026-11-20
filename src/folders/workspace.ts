@@ -52,7 +52,7 @@ export async function readFolder(id: string, read: QueryFn = query, options: { i
   // Peek's tree; Leaf's own pages are read whole, since a page opens from this copy.
   const listing = await treeListRead()
   const contents = await resolveFolderContents(id, read, people.viaRelay(read), manifests, { ...options, ...listing })
-  if (listing.listRead) markRowOnly(contents.files.filter((file) => isListedKind(file.address, listing.listReadKinds)))
+  if (listing.listRead) markRowOnly(contents.files.filter((file) => isListedKind(file.address)))
   return contents
 }
 
