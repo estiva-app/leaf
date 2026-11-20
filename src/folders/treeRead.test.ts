@@ -109,7 +109,7 @@ describe("the tree's read of a team, once projects are switched (ISS-6)", () => 
     // Each row costs its current values; its page reads it again by its address, with its current text (ALL-4).
     expect(asked.some((f) => 'fields' in f && f.kinds?.includes(30850))).toBe(true)
     expect(asked.some((f) => 'fields' in f && f.kinds?.includes(30842))).toBe(true)
-    expect(asked.some((f) => !('fields' in f) && (f['#a'] ?? []).some((a: string) => a.startsWith('30842:')))).toBe(false)
+    expect(asked.some((f) => !('fields' in f) && ((f['#a'] as string[] | undefined) ?? []).some((a) => a.startsWith('30842:')))).toBe(false)
     expect(rows.isRowOnly?.(file('Season plan'))).toBe(true)
     expect(rows.isRowOnly?.(file('Notes'))).toBe(true)
     // Its text unread, the tree still lists each.
