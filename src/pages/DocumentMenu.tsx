@@ -19,6 +19,7 @@ import {
   type MoveOutcome,
   type MoveTarget,
 } from '../document/fileMenu'
+import { listsFile } from '../folders/listing'
 import { titleOf } from '../folders/tree'
 import { readFolder, takesNewDocuments } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
@@ -26,7 +27,7 @@ import { archiveWordsOf } from './archive'
 
 /** The Folder that lists a page, by the sidebar's read, else its `h`. */
 export function listedInOf(file: ForeignObject, folders: readonly FolderSummary[] | undefined): string | undefined {
-  return (folders ?? []).find((folder) => folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))?.id ?? file.folder
+  return (folders ?? []).find((folder) => folder.hasState && !!file.address && listsFile(folder, file.address))?.id ?? file.folder
 }
 
 /**
