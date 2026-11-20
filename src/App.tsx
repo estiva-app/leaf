@@ -160,7 +160,8 @@ function Frame() {
   const ownerPath = useOwnerPath(elsewhere)
   const relink = readable && isDocument(readable) ? pagePath({ ...readable, title: readable.slots.title?.value }) : elsewhere ? ownerPath : null
   useEffect(() => {
-    if (!relink || relink === window.location.pathname) return
+    // `/` is `pagePath`'s answer for a document with no address it can write (TES-4): stay on the page it is open at.
+    if (!relink || relink === '/' || relink === window.location.pathname) return
     if (shown?.address) rememberPath(relink, shown.address)
     replace(`${relink}${window.location.hash}`)
   }, [relink, shown])
