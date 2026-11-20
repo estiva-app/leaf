@@ -275,4 +275,20 @@ describe("a topic's page in Leaf", () => {
     show(uuid(999))
     expect(await screen.findByText("You can't open this topic")).toBeTruthy()
   })
+
+  /* SHI-64: a move leaves the topic's `h` in the team it left, and the team it went to lists it by its id. */
+  it('names the team whose list names it by its id, not the team it was started in', async () => {
+    const d = topic('Moved widgets', [])
+    const moved: FolderSummary[] = [{ id: HQ, name: 'Estiva HQ', hasState: true, addresses: [] }, { id: 'steer', name: 'Steer', hasState: true, addresses: [], ids: [d] }]
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPage d={d} folders={moved} inTree={() => null} treeRead />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    expect(await screen.findByRole('heading', { name: 'Moved widgets' })).toBeTruthy()
+    expect(screen.getByText('Steer')).toBeTruthy()
+    expect(screen.queryByText('Estiva HQ')).toBeNull()
+  })
 })

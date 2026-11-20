@@ -26,7 +26,7 @@ import { navigate, pagePath } from '../route'
 import { archiveWordsOf } from './archive'
 
 /** The Folder that lists a page, by the sidebar's read, else its `h`. */
-export function listedInOf(file: ForeignObject, folders: readonly FolderSummary[] | undefined): string | undefined {
+export function listedInOf(file: Pick<ForeignObject, 'address' | 'folder'>, folders: readonly FolderSummary[] | undefined): string | undefined {
   return (folders ?? []).find((folder) => folder.hasState && !!file.address && listsFile(folder, file.address))?.id ?? file.folder
 }
 
