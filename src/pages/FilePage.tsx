@@ -159,6 +159,8 @@ function DocumentView({
           ? async () => {
               const result = await setDeleted(target.current, false)
               if (!result.ok) showToast({ label: 'Could not restore it. Try again.', type: 'error', failure: 'not-restored' })
+              // Its team's tree draws it again, with the pages under it back beneath it (ALL-4), as a delete redraws it.
+              else if (target.current.folder) void onChanged?.(target.current.folder)
             }
           : undefined
       }
