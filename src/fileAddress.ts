@@ -154,6 +154,8 @@ export function ownerPathOf(file: Pick<ForeignObject, 'kind' | 'address' | 'open
     fileShapesOf(owner).find((s) => s.kind === file.kind && isOtherAppsWord(s.word) && s.pattern.split('?')[0].includes('<d>') && !s.pattern.includes('#/'))
   if (!shape) return undefined
   const d = file.address.split(':').slice(2).join(':')
+  // A path carries a uuid `d` only; for any other, Leaf's route would read back nothing, or another file (TES-4).
+  if (identifierFromRef(d) !== d) return undefined
   return `/${shape.word}/${objectRef(d, file.slots.title?.value)}`
 }
 

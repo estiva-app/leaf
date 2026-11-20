@@ -83,7 +83,10 @@ export function dOf(address: string): string {
 
 /** Where a file opens in Leaf: a document at its own link, anything else at its `naddr`. */
 export function pagePath(file: { kind: number; address?: string; naddr?: string; title?: string }): string {
-  if (file.kind === KIND.DOCUMENT && file.address) return documentPath(dOf(file.address), file.title)
+  // A document address carries a uuid `d` only; any other would open Home, so that file keeps its naddr page (TES-4).
+  if (file.kind === KIND.DOCUMENT && file.address && identifierFromRef(dOf(file.address)) === dOf(file.address)) {
+    return documentPath(dOf(file.address), file.title)
+  }
   return file.naddr ? filePath(file.naddr) : '/'
 }
 

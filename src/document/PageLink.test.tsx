@@ -110,13 +110,14 @@ describe('the comment count on a row (Katerina, 30 Oct)', () => {
   it('a Leaf document’s row counts its comments, and the count opens its page with the comments shown', async () => {
     const page = file({
       kind: 30842,
-      address: `30842:${LEAD}:plan-1`,
+      // A uuid, as every document's `d` is: Leaf's route reads a document's address by its uuid tail (TES-4).
+      address: `30842:${LEAD}:3f0c1a52-8d4e-4b7a-9c61-2e5f7d8a9b10`,
       noun: 'document',
-      openUrl: 'https://leaf.estiva.app/document/friday-plan-plan-1',
+      openUrl: 'https://leaf.estiva.app/document/friday-plan-3f0c1a52-8d4e-4b7a-9c61-2e5f7d8a9b10',
       slots: { title: { value: 'Friday plan' } } as ForeignObject['slots'],
     })
     render(<Link uri="nostr:naddr1page" place="row" read={page} />)
-    expect(await countLink()).toBe('/document/friday-plan-plan-1#comments')
+    expect(await countLink()).toBe('/document/friday-plan-3f0c1a52-8d4e-4b7a-9c61-2e5f7d8a9b10#comments')
   })
 
   it('a file Leaf does not open as a page has its count open it in its own app, as its title does', async () => {
