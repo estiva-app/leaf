@@ -55,7 +55,7 @@ function pageRowOf(file: ForeignObject, place: string, folderId: string): Page {
 }
 
 /** `rows`, each that names its current changes given its newest text change too, from the times read. */
-async function withEdits(rows: Page[]): Promise<Page[]> {
+export async function withEdits(rows: Page[]): Promise<Page[]> {
   const edits = await editsOf(rows.filter((row) => row.changes))
   return rows.map((row) => (edits.has(row.address) ? { ...row, changes: [...new Set([...(row.changes ?? []), ...edits.get(row.address)!])] } : row))
 }

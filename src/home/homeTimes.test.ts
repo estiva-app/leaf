@@ -37,6 +37,13 @@ describe("Home's rows for a Leaf page the tree read by the list read (ALL-4)", (
     expect(filters[0]).toEqual({ ids: ['root', 'title-now', 'summary-now'] })
   })
 
+  it('reads the page’s newest text change too, so a page just typed into moves up', async () => {
+    answers = [{ a: PAGE, created_at: 1, h: 'team', changes: [{ id: 'text-new', created_at: 30, fields: ['description'] }] }]
+    const rows = await recent.withEdits(recent.pagesOf(page(true))!)
+    asked.length = 0
+    expect(recentFilters(rows)[0]).toEqual({ ids: ['root', 'title-now', 'summary-now', 'text-new'] })
+  })
+
   it('reads every save of a page read whole, on a relay with no list read (control)', () => {
     const filters = recentFilters(recent.pagesOf(page(false))!)
     expect(filters).toContainEqual({ kinds: [1851], '#a': [PAGE] })
