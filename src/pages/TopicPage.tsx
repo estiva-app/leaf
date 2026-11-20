@@ -14,7 +14,7 @@ import { CommentCard } from '../comments/CommentCard'
 import { CardActsProvider } from '../document/linked'
 import { ReferencesProvider } from '../document/references'
 import { useReportFailure } from '@/lib/failureReports'
-import { listsFile } from '../folders/listing'
+import { listedInOf } from './DocumentMenu'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -74,9 +74,8 @@ export function TopicPage({
     </Toolbar>
   )
   // The team whose list names it, by address or id; its `h` only when none does: a move leaves the `h` behind (SHI-64).
-  const team = page
-    ? (folders?.find((folder) => folder.hasState && listsFile(folder, page.address)) ?? folders?.find((folder) => folder.id === page.folder))?.name
-    : undefined
+  const listedIn = page ? listedInOf(page, folders) : undefined
+  const team = listedIn ? folders?.find((folder) => folder.id === listedIn)?.name : undefined
   const files = page?.files
   // Drawn once the topic is known and stays here: a space goes on to Peek, and a topic that did not load has none.
   const conversation = page && !sendsOn && (
