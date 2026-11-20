@@ -15,10 +15,30 @@ let viewer = ME
 /* A state that `lists` addresses is answered only to a read asking for one of them by `#a`, as the relay does. */
 let states: { d: string; pubkey: string; lists?: string[] }[] = []
 
+/* Where the relay keeps pages in order (ALL-4): the types this tab writes in order. */
+let inOrder: string[] = []
+vi.mock('../relay/projectFields', async (original) => ({
+  ...(await original<typeof import('../relay/projectFields')>()),
+  inOrderTypes: async () => inOrder,
+  fieldsFor: async () => (inOrder.length ? {} : undefined),
+}))
+/* A page's first record, as the open read answers it: what its first delete follows. */
+const ROOT_ID = 'e'.repeat(64)
+
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => viewer,
-  query: async (filters: { kinds?: number[]; '#d'?: string[]; '#a'?: string[] }[]) => {
+  changeWriter: {
+    sign: async (event: UnsignedEvent) => ({ ...event, id: 'f'.repeat(64), sig: '' }),
+    publish: async (event: UnsignedEvent) => {
+      published.push(event)
+      const answer = answers.shift() ?? { ok: true }
+      return answer.ok ? { ok: true, eventId: 'f'.repeat(64) } : answer
+    },
+  },
+  query: async (filters: { kinds?: number[]; '#d'?: string[]; '#a'?: string[]; fields?: string }[]) => {
     const [filter] = filters
+    if (filter.fields === 'newest')
+      return (filter['#d'] ?? []).map((d) => ({ kind: 30842, pubkey: ME, tags: [['d', d], ['title', d], ['h', FOLDER]], content: '', created_at: 1, id: ROOT_ID, sig: '' }))
     if (filter.kinds?.[0] === 30890)
       return states
         .filter(({ lists }) => !lists || lists.some((a) => filter['#a']?.includes(a)))
@@ -55,6 +75,37 @@ afterEach(() => {
   answers = []
   viewer = ME
   states = []
+  inOrder = []
+})
+
+describe('deleting a Leaf page where pages are kept in order (ALL-4)', () => {
+  it('is one change marking it deleted after its first record, by someone who did not write it: no kind:5, no unlisting, no page under it moved', async () => {
+    inOrder = ['osnova.document']
+    viewer = KAT
+    states = [{ d: FOLDER, pubkey: RELAY }]
+    const listing = [page('a'), page('b', 'a'), page('c', 'a')]
+    const result = await deleteDocument(listing[0], planDelete(listing[0], listing, 'Leaf feedback', true))
+    expect(result).toEqual({ ok: true, stillListed: false, unmoved: 0 })
+    expect(published).toHaveLength(1)
+    const [change] = published
+    expect(change.kind).toBe(1851)
+    expect(change.pubkey).toBe(KAT)
+    expect([tag(change, 'a'), tag(change, 'field'), tag(change, 'value'), tag(change, 'h'), tag(change, 'prev')]).toEqual([`30842:${ME}:a`, 'deleted', 'true', FOLDER, ROOT_ID])
+  })
+
+  it('says the pages under it show at the team’s top until it is restored, never that they move', async () => {
+    const listing = [page('a'), page('b', 'a'), page('c', 'a')]
+    expect(deleteWords(listing[0], planDelete(listing[0], listing, 'Leaf feedback', true))).toBe('The 2 pages under it show at the team’s top until it is restored.')
+  })
+
+  it('writes nothing more and says nothing was deleted when the relay refuses the change', async () => {
+    inOrder = ['osnova.document']
+    answers = [{ ok: false, reason: 'blocked: not a member' }]
+    const listing = [page('a'), page('b', 'a')]
+    const result = await deleteDocument(listing[0], planDelete(listing[0], listing, 'Leaf feedback', true))
+    expect(result).toEqual({ ok: false, reason: 'Nothing was deleted. Try again.' })
+    expect(published.map((e) => e.kind)).toEqual([1851])
+  })
 })
 
 describe('deleting a Leaf page', () => {

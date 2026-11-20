@@ -272,7 +272,12 @@ export function DocumentMenu({
               : undefined
           }
         >
-          <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
+          {dialog.plan.marks ? (
+            // A delete that only marks the page (ALL-4), in Ship's words for its restorable delete, and where it comes back.
+            <p>It leaves every list and search. Its link still opens it, with Restore, and so does Peek’s Archive → Deleted.</p>
+          ) : (
+            <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
+          )}
           {dialog.words && <p>{dialog.words}</p>}
         </ConfirmDialog>
       )}
@@ -286,6 +291,13 @@ export function DocumentMenu({
  * Never "erased". Empty when nothing is under it.
  */
 export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeletePlan): string {
+  // A delete that only marks the page moves nothing (ALL-4): what is under it shows at the team's top until a restore.
+  if (plan.marks) {
+    if (plan.children.length === 0) return ''
+    const kinds = new Set(plan.children.map((child) => child.kind))
+    const what = kinds.size === 1 ? countOf(plan.children[0].kind, plan.children.length) : `${plan.children.length} files`
+    return `The ${what} under it ${plan.children.length === 1 ? 'shows' : 'show'} at the team’s top until it is restored.`
+  }
   const back = !!file.archived && !file.archived.with
   // On an archived page, only the pages archived with it come back; one archived itself moves up and stays archived.
   const children = back ? plan.children.filter((child) => !child.archived || child.archived.with) : plan.children
