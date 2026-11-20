@@ -4,7 +4,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { isEdit, timeOf, whenOf } from '../home/recent'
 import { publish, query, viewerPubkey } from '../relay/bridge'
-import { byFields, isPage, readsCurrent } from '../relay/projectFields'
+import { byFields } from '../relay/projectFields'
 import { CHANGE } from './save'
 
 /** The newest edit to a file's text, title or summary: who made it, and when in ms. */
@@ -117,9 +117,7 @@ export function useFileFacts(file: ForeignObject): FileFacts & { reread: () => v
     // A second back, so a change signed in the same second as the newest held is not missed.
     const newest = Math.max(0, ...[...events.values()].map((e) => e.created_at))
     const current = file.prevs && Object.values(file.prevs).filter((id) => !!id)
-    // A page opened by the open read is read by its current changes too, switched or not (ALL-4).
-    Promise.all([byFields(address), isPage(address) ? readsCurrent(address) : false])
-      .then(([switched, opened]) => switched || opened)
+    byFields(address)
       .then((on) => query(factsFilters({ address, eventId }, events.size > 0 ? newest - 1 : undefined, on ? current : undefined)))
       .then(
       (read) => {
