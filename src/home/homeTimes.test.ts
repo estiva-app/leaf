@@ -20,6 +20,28 @@ vi.mock('../relay/projectFields', async (original) => ({
 }))
 
 import * as recent from './useRecent'
+import { recentFilters } from './recent'
+import { markRowOnly } from '../relay/rowOnly'
+
+describe("Home's rows for a Leaf page the tree read by the list read (ALL-4)", () => {
+  const PAGE = `30842:${'a'.repeat(64)}:notes`
+  const page = (rowOnly: boolean) => {
+    const file = { kind: 30842, address: PAGE, naddr: 'naddr1notes', eventId: 'root', folder: 'team', slots: { title: { value: 'Notes' } }, prevs: { title: 'title-now', summary: 'summary-now' }, actions: [] }
+    if (rowOnly) markRowOnly([file as never])
+    return [{ folder: { id: 'team', name: 'Team' }, contents: { files: [file] } }] as never
+  }
+
+  it('reads the page’s current changes by id, never every save made to it', () => {
+    const filters = recentFilters(recent.pagesOf(page(true))!)
+    expect(filters.some((f) => '#a' in f)).toBe(false)
+    expect(filters[0]).toEqual({ ids: ['root', 'title-now', 'summary-now'] })
+  })
+
+  it('reads every save of a page read whole, on a relay with no list read (control)', () => {
+    const filters = recentFilters(recent.pagesOf(page(false))!)
+    expect(filters).toContainEqual({ kinds: [1851], '#a': [PAGE] })
+  })
+})
 
 const PROJECT = `30850:${'b'.repeat(64)}:p1`
 

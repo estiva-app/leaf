@@ -39,8 +39,25 @@ function rowOf(file: ForeignObject, place: string, folderId: string): Page {
 export function pagesOf(folders: WorkspaceFolder[] | null): Page[] | null {
   if (!folders || folders.some((f) => f.contents === null && !f.failed)) return null
   return folders.flatMap(({ folder, contents }) =>
-    (contents?.files ?? []).filter((f) => isDocument(f) && !f.unreachable && f.address && f.naddr).map((f) => rowOf(f, folder.name ?? folder.id, folder.id)),
+    (contents?.files ?? []).filter((f) => isDocument(f) && !f.unreachable && f.address && f.naddr).map((f) => pageRowOf(f, folder.name ?? folder.id, folder.id)),
   )
+}
+
+/**
+ * A page as one of Home's rows. One the tree read by the list read (ALL-4) names its title's and summary's current
+ * changes, and its text's comes from the times read ({@link withEdits}), so Home reads those by id and never every
+ * save made to the page: 12.96 MB of QA-1's cold open on 20 Nov.
+ */
+function pageRowOf(file: ForeignObject, place: string, folderId: string): Page {
+  const row = rowOf(file, place, folderId)
+  if (!isRowOnly(file) || !file.prevs) return row
+  return { ...row, changes: EDITS.map((field) => file.prevs![field]).filter((id): id is string => !!id) }
+}
+
+/** `rows`, each that names its current changes given its newest text change too, from the times read. */
+async function withEdits(rows: Page[]): Promise<Page[]> {
+  const edits = await editsOf(rows.filter((row) => row.changes))
+  return rows.map((row) => (edits.has(row.address) ? { ...row, changes: [...new Set([...(row.changes ?? []), ...edits.get(row.address)!])] } : row))
 }
 
 /**
@@ -127,14 +144,14 @@ export function useRecent(folders: WorkspaceFolder[] | null, shown: boolean): Re
     const me = viewerPubkey()
     // Your pages' changes are read beside the other apps' files, not after them, and your pages still list when
     // those files or their changes could not be read.
-    const pageEvents = pages.length === 0 ? Promise.resolve([]) : query(recentFilters(pages))
+    const pageEvents = pages.length === 0 ? Promise.resolve({ rows: pages, events: [] }) : withEdits(pages).then(async (rows) => ({ rows, events: await query(recentFilters(rows)) }))
     const others = othersOf(folders, me).then(
       async (others) => ({ others, events: others.length === 0 ? [] : await query(recentFilters(others)) }),
       () => ({ others: [] as Page[], events: [] }),
     )
-    const read = Promise.all([pageEvents, others]).then(([events, more]) => ({
-      files: [...pages, ...more.others],
-      events: [...events, ...more.events],
+    const read = Promise.all([pageEvents, others]).then(([own, more]) => ({
+      files: [...own.rows, ...more.others],
+      events: [...own.events, ...more.events],
     }))
     void read.then(
       async ({ files, events }) => {

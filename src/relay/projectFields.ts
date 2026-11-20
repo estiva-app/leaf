@@ -1,8 +1,8 @@
-import { ISSUE_TYPE, fileFieldsOf, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
+import { DOCUMENT_TYPE, ISSUE_TYPE, PROJECT_TYPE, TOPIC_TYPE, fileFieldsOf, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
 import type { TimesFn } from '@estiva-app/interop'
 import { RELAY_URL } from '../config'
 import { queryTimes } from './bridge'
-import { fieldsOptIn, issueFieldsOptIn } from './fieldsOptIn'
+import { documentFieldsOptIn, fieldsOptIn, issueFieldsOptIn, topicFieldsOptIn } from './fieldsOptIn'
 
 /** The relay's NIP-11 document, which needs no sign-in; `null` in a build with no relay. */
 async function relayInfo(): Promise<unknown> {
@@ -85,10 +85,44 @@ export async function issueFields(): Promise<ProjectFields | undefined> {
   return reads ? fileFieldsOf(reads, ISSUE_TYPE, issueFieldsOptIn()) : undefined
 }
 
-/** The switch for the type of the file at `address`: a project's or an issue's, undefined for any other kind or when off. */
+/**
+ * Whether Leaf writes pages in order (ALL-4): the pages' own switch, protocol's `fileFieldsOf` for `DOCUMENT_TYPE` —
+ * on once the relay keeps documents in order, or for a tab opened with `?documentFields=on`. Undefined is off: a save
+ * names no change it follows and a delete is the NIP-09 one, as before. Reading a page without its old saves does not
+ * wait for it ({@link treeListRead}).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+ */
+export async function documentFields(): Promise<ProjectFields | undefined> {
+  const reads = await relayReads()
+  return reads ? fileFieldsOf(reads, DOCUMENT_TYPE, documentFieldsOptIn()) : undefined
+}
+
+/** Whether Leaf writes a topic's file list in order (ALL-4): the topics' switch, or `?topicFields=on`. Undefined is off. */
+export async function topicFields(): Promise<ProjectFields | undefined> {
+  const reads = await relayReads()
+  return reads ? fileFieldsOf(reads, TOPIC_TYPE, topicFieldsOptIn()) : undefined
+}
+
+/**
+ * The types this tab writes in order, for interop's `inOrder`: each type whose switch is on here, the relay's or the
+ * tab's. A Delete built from a manifest then marks the file deleted instead of asking the relay to remove it.
+ */
+export async function inOrderTypes(): Promise<readonly string[]> {
+  const [projects, issues, documents, topics] = await Promise.all([projectFields(), issueFields(), documentFields(), topicFields()])
+  return [
+    ...(projects ? [PROJECT_TYPE] : []),
+    ...(issues ? [ISSUE_TYPE] : []),
+    ...(documents ? [DOCUMENT_TYPE] : []),
+    ...(topics ? [TOPIC_TYPE] : []),
+  ]
+}
+
+/** The switch for the type of the file at `address`: a project's, an issue's or a page's, undefined for any other kind or when off. */
 export async function fieldsFor(address: string | undefined): Promise<ProjectFields | undefined> {
   if (isProject(address)) return projectFields()
   if (isIssue(address)) return issueFields()
+  if (isPage(address)) return documentFields()
   return undefined
 }
 
@@ -141,9 +175,17 @@ export function isIssue(address: string | undefined): boolean {
   return !!address && address.startsWith(`${ISSUE_KIND}:`)
 }
 
-/** Whether `address` names a file of a kind a switch covers: a project or an issue. */
+/** The kind a page is written as: protocol's `DOCUMENT_TYPE`, switched apart from the others (ALL-4). */
+export const PAGE_KIND = 30842
+
+/** Whether `address` names a Leaf page. */
+export function isPage(address: string | undefined): boolean {
+  return !!address && address.startsWith(`${PAGE_KIND}:`)
+}
+
+/** Whether `address` names a file of a kind a switch covers: a project, an issue or a page. */
 export function isSwitchedKind(address: string | undefined): boolean {
-  return isProject(address) || isIssue(address)
+  return isProject(address) || isIssue(address) || isPage(address)
 }
 
 /** Whether `address` is a project or an issue read and written by its fields in this tab, each by its own switch. */
@@ -151,11 +193,40 @@ export async function byFields(address: string | undefined): Promise<boolean> {
   return !!(await fieldsFor(address))
 }
 
-/** The kinds the open read opens, for interop's `openRead`: projects once switched, issues once theirs is (ISS-6). */
+/**
+ * The kinds the open read opens, for interop's `openRead`: projects once switched, issues once theirs is (ISS-6), and
+ * pages as soon as the relay offers the read (ALL-4): a page opens as its first record, its fields' current changes and
+ * its current text, never every save made to it, whether or not the relay keeps pages in order yet.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ */
 export async function openReadOption(): Promise<{ openRead?: readonly number[] }> {
-  const [projects, issues] = await Promise.all([projectFields(), issueFields()])
-  const kinds = [...(projects ? [PROJECT_KIND] : []), ...(issues ? [ISSUE_KIND] : [])]
+  const [projects, issues, offered] = await Promise.all([projectFields(), issueFields(), pageReadOffered()])
+  const kinds = [...(projects ? [PROJECT_KIND] : []), ...(issues ? [ISSUE_KIND] : []), ...(offered ? [PAGE_KIND] : [])]
   return kinds.length ? { openRead: kinds } : {}
+}
+
+/** Whether the file at `address` is opened by the open read here, so what it names as current is the relay's current. */
+export async function readsCurrent(address: string | undefined): Promise<boolean> {
+  const { openRead } = await openReadOption()
+  return !!address && !!openRead?.some((kind) => address.startsWith(`${kind}:`))
+}
+
+/**
+ * Whether the relay searches pages by their current words (`file_search.types`), so the `[` picker finds a page by
+ * what it says now and never by an old save's words (ALL-4); undefined on a relay that does not.
+ */
+export async function searchesPages(): Promise<boolean> {
+  return !!(await relayReads())?.search.includes(DOCUMENT_TYPE)
+}
+
+/**
+ * Whether the relay answers the list, text and times reads, so a page is read without its old saves: listed by its
+ * current changes, opened with its current text, and ranked on Home by when its text last changed.
+ */
+async function pageReadOffered(): Promise<boolean> {
+  const reads = await relayReads()
+  return !!reads?.list && !!reads.text && !!reads.times
 }
 
 /**
@@ -163,19 +234,26 @@ export async function openReadOption(): Promise<{ openRead?: readonly number[] }
  * each team's files reads every file as its first record and its fields' current changes, not every change ever made
  * to it — a project's issues under its row too. Before, a cold Leaf open read every old change of every listed file:
  * 78 MB as Miky on 19 Nov, 48 MB of it projects' (ISS-6). Only the kinds Leaf lists and never edits from the tree:
- * a Leaf page opens from the tree's copy, so it is read whole, its current text included.
+ * Leaf's pages too, as soon as the relay offers the list and text reads, switched or not (ALL-4): the tree holds each
+ * page's row, and a page opens by its address with its current text ({@link openReadOption}). Before, a cold open read
+ * every save of every page: 12.3 MB of them on 19 Nov.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
  */
 export async function treeListRead(): Promise<{ listRead?: true; listReadKinds?: readonly number[] }> {
-  const [projects, offered] = await Promise.all([projectFields(), listReadOffered()])
-  return projects && offered ? { listRead: true, listReadKinds: LISTED_KINDS } : {}
+  const [projects, offered, pages] = await Promise.all([projectFields(), listReadOffered(), pageReadOffered()])
+  const kinds = [...(projects && offered ? [PROJECT_KIND, ISSUE_KIND] : []), ...(pages ? [PAGE_KIND] : [])]
+  return kinds.length ? { listRead: true, listReadKinds: kinds } : {}
 }
 
-/** The kinds the tree reads by the list read once projects are switched: another app's files, not Leaf's pages. */
-const LISTED_KINDS = [PROJECT_KIND, ISSUE_KIND] as const
+/** The kinds the tree may read by the list read: projects and issues once switched, pages once the relay offers it. */
+const LISTED_KINDS = [PROJECT_KIND, ISSUE_KIND, PAGE_KIND] as const
 
-/** Whether `address` is of a kind the tree and Home read by the list read: its row only, its text unread (ISS-6). */
+/**
+ * Whether `address` is of a kind the tree and Home may read by the list read: its row only, its text unread (ISS-6,
+ * ALL-4). Only for files a read made with {@link treeListRead}'s `listRead`, which names the kinds it read that way.
+ */
 export function isListedKind(address: string | undefined): boolean {
   return LISTED_KINDS.some((kind) => !!address && address.startsWith(`${kind}:`))
 }
