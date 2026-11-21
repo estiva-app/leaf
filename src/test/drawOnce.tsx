@@ -1,32 +1,40 @@
 import { cleanup, render, waitFor } from '@testing-library/react'
 import type { ReactElement } from 'react'
+import { vi } from 'vitest'
 
 /**
  * Draws a page once and takes it down again, before any test's clock starts. Call it at the top
- * level of a test file, after the mocks and the page's import, with what the file's first test draws.
+ * level of a test file, after the mocks and the file's own imports, with what its first test draws.
  *
  * The first time a page is drawn in a test file, React, the editor and the kit's parts all run for
  * the first time: three to ten times slower than every later draw, and seconds on a busy machine.
  * That landed inside whichever test came first and ran it out of its 5 s, though nothing it checks
- * was slow. Drawn once here, the first test starts where every later test in the file already does:
- * after an earlier draw, with the file's own `beforeEach` run in between.
+ * was slow.
+ *
+ * `load` imports the page and returns it drawn-ready. It is called after `vi.resetModules()`, so it
+ * gets its own copy of the app's modules, and that copy is dropped again afterwards: nothing this
+ * draw read or remembered (an address, a page's text, a key) is there for the tests, whose own
+ * imports were loaded before and are never drawn here. The first test still opens everything cold.
  *
  * `drawn` throws until the page is there (`() => screen.getByText('…')`). A page that never draws is
- * given up on after a minute and nothing is reported here: the first test draws it again and fails
+ * given up on after a minute and nothing is reported here: the first test draws it itself and fails
  * with its own message.
  */
-export async function drawOnce(ui: ReactElement, drawn: () => unknown): Promise<void> {
+export async function drawOnce(load: () => Promise<ReactElement>, drawn: () => unknown): Promise<void> {
   const restoreLayout = stubLayout()
+  vi.resetModules()
   try {
-    render(ui)
+    render(await load())
     await waitFor(() => void drawn(), { timeout: 60_000 })
   } catch {
     // The first test says what is wrong.
   } finally {
     cleanup()
+    vi.resetModules()
     restoreLayout()
     window.localStorage.clear()
     window.sessionStorage.clear()
+    window.history.replaceState(null, '', '/')
   }
 }
 

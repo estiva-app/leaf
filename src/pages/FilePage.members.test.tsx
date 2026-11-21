@@ -106,7 +106,7 @@ afterEach(() => {
 })
 
 // Drawn once before any test's clock starts: `drawOnce` says why.
-await drawOnce(<ToastProvider><FilePage file={page()} loading={false} /></ToastProvider>, () => screen.getByRole('button', { name: /members?$/ }))
+await drawOnce(async () => { const fresh = await import('./FilePage'); return <ToastProvider><fresh.FilePage file={page()} loading={false} /></ToastProvider> }, () => screen.getByRole('button', { name: /members?$/ }))
 published.length = 0
 
 describe("a page's header", () => {

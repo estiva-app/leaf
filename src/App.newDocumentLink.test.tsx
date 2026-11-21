@@ -59,7 +59,7 @@ beforeEach(() => {
 
 // Drawn once before any test's clock starts: `drawOnce` says why.
 window.history.replaceState(null, '', newDocumentPath(QA))
-await drawOnce(<App />, () => screen.getByRole('dialog', { name: 'New document' }))
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByRole('dialog', { name: 'New document' }))
 
 describe('a link to New document in a Folder', () => {
   it('opens New document on that Folder, and Create writes the document there and opens it', async () => {

@@ -88,7 +88,7 @@ const rowOf = (title: string) => within(sidebar()).getByRole('link', { name: new
 
 // Drawn once before any test's clock starts: `drawOnce` says why.
 window.history.replaceState(null, '', `/document/week-of-2-november-${WEEK_D}`)
-await drawOnce(<App />, () => screen.getByText('This week.'))
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByText('This week.'))
 
 describe('The sidebar shows where the open page lives (LFB-9)', () => {
   it("opens a page's Folder and the page above it, and marks the page as current", async () => {
