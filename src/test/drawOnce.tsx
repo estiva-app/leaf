@@ -17,8 +17,8 @@ import { vi } from 'vitest'
  * imports were loaded before and are never drawn here. The first test still opens everything cold.
  *
  * `drawn` throws until the page is there (`() => screen.getByText('…')`). A page that never draws is
- * given up on after a minute and nothing is reported here: the first test draws it itself and fails
- * with its own message.
+ * given up on after a minute with a warning, and fails nothing here: the first test draws it itself
+ * and fails with its own message.
  */
 export async function drawOnce(load: () => Promise<ReactElement>, drawn: () => unknown): Promise<void> {
   const restoreLayout = stubLayout()
@@ -26,8 +26,10 @@ export async function drawOnce(load: () => Promise<ReactElement>, drawn: () => u
   try {
     render(await load())
     await waitFor(() => void drawn(), { timeout: 60_000 })
-  } catch {
-    // The first test says what is wrong.
+  } catch (error) {
+    // The first test says what is wrong with the page. Said here too, because a `drawn` that has gone
+    // stale (the test's words changed, these did not) fails no test and costs this file a minute.
+    console.warn(`drawOnce: the page was not drawn before the tests, so the first test draws it cold. ${String(error).split('\n')[0]}`)
   } finally {
     cleanup()
     vi.resetModules()
