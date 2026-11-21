@@ -20,6 +20,15 @@ vi.mock('../document/referencePicker', async (original) => ({ ...(await original
 // `@`'s people are a relay read of their own, which these sign-in endings are not about.
 vi.mock('../comments/people', async (original) => ({ ...(await original()), useMentionPeople: () => ({ people: [], nameOf: () => undefined }) }))
 
+/*
+ * Loaded once here, before any test's clock starts. `freshTab` evaluates these again for each tab,
+ * which takes milliseconds; the first load of the editor and its packages takes seconds on a busy
+ * machine, and inside the first test it ran that test out of time.
+ */
+import './SessionGate'
+import '../document/LiveDocument'
+import '../folders/NewDocumentDialog'
+
 const KEY = 'leaf.estiva-id.token'
 const PERSON = 'b3'.repeat(32)
 const PAGE = 'document:30842:b3:plan'

@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+// Loaded once here, before any test's clock starts: the first load takes seconds on a busy machine, and
+// inside the first test it ran that test out of time. Each test evaluates it again, in milliseconds.
+import './client'
+
+// So the first test, like the rest, evaluates the client under its own settings and not the load above.
+beforeAll(() => vi.resetModules())
 
 /**
  * The tab's one relay connection. A fake socket stands in for the relay, so this
