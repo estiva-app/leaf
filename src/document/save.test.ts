@@ -28,6 +28,13 @@ describe("a document's save", () => {
     ])
   })
 
+  it('still builds a change to a file of a named type, which says no type, and one to a team itself says none', () => {
+    for (const target of [`30852:${'b'.repeat(64)}:n1`, `39000:${'b'.repeat(64)}:${FOLDER}`]) {
+      const event = buildChange('a'.repeat(64), 1_760_000_000_123, { target, field: 'title', value: 'New name', folder: FOLDER })
+      expect(event.tags.map((t) => t[0])).toEqual(['a', 'O', 'field', 'value', 'h', 'ts'])
+    }
+  })
+
   it('signs with the h of the document it saves, never another', async () => {
     await saveField({ address: ADDRESS, folder: FOLDER }, 'title', 'New name')
     const sent: Sent = publish.mock.calls.at(-1)![0]

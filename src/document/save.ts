@@ -186,6 +186,18 @@ export async function profileOf(pubkey: string): Promise<{ displayName?: string;
 type StageTag = NonNullable<ReturnType<typeof stageTagFor>>
 
 /**
+ * The `K` a change to `target` carries: the type its kind has. A file of a named type (`30852`) says its type in its
+ * first record, which a save here does not hold, so its change says none: the relay takes it and it is found by address.
+ */
+function typeTagsOf(target: string): string[][] {
+  try {
+    return changeTypeTags(target)
+  } catch {
+    return []
+  }
+}
+
+/**
  * A change to one field of a document — `kind:1851`, SPEC §6.2, the same event
  * Ship's `buildChange` makes: `a`, `field`, `value`, `h`, then the body's
  * `content-format`, `ts` and an `imeta` for each file the body places. The `h`
@@ -220,7 +232,7 @@ export function buildChange(
       ['O', args.target.split(':').slice(2).join(':')],
       // The type of the file it changes, so a read can ask for changes by type (SPEC §6.2): Home asks for none of a page's.
       // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-change-says-the-type-of-its-file.md
-      ...changeTypeTags(args.target),
+      ...typeTagsOf(args.target),
       ['field', args.field],
       ['value', args.value],
       ['h', args.folder],
