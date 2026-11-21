@@ -1,4 +1,4 @@
-import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import { BASE_TYPE_OF_KIND, KIND, type SignedEvent } from '@estiva-app/protocol'
 import { CHANGE } from '../document/save'
 import { summaryText } from '../document/summary'
 
@@ -68,9 +68,16 @@ export function recentFilters(pages: Page[]): Record<string, unknown>[] {
 /** How many of the viewer's own saves Home reads to find other apps' files, newest first. */
 export const OWN_SAVES = 200
 
-/** The read of the viewer's own saves that {@link textTargets} looks through. */
+/**
+ * The read of the viewer's own saves that {@link textTargets} looks through: their changes to every type of file but
+ * a page, asked by the type each change says (`K`, SPEC §6.2). The tree lists pages, so no page save is read here,
+ * however many there are. A change written before changes said their type is not found; the file comes back to Home
+ * when it is next edited.
+ */
+// why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-change-says-the-type-of-its-file.md
 export function ownSavesFilter(me: string): Record<string, unknown> {
-  return { kinds: [CHANGE], authors: [me], limit: OWN_SAVES }
+  const page = BASE_TYPE_OF_KIND[KIND.DOCUMENT]
+  return { kinds: [CHANGE], authors: [me], '#K': Object.values(BASE_TYPE_OF_KIND).filter((type) => type !== page), limit: OWN_SAVES }
 }
 
 /**

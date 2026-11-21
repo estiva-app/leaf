@@ -17,7 +17,7 @@ import {
   type ForeignObject,
   type WriteChangeResult,
 } from '@estiva-app/interop'
-import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, textAsksOf, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, changeTypeTags, imetaTag, textAsksOf, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
@@ -186,6 +186,18 @@ export async function profileOf(pubkey: string): Promise<{ displayName?: string;
 type StageTag = NonNullable<ReturnType<typeof stageTagFor>>
 
 /**
+ * The `K` a change to `target` carries: the type its kind has. A file of a named type (`30852`) says its type in its
+ * first record, which a save here does not hold, so its change says none: the relay takes it and it is found by address.
+ */
+function typeTagsOf(target: string): string[][] {
+  try {
+    return changeTypeTags(target)
+  } catch {
+    return []
+  }
+}
+
+/**
  * A change to one field of a document — `kind:1851`, SPEC §6.2, the same event
  * Ship's `buildChange` makes: `a`, `field`, `value`, `h`, then the body's
  * `content-format`, `ts` and an `imeta` for each file the body places. The `h`
@@ -218,6 +230,9 @@ export function buildChange(
       // The file it is about, by its id, as a comment names its file (SPEC §6.2), as Ship's change does.
       // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-change-is-about-its-file-as-a-comment-is.md
       ['O', args.target.split(':').slice(2).join(':')],
+      // The type of the file it changes, so a read can ask for changes by type (SPEC §6.2): Home asks for none of a page's.
+      // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-change-says-the-type-of-its-file.md
+      ...typeTagsOf(args.target),
       ['field', args.field],
       ['value', args.value],
       ['h', args.folder],
