@@ -76,8 +76,10 @@ describe("Home's rows", () => {
   it('asks for your changes to issues, projects and topics by their type, and for no change to a page', () => {
     const says = (type: string, at: number): SignedEvent => ({ id: `k${at}`, pubkey: ME, kind: 1851, created_at: at, tags: [['a', `x:${ME}:f${at}`], ['K', type]], content: '', sig: '' })
     const held = [says('osnova.document', 1), says('osnova.issue', 2), says('osnova.project', 3), says('osnova.topic', 4)]
-    const filter = ownSavesFilter(ME) as { kinds: number[]; authors: string[]; '#K': string[]; limit: number }
-    const answered = held.filter((e) => filter.kinds.includes(e.kind) && filter.authors.includes(e.pubkey) && e.tags.some((t) => t[0] === 'K' && filter['#K'].includes(t[1])))
+    const filter = ownSavesFilter(ME) as { kinds: number[]; authors: string[]; '#K'?: string[]; limit: number }
+    // As a relay answers: a filter with no `#K` matches a change whatever its type.
+    const types = filter['#K']
+    const answered = held.filter((e) => filter.kinds.includes(e.kind) && filter.authors.includes(e.pubkey) && (!types || e.tags.some((t) => t[0] === 'K' && types.includes(t[1]))))
     expect(answered.map((e) => e.id)).toEqual(['k2', 'k3', 'k4'])
     expect(filter.authors).toEqual([ME])
   })
