@@ -1,5 +1,6 @@
 import { estivaIdSigner, SignRefused } from '@estiva-app/identity'
-import { Relay, type FileTimes, type PublishResult, type SignedEvent, type Signer, type UnsignedEvent } from '@estiva-app/protocol'
+import { DEFAULT_BACKOFF_MS, MIN_BACKOFF_MS, isRateLimited, retryHintMs } from '@estiva-app/platform'
+import { MERGE_READS_MS, Relay, type FileTimes, type PublishResult, type SignedEvent, type Signer, type UnsignedEvent } from '@estiva-app/protocol'
 import { heldToken, renew, sessionEnded } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
 import { heardRefusal } from '../lib/failureReports'
@@ -27,11 +28,41 @@ function bridge(): Held | null {
     renew,
   })
   // Every refused write is reported by its reason code, busy answers included (PROD-5).
-  held = { relay: new Relay(RELAY_URL, signer, { onRefused: heardRefusal }), signer, pubkey: token.pubkey }
+  // Plain reads that start together go out as one request, as Ship's do (SHI-61): an open spends less of the minute.
+  held = { relay: new Relay(RELAY_URL, signer, { onRefused: heardRefusal, mergeReadsMs: MERGE_READS_MS }), signer, pubkey: token.pubkey }
   return held
 }
 type Held = { relay: Relay; signer: Signer; pubkey: string }
 let held: Held | null = null
+
+/** How long a read waits out the person's per-minute limit before it fails as any other read does: three of the relay's minutes. */
+export const WAIT_OUT_MS = 180_000
+
+/**
+ * A read the relay refuses because this person's minute is spent (300 requests, every app together) waits the time
+ * the relay names and asks again, so a page opened a few times in a minute shows loading, then the page, never "could
+ * not be read" (LFB-12). Under every read rather than in each screen: every screen's failure words are for a read that
+ * will not answer, and this one will. Any other failure is thrown at once: a refusal can mean this person lost access.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
+ */
+async function waitingOut<T>(read: (relay: Relay) => Promise<T>): Promise<T> {
+  const b = bridge()
+  if (!b) throw new Error('Not signed in to a relay.')
+  const giveUpAt = Date.now() + WAIT_OUT_MS
+  for (;;) {
+    try {
+      return await read(b.relay)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      if (!isRateLimited(reason)) throw error
+      // The relay's seconds are what is left of its minute, rounded down; the spread keeps every tab that waited from
+      // asking in the same instant when the minute turns.
+      const wait = Math.max(retryHintMs(reason) ?? DEFAULT_BACKOFF_MS, MIN_BACKOFF_MS) + Math.random() * MIN_BACKOFF_MS
+      if (Date.now() + wait > giveUpAt) throw error
+      await new Promise((resolve) => setTimeout(resolve, wait))
+    }
+  }
+}
 
 /** Who is signed in, or `null`. */
 export function viewerPubkey(): string | null {
@@ -51,30 +82,22 @@ export function relaySigner(): { relayUrl: string; signer: Signer; pubkey: strin
  * stay different sentences on screen.
  */
 export async function query(filters: Record<string, unknown>[]): Promise<SignedEvent[]> {
-  const b = bridge()
-  if (!b) throw new Error('Not signed in to a relay.')
-  return b.relay.query(filters)
+  return waitingOut((relay) => relay.query(filters))
 }
 
 /** The times read (SPEC §6.13, `"fields": "times"`), as interop's activity read takes it; only where the relay offers it. */
 export async function queryTimes(filters: Record<string, unknown>[]): Promise<FileTimes[]> {
-  const b = bridge()
-  if (!b) throw new Error('Not signed in to a relay.')
-  return b.relay.queryTimes(filters)
+  return waitingOut((relay) => relay.queryTimes(filters))
 }
 
 /** {@link query}, paged to the end: for a read that must be whole, which the relay's per-filter cap would cut. */
 export async function queryAll(filters: Record<string, unknown>[]): Promise<SignedEvent[]> {
-  const b = bridge()
-  if (!b) throw new Error('Not signed in to a relay.')
-  return b.relay.queryAll(filters)
+  return waitingOut((relay) => relay.queryAll(filters))
 }
 
 /** {@link query} answered with what each event matched: the relay's search by a file's current fields (§6.13). */
 export async function queryWithMatches(filters: Record<string, unknown>[]): Promise<Awaited<ReturnType<Relay['queryWithMatches']>>> {
-  const b = bridge()
-  if (!b) throw new Error('Not signed in to a relay.')
-  return b.relay.queryWithMatches(filters)
+  return waitingOut((relay) => relay.queryWithMatches(filters))
 }
 
 /**
