@@ -5,6 +5,7 @@ import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 
 /* LTN-3: a topic's own page in Leaf, as Miky opens it from the sidebar or any topic link inside Leaf. */
 
@@ -53,6 +54,35 @@ vi.mock('@estiva-app/interop', async (original) => {
       args[0].every((a) => a.startsWith('30840:')) ? interop.resolveForeignRoots(...args) : args[0].flatMap((a) => outside[a] ?? []),
   }
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why. Ahead of this file's own imports, so the
+// copy those load is the one a test's own `import()` finds.
+held = [
+  {
+    kind: 30840,
+    pubkey: MIKY,
+    created_at: 1_700_000_000,
+    tags: [['d', '00000000-0000-4000-8000-999999999999'], ['title', 'Widgets'], ['h', HQ], ['summary', 'Everything about the widgets.']],
+    content: '',
+    id: 'f'.repeat(64),
+    sig: '',
+  } as SignedEvent,
+]
+let forgetRead = () => {}
+await drawOnce(async () => {
+  const fresh = await import('./TopicPage')
+  // That copy marks its conversation read: no publish of it left waiting to fire inside a test.
+  forgetRead = (await import('../relay/readState')).resetReadStateForTests
+  return (
+    <TooltipProvider>
+      <ToastProvider>
+        <fresh.TopicPage d="00000000-0000-4000-8000-999999999999" folders={[{ id: HQ, name: 'Estiva HQ', hasState: true }]} inTree={() => null} treeRead />
+      </ToastProvider>
+    </TooltipProvider>
+  )
+}, () => screen.getByText('Everything about the widgets.'))
+forgetRead()
+held = []
 
 const { TopicPage } = await import('./TopicPage')
 const { resetTopicChoicesForTests } = await import('../document/fileTopics')

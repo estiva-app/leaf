@@ -7,6 +7,7 @@ import { BODY_SLOT, type FolderContents, type FolderSummary, type ForeignObject 
 import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult } from '@estiva-app/protocol'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drawOnce } from './test/drawOnce'
 
 /** What the relay holds outside any listing (an archived page), and what reading each `naddr` on its own gives. */
 /**
@@ -100,6 +101,11 @@ function holdTree(): () => void {
   return release
 }
 afterEach(cleanup)
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
+window.history.replaceState(null, '', `/document/plan-${D}`)
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByText('Written by QA-1.'))
 
 describe("a document's link", () => {
   it('opens the page it names', async () => {

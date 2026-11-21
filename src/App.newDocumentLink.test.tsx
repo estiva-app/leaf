@@ -9,6 +9,7 @@ import type { PublishResult, UnsignedEvent } from '@estiva-app/protocol'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { drawOnce } from './test/drawOnce'
 
 const published: UnsignedEvent[] = []
 
@@ -55,6 +56,10 @@ beforeEach(() => {
   relay.down = false
   window.history.replaceState(null, '', '/')
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+window.history.replaceState(null, '', newDocumentPath(QA))
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByRole('dialog', { name: 'New document' }))
 
 describe('a link to New document in a Folder', () => {
   it('opens New document on that Folder, and Create writes the document there and opens it', async () => {
