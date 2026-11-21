@@ -6,6 +6,7 @@ import type { FolderContents, FolderSummary, ForeignObject } from '@estiva-app/i
 import { encodeNaddr, type PublishResult, type SignedEvent } from '@estiva-app/protocol'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { drawOnce } from './test/drawOnce'
 import { MIKY, shipIssue } from './pages/fixtures/shipFiles'
 
 const D = '7fd6a466-5c02-49e5-8cbc-0ce71ab32221'
@@ -103,6 +104,11 @@ beforeEach(() => {
 
 const title = issue.slots.title?.value ?? ''
 const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+held = [event(30851, MIKY, [['d', D]]), event(30840, MIKY, [['d', TOPIC_D]])]
+window.history.replaceState(null, '', `/issue/${D}`)
+await drawOnce(<App />, () => screen.getByRole('textbox', { name: 'Document' }))
 
 describe("Ship's address for an issue, on Leaf's host", () => {
   it('opens the issue as a Leaf page, and the bar takes the slug of its title', async () => {

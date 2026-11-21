@@ -20,7 +20,13 @@ vi.mock('@/auth/estivaId', () => ({
   },
 }))
 
-const PLANTED_TITLE = 'plantedtitle board offsite'
+// Loaded once here, before any test's clock starts: the first load takes seconds on a busy machine, and
+// inside the first `beforeEach` it ran that hook, and the tests behind it, out of time. Each test
+// evaluates them again, in milliseconds.
+import './pageTimings'
+import '@/route'
+
+const PLANTED_TITLE ='plantedtitle board offsite'
 const DOC = '/document/plantedslug-board-offsite-70a66624-a6d2-4ce9-968f-e5adc23e1ede'
 const OTHER_DOC = '/document/plantedslug-two-9c69f247-be6a-4ae7-9703-71cb971f5f93'
 

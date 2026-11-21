@@ -5,6 +5,7 @@ import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 
 /* LTN-3: a topic's own page in Leaf, as Miky opens it from the sidebar or any topic link inside Leaf. */
 
@@ -123,6 +124,11 @@ afterEach(() => {
   // The page marks its conversation read: no publish left waiting to fire inside another case.
   resetReadStateForTests()
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+held = []
+await drawOnce(page(topic('Widgets', [], 'Everything about the widgets.'), [], true), () => screen.getByText('Everything about the widgets.'))
+resetReadStateForTests()
 
 describe("a topic's page in Leaf", () => {
   it('shows its title, team and summary, its conversation beside it, and what it lists, each opening in Leaf', async () => {

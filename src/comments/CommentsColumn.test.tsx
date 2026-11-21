@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
@@ -169,6 +170,11 @@ async function open(events: SignedEvent[], body = BODY) {
   )
   await waitFor(() => expect(page().editor.isInitialized).toBe(true))
 }
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+relay.events = [comment([], 'About the page')]
+await drawOnce(<ToastProvider><FilePage file={fileWith(BODY)} loading={false} /></ToastProvider>, () => screen.getByText('About the page'))
+publish.mockClear()
 
 describe('the comments column', () => {
   it('lists a comment on a paragraph by its place in the text, the whole document after it, and one on a deleted paragraph apart', async () => {

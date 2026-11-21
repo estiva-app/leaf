@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import type { Editor } from '@tiptap/react'
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 
 const ME = 'a'.repeat(64)
 const FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
@@ -108,6 +109,10 @@ afterEach(() => {
   roots = []
   profiles = []
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+await drawOnce(<ToastProvider><FilePage file={shipIssue()} loading={false} /></ToastProvider>, () => screen.getByRole('textbox', { name: 'Document' }))
+published.length = 0
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
   async function documentBox(): Promise<EditorBox> {
