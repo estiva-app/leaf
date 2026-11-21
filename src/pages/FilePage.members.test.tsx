@@ -4,6 +4,7 @@ import { ToastProvider } from '@estiva-app/ui'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 
 /* LED-6: a page's header says who is in it and its last edit, and its Members dialog joins, leaves and adds as Peek's does. */
 
@@ -103,6 +104,10 @@ afterEach(() => {
   published.length = 0
   answers = []
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+await drawOnce(<ToastProvider><FilePage file={page()} loading={false} /></ToastProvider>, () => screen.getByRole('button', { name: /members?$/ }))
+published.length = 0
 
 describe("a page's header", () => {
   it('says who edited its text last and when, not who commented or added a member since', async () => {
