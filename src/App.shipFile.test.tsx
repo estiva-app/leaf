@@ -52,7 +52,7 @@ beforeAll(() => {
 
 // Drawn once before any test's clock starts: `drawOnce` says why.
 window.history.replaceState(null, '', `/f/${ISSUE_NADDR}`)
-await drawOnce(<App />, () => screen.getByRole('textbox', { name: 'Document' }))
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByRole('textbox', { name: 'Document' }))
 
 describe("a Ship issue's address in Leaf", () => {
   it('opens the issue as a page when no Folder lists it, as after a reload', async () => {

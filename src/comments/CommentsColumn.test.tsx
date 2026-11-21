@@ -173,7 +173,8 @@ async function open(events: SignedEvent[], body = BODY) {
 
 // Drawn once before any test's clock starts: `drawOnce` says why.
 relay.events = [comment([], 'About the page')]
-await drawOnce(<ToastProvider><FilePage file={fileWith(BODY)} loading={false} /></ToastProvider>, () => screen.getByText('About the page'))
+await drawOnce(async () => { const fresh = await import('../pages/FilePage'); return <ToastProvider><fresh.FilePage file={fileWith(BODY)} loading={false} /></ToastProvider> }, () => screen.getByText('About the page'))
+relay.events = []
 publish.mockClear()
 
 describe('the comments column', () => {

@@ -108,7 +108,7 @@ const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '
 // Drawn once before any test's clock starts: `drawOnce` says why.
 held = [event(30851, MIKY, [['d', D]]), event(30840, MIKY, [['d', TOPIC_D]])]
 window.history.replaceState(null, '', `/issue/${D}`)
-await drawOnce(<App />, () => screen.getByRole('textbox', { name: 'Document' }))
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByRole('textbox', { name: 'Document' }))
 
 describe("Ship's address for an issue, on Leaf's host", () => {
   it('opens the issue as a Leaf page, and the bar takes the slug of its title', async () => {

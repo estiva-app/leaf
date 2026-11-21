@@ -105,7 +105,7 @@ afterEach(cleanup)
 // Drawn once before any test's clock starts: `drawOnce` says why.
 listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
 window.history.replaceState(null, '', `/document/plan-${D}`)
-await drawOnce(<App />, () => screen.getByText('Written by QA-1.'))
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByText('Written by QA-1.'))
 
 describe("a document's link", () => {
   it('opens the page it names', async () => {

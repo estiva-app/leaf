@@ -26,7 +26,7 @@ vi.mock('@/auth/estivaId', () => ({
 import './pageTimings'
 import '@/route'
 
-const PLANTED_TITLE ='plantedtitle board offsite'
+const PLANTED_TITLE = 'plantedtitle board offsite'
 const DOC = '/document/plantedslug-board-offsite-70a66624-a6d2-4ce9-968f-e5adc23e1ede'
 const OTHER_DOC = '/document/plantedslug-two-9c69f247-be6a-4ae7-9703-71cb971f5f93'
 

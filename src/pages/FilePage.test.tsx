@@ -45,6 +45,15 @@ vi.mock('../relay/bridge', () => ({
   },
 }))
 
+// Drawn once before any test's clock starts: `drawOnce` says why. Ahead of this file's own imports, so the
+// copy those load is the one a test's own `import()` finds.
+await drawOnce(async () => {
+  const fresh = await import('./FilePage')
+  const fixtures = await import('./fixtures/shipFiles')
+  return <ToastProvider><fresh.FilePage file={fixtures.shipIssue()} loading={false} /></ToastProvider>
+}, () => screen.getByRole('textbox', { name: 'Document' }))
+published.length = 0
+
 const { FilePage } = await import('./FilePage')
 const { PROFILES, shipIssue, shipProject } = await import('./fixtures/shipFiles')
 const ADDRESS = `30842:${ME}:page-1`
@@ -109,10 +118,6 @@ afterEach(() => {
   roots = []
   profiles = []
 })
-
-// Drawn once before any test's clock starts: `drawOnce` says why.
-await drawOnce(<ToastProvider><FilePage file={shipIssue()} loading={false} /></ToastProvider>, () => screen.getByRole('textbox', { name: 'Document' }))
-published.length = 0
 
 describe('a Ship issue opened in Leaf (LEAF-13)', () => {
   async function documentBox(): Promise<EditorBox> {
