@@ -1,5 +1,9 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+// Loaded once here, before any test's clock starts: the first load takes seconds on a busy machine, and
+// inside the first test it ran that test out of time. `load` evaluates them again, in milliseconds.
+import './sideColumn'
+import '../route'
 
 /*
   The column beside a page holds its comments, its Overview, or nothing (Katerina, 3 November; ONE-5, step 5), as

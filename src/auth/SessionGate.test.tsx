@@ -14,6 +14,10 @@ vi.mock('../config', () => ({
   RELAY_URL: 'https://estiva.estiva.app',
 }))
 
+// Loaded once here, before any test's clock starts: the first load takes seconds on a busy machine, and
+// inside the first test it ran that test out of time. `mount` evaluates it again, in milliseconds.
+import './SessionGate'
+
 const KEY = 'leaf.estiva-id.token'
 const PERSON = 'b3'.repeat(32)
 const store = (over: Record<string, unknown> = {}) =>
