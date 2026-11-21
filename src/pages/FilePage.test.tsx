@@ -864,7 +864,8 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     expect((await screen.findAllByText('Nothing was moved: the teams changed since you opened this. Try again.')).length).toBeGreaterThan(0)
     // Meanwhile someone moved it to Ops; the dialog is still open on the same choice.
     folderEvents = stateOf(OPS) as unknown as SignedEvent[]
-    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    // The toast is drawn before the dialog offers Move again: wait for the button, not only for the words.
+    fireEvent.click(await screen.findByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
     expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([
       [1852, STEER, 'move', FOLDER],
