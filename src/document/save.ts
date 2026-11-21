@@ -17,7 +17,7 @@ import {
   type ForeignObject,
   type WriteChangeResult,
 } from '@estiva-app/interop'
-import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, imetaTag, textAsksOf, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, changeTypeTags, imetaTag, textAsksOf, toNostrSeconds, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
@@ -218,6 +218,9 @@ export function buildChange(
       // The file it is about, by its id, as a comment names its file (SPEC §6.2), as Ship's change does.
       // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-change-is-about-its-file-as-a-comment-is.md
       ['O', args.target.split(':').slice(2).join(':')],
+      // The type of the file it changes, so a read can ask for changes by type (SPEC §6.2): Home asks for none of a page's.
+      // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-change-says-the-type-of-its-file.md
+      ...changeTypeTags(args.target),
       ['field', args.field],
       ['value', args.value],
       ['h', args.folder],
