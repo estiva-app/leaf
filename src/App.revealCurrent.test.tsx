@@ -7,6 +7,7 @@ import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishRes
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drawOnce } from './test/drawOnce'
 import { shipProject } from './pages/fixtures/shipFiles'
 
 const ME = 'a'.repeat(64)
@@ -84,6 +85,10 @@ afterEach(cleanup)
 const sidebar = () => screen.getByRole('navigation')
 const folderGroup = () => within(sidebar()).getByRole('button', { name: 'QA' })
 const rowOf = (title: string) => within(sidebar()).getByRole('link', { name: new RegExp(title) })
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+window.history.replaceState(null, '', `/document/week-of-2-november-${WEEK_D}`)
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByText('This week.'))
 
 describe('The sidebar shows where the open page lives (LFB-9)', () => {
   it("opens a page's Folder and the page above it, and marks the page as current", async () => {

@@ -7,6 +7,7 @@ import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishRes
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drawOnce } from './test/drawOnce'
 
 const published = vi.hoisted(() => [] as UnsignedEvent[])
 const ME = 'a'.repeat(64)
@@ -71,6 +72,10 @@ beforeEach(() => {
   window.history.replaceState(null, '', `/document/launch-plan-${D}`)
 })
 afterEach(cleanup)
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+window.history.replaceState(null, '', `/document/launch-plan-${D}`)
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByText('The plan.'))
 
 describe('New document inside a page (LFB-8)', () => {
   it("writes a page naming it, stored in the page's own Folder and listed where the page is, and opens it", async () => {

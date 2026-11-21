@@ -7,6 +7,7 @@ import type { PublishResult } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
 import { render, screen } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { drawOnce } from './test/drawOnce'
 import { shipIssue } from './pages/fixtures/shipFiles'
 
 const ISSUE_NADDR = 'naddr1shipissue'
@@ -48,6 +49,10 @@ beforeAll(() => {
     proto.getBoundingClientRect = empty
   }
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why.
+window.history.replaceState(null, '', `/f/${ISSUE_NADDR}`)
+await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByRole('textbox', { name: 'Document' }))
 
 describe("a Ship issue's address in Leaf", () => {
   it('opens the issue as a page when no Folder lists it, as after a reload', async () => {
