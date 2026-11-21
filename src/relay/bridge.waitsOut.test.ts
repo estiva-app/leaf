@@ -50,12 +50,43 @@ function watch<T>(read: Promise<T>) {
   return seen
 }
 
+// Each case starts ten minutes after the one before: the tab remembers when the relay said to ask again.
+let clock = Date.UTC(2026, 10, 21)
 beforeEach(() => {
-  vi.useFakeTimers()
+  clock += 600_000
+  vi.useFakeTimers({ now: clock })
+  // The spread on top of the relay's seconds: half a second every time, so each wait here is exact.
+  vi.spyOn(Math, 'random').mockReturnValue(0.5)
 })
-afterEach(() => {
+afterEach(async () => {
+  // Past any wait a case left behind, so the next one starts with none.
+  await vi.advanceTimersByTimeAsync(200_000)
+  vi.restoreAllMocks()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+it('reads refused at different moments of one minute ask again together, as one request', async () => {
+  const LIKE = { ...NOTE, id: 'd'.repeat(64), kind: 7 }
+  let asked = 0
+  const fetch = vi.fn(async () => {
+    asked += 1
+    if (asked === 1) return spent(8)()
+    if (asked === 2) return spent(6)()
+    return new Response(JSON.stringify([NOTE, LIKE]), { status: 200 })
+  })
+  vi.stubGlobal('fetch', fetch)
+
+  const first = watch(query(reading))
+  await vi.advanceTimersByTimeAsync(1_500)
+  const second = watch(query([{ kinds: [7], authors: [ME] }]))
+  await vi.advanceTimersByTimeAsync(1_000)
+  expect(fetch).toHaveBeenCalledTimes(2)
+
+  await vi.advanceTimersByTimeAsync(8_000)
+  expect(fetch).toHaveBeenCalledTimes(3)
+  expect(first.value).toEqual([NOTE])
+  expect(second.value).toEqual([LIKE])
 })
 
 it('a read refused because the minute is spent waits the relay’s seconds, asks again and answers', async () => {

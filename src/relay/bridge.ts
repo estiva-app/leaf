@@ -46,23 +46,32 @@ export const WAIT_OUT_MS = 180_000
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
  */
 async function waitingOut<T>(read: (relay: Relay) => Promise<T>): Promise<T> {
-  const b = bridge()
-  if (!b) throw new Error('Not signed in to a relay.')
+  const asked = bridge()
+  if (!asked) throw new Error('Not signed in to a relay.')
   const giveUpAt = Date.now() + WAIT_OUT_MS
   for (;;) {
+    // Whoever is signed in now: a read that waited through a sign-out is not asked again as the person before.
+    const b = bridge()
+    if (!b || b.pubkey !== asked.pubkey) throw new Error('Not signed in to a relay.')
     try {
       return await read(b.relay)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       if (!isRateLimited(reason)) throw error
-      // The relay's seconds are what is left of its minute, rounded down; the spread keeps every tab that waited from
-      // asking in the same instant when the minute turns.
-      const wait = Math.max(retryHintMs(reason) ?? DEFAULT_BACKOFF_MS, MIN_BACKOFF_MS) + Math.random() * MIN_BACKOFF_MS
-      if (Date.now() + wait > giveUpAt) throw error
-      await new Promise((resolve) => setTimeout(resolve, wait))
+      const now = Date.now()
+      // The relay's seconds are what is left of its minute, rounded down. The spread, one per tab and minute, keeps
+      // the tabs that waited from all asking in the instant the minute turns.
+      if (clearAt <= now) clearAt = now + Math.max(retryHintMs(reason) ?? DEFAULT_BACKOFF_MS, MIN_BACKOFF_MS) + Math.random() * MIN_BACKOFF_MS
+      if (clearAt > giveUpAt) throw error
+      await new Promise((resolve) => setTimeout(resolve, clearAt - now))
     }
   }
 }
+/**
+ * When this tab asks again: one moment for every read refused in the same minute, so they go out together and as few
+ * requests as the open made the first time. Each waiting on its own would ask one by one, and spend the next minute too.
+ */
+let clearAt = 0
 
 /** Who is signed in, or `null`. */
 export function viewerPubkey(): string | null {
