@@ -1,6 +1,5 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import { Button, EmptyState, KindIcon, ListTable, ListTableRow, MembersPill, Panel, SearchInput, SkeletonList, Tabs, useToast, type AvatarGroupMember, type ListTableColumn } from '@estiva-app/ui'
-import { IconTarget } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useDirectory } from '../comments/people'
 import { heldTopics, loadTopics } from '../document/fileTopics'
@@ -77,7 +76,7 @@ export function ExploreTopicsView({
             {lists === 'loading' ? (
               <SkeletonList rows={8} />
             ) : lists === 'failed' ? (
-              <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message="Initiatives didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
+              <EmptyState icon={<KindIcon kind="topic" />} scope="page" message="Initiatives didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
