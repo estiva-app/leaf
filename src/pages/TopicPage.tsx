@@ -275,7 +275,8 @@ export function TopicPageView({
                     {...archivedNoticeOf(page.archive, (pubkey) => directory[pubkey]?.displayName, page.archive.with ? { noun: 'team', ...(team ? { title: team } : {}) } : undefined)}
                   />
                 )}
-                {page.summary && <p className="text-body-2 text-text-secondary">{page.summary}</p>}
+                {/* 8px in, where the headings and the rows' names start, as Ship's summary (review of 23 November, C8). */}
+                {page.summary && <p className="px-2 text-body-2 text-text-secondary">{page.summary}</p>}
                 {files === 'loading' || files === undefined ? (
                   <SkeletonList rows={3} />
                 ) : files === 'failed' ? (
