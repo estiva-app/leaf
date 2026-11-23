@@ -226,7 +226,7 @@ describe("a topic's page in Leaf", () => {
     const brief = await screen.findByRole('link', { name: /^Write the brief/ })
     const plan2 = await screen.findByRole('link', { name: /^Launch plan/ })
     expect(plan2.getAttribute('href')).toBe(`/document/launch-plan-${planD}`)
-    expect(plan2.closest('[data-topic-file]')).not.toBeNull()
+    expect(plan2.closest('[role="row"]')).not.toBeNull()
     expect(document.querySelector('[data-topic-page] a[href^="https://"]')).toBeNull()
     expect(plan2.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('page')
     expect(brief.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('issue')
@@ -387,7 +387,7 @@ describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \
       </TooltipProvider>,
     )
     // A row's cells: its name, then Status, People, Progress and When, as Ship's.
-    const cells = (title: RegExp) => [...screen.getByRole('link', { name: title }).closest('[data-topic-file]')!.querySelectorAll('[role="cell"]')]
+    const cells = (title: RegExp) => [...screen.getByRole('link', { name: title }).closest('[role="row"]')!.querySelectorAll('[role="cell"]')]
     const issueCells = cells(/^Sidebar should not show Peek topics/)
     expect(issueCells[1]?.textContent).toContain('In Progress')
     expect(issueCells[2]?.querySelector('[aria-label="Ravi Mehta"]')).not.toBeNull()

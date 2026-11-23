@@ -2,19 +2,15 @@ import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { archivedLine } from '@estiva-app/conversation'
 import {
   ArchivedNotice,
-  Avatar,
   Button,
   CollapsibleSection,
   Divider,
   EmptyState,
+  ItemList,
   KindIcon,
-  LinkPickers,
-  ListTable,
-  ListTableRow,
   NoAccessNotice,
   PageHeader,
   Panel,
-  ProgressRing,
   SectionHeader,
   SkeletonList,
   TeamChip,
@@ -24,8 +20,8 @@ import {
   linkedFrom,
   thingKindOf,
   useToast,
+  type ItemListRow,
   type LinkedProfile,
-  type ListTableColumn,
 } from '@estiva-app/ui'
 import { IconExternalLink, IconMessage, IconMessageOff } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode, type RefObject } from 'react'
@@ -320,22 +316,6 @@ function kindOf(file: ForeignObject): Kind {
 }
 
 /**
- * The four columns Ship's initiative page lists every file in (Ship's `WorkList`), the same widths, so a row's facts sit
- * where Ship's do (Katerina, 23 November: "unify initiative page in Leaf and make it like Ship"): its status, its person
- * (a project's lead, an issue's assignee, a page's last editor), its progress, and who changed it last and when. Who and
- * when give way first in a narrow window.
- */
-const COLUMNS: ListTableColumn[] = [
-  { label: 'Status', width: 'medium' },
-  { label: 'People', width: 'large', keep: 'low' },
-  { label: 'Progress', width: 'small' },
-  { label: 'When', width: 'medium', keep: 'low' },
-]
-
-/** Nothing: a fact this file does not have. The kit's row draws its dash only for an absent cell ("not read yet"). */
-const NONE = ''
-
-/**
  * **What an initiative lists, by kind** (Katerina, 18 November, brainstorm 1.A; 23 November: "make it like row and not
  * card"): one part per kind, under the kit's heading with its count, every file a row in Ship's four columns, the
  * initiative's own order kept inside each, as the record asks of an app that groups its files ("an app that groups
@@ -376,45 +356,39 @@ function Listed({ files, directory }: { files: { live: ForeignObject[]; archived
 const firstName = (name: string) => name.split(' ')[0] ?? name
 
 /**
- * Files of one kind in their order, each a row of the kit's list in Ship's four columns. Each row's facts are the ones
- * the kit's card reads from the file (`linkedFrom`): its status in words, its owner's face (a lead, an assignee; a page,
- * who changed it last), its progress as the kit's small ring, and When as Ship words it, who changed it last and when
- * ("Ana, 1h ago"). Another app's file says its type on the line under its name, which nothing else here says; an issue
- * says what it is in, as Ship's rows name an issue's project.
+ * Files of one kind in their order, the kit's `ItemList`: Ship's four columns, the same widths, so a row's facts sit
+ * where Ship's do (Katerina, 23 November: "unify initiative page in Leaf and make it like Ship"; the list itself in the
+ * kit, review of 23 November, C4). Each row's facts are the ones the kit's card reads from the file (`linkedFrom`): its
+ * status in the kit's words (C3), its person (a project's lead, an issue's assignee, a page's last editor), its progress
+ * as the kit's small ring, and When as Ship words it, who changed it last and when ("Ana, 1h ago"). A fact a file does
+ * not have is an empty cell. Another app's file says its type on the line under its name, which nothing else here says;
+ * an issue says what it is in, as Ship's rows name an issue's project.
  */
 function FileRows({ files, label, directory }: { files: readonly ForeignObject[]; label: string; directory: Record<string, LinkedProfile> }) {
-  return (
-    <ListTable aria-label={label} columns={COLUMNS} headings={false}>
-      {files.map((file) => {
-        const row = rowOf(file)
-        const kind = kindOf(file)
-        const linked = linkedFrom(file, { hrefOf: () => row.href, previewText: () => '', directory })
-        const status = linked.status?.options.find((option) => option.value === linked.status?.value)
-        const owner = linked.owner?.options.find((option) => option.value === linked.owner?.value)
-        // Who changed it last, as the directory names them; a key the directory does not name says only when.
-        const editor = file.changedBy ? directory[file.changedBy] : undefined
-        const editorName = editor?.displayName
-        // A page's person is who changed it last; a project's or an issue's, its owner.
-        const person = owner ? { name: owner.label, picture: owner.picture, bot: owner.bot } : kind === 'page' && editorName ? { name: editorName, picture: editor?.picture, bot: editor?.bot } : undefined
-        const when = linked.updated ? (editorName ? `${firstName(editorName)}, ${linked.updated}` : linked.updated) : NONE
-        const line = kind === 'file' ? typeOf(file) : kind === 'issue' ? linked.subtitle : undefined
-        return (
-          <ListTableRow
-            key={row.id}
-            data-topic-file={file.address}
-            href={row.href}
-            label={row.label}
-            {...(line ? { description: line } : {})}
-            icon={<KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />}
-            cells={[
-              status && linked.status ? <LinkPickers status={linked.status} readOnly /> : NONE,
-              person ? <Avatar name={person.name} src={person.picture} bot={person.bot} size={16} label={person.name} /> : NONE,
-              linked.done ? <ProgressRing done={linked.done.done} total={linked.done.total} /> : NONE,
-              when,
-            ]}
-          />
-        )
-      })}
-    </ListTable>
-  )
+  const rows = files.map((file): ItemListRow => {
+    const row = rowOf(file)
+    const kind = kindOf(file)
+    const linked = linkedFrom(file, { hrefOf: () => row.href, previewText: () => '', directory })
+    const status = linked.status?.options.find((option) => option.value === linked.status?.value)
+    const owner = linked.owner?.options.find((option) => option.value === linked.owner?.value)
+    // Who changed it last, as the directory names them; a key the directory does not name says only when.
+    const editor = file.changedBy ? directory[file.changedBy] : undefined
+    const editorName = editor?.displayName
+    // A page's person is who changed it last; a project's or an issue's, its owner.
+    const person = owner ? { name: owner.label, picture: owner.picture, bot: owner.bot } : kind === 'page' && editorName ? { name: editorName, picture: editor?.picture, bot: editor?.bot } : undefined
+    const line = kind === 'file' ? typeOf(file) : kind === 'issue' ? linked.subtitle : undefined
+    return {
+      id: row.id,
+      href: row.href,
+      label: row.label,
+      ...(line ? { description: line } : {}),
+      icon: <KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />,
+      // A colour the kit does not know is its quiet one, as the kit's own rows draw such a status (`linkedFrom`).
+      status: status ? { label: status.label, colour: status.colour ?? 'muted' } : null,
+      people: person ? { person } : null,
+      progress: linked.done ?? null,
+      when: linked.updated ? (editorName ? `${firstName(editorName)}, ${linked.updated}` : linked.updated) : null,
+    }
+  })
+  return <ItemList aria-label={label} rows={rows} />
 }
