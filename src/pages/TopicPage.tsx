@@ -7,11 +7,11 @@ import {
   Divider,
   EmptyState,
   ItemList,
+  ListSection,
   KindIcon,
   NoAccessNotice,
   PageHeader,
   Panel,
-  SectionHeader,
   SkeletonList,
   TeamChip,
   Toolbar,
@@ -317,9 +317,9 @@ function kindOf(file: ForeignObject): Kind {
 
 /**
  * **What an initiative lists, by kind** (Katerina, 18 November, brainstorm 1.A; 23 November: "make it like row and not
- * card"): one part per kind, under the kit's heading with its count, every file a row in Ship's four columns, the
- * initiative's own order kept inside each, as the record asks of an app that groups its files ("an app that groups
- * them, by kind say, keeps it inside each group"). The look a file was given on the initiative is a hint the record
+ * card"): one part per kind, the kit's ListSection (its heading with its count over its list; review of 23 November,
+ * C10), every file a row in Ship's four columns, the initiative's own order kept inside each, as the record asks of an
+ * app that groups its files ("an app that groups them, by kind say, keeps it inside each group"). The look a file was given on the initiative is a hint the record
  * leaves to the reading app ("the reading app decides how it looks"): Leaf lists them as its own rows, as Ship does.
  * The archived ones are one fold at the end, open when nothing else is listed, each kind its own list inside it.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md
@@ -334,10 +334,9 @@ function Listed({ files, directory }: { files: { live: ForeignObject[]; archived
         const ofKind = files.live.filter((file) => kindOf(file) === kind)
         if (ofKind.length === 0) return null
         return (
-          <section key={kind} className="flex flex-col gap-1" data-topic-kind={kind}>
-            <SectionHeader title={title} count={ofKind.length} hover="none" />
+          <ListSection key={kind} title={title} count={ofKind.length} data-topic-kind={kind}>
             <FileRows files={ofKind} label={title} directory={directory} />
-          </section>
+          </ListSection>
         )
       })}
       {files.archived.length > 0 && (
