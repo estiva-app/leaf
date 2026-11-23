@@ -12,6 +12,7 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { createErrorReporter, type Failure } from '@estiva-app/platform'
 import { reportCrashesTo, reportFailuresTo } from '@estiva-app/ui'
 import { reportDrawnFailuresTo, reportRefusalsTo } from '@/lib/failureReports'
+import { heardFailures } from '@/lib/heardFailures'
 import { ID_CONFIG } from '@/config'
 import { currentToken } from '@/auth/estivaId'
 import { routeOf, usePathname, type Route } from '@/route'
@@ -42,6 +43,8 @@ export const errorReporter = createErrorReporter({
   token: () => (ID_CONFIG ? currentToken()?.accessToken : undefined),
   screen: () => screenOf(window.location.pathname),
   screens: SCREENS,
+  // Why: what Leaf's reads last heard (34396209), so each reason a page fails to load is its own error.
+  reason: heardFailures.recent,
 })
 
 /** Starts reporting: the window's unhandled errors, and every ErrorBoundary's crash. */

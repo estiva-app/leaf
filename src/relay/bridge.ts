@@ -4,6 +4,7 @@ import { MERGE_READS_MS, Relay, type FileTimes, type PublishResult, type SignedE
 import { heldToken, renew, sessionEnded } from '../auth/estivaId'
 import { ID_CONFIG, RELAY_URL } from '../config'
 import { heardRefusal } from '../lib/failureReports'
+import { heardFailure } from '../lib/heardFailures'
 
 /**
  * The relay's HTTP bridge, for reads and writes that are one request each: the
@@ -56,6 +57,8 @@ async function waitingOut<T>(read: (relay: Relay) => Promise<T>): Promise<T> {
     try {
       return await read(b.relay)
     } catch (error) {
+      // Why, for the report of the failure a screen draws if this read ends as one (34396209).
+      heardFailure(error)
       const reason = error instanceof Error ? error.message : String(error)
       if (!isRateLimited(reason)) throw error
       const now = Date.now()
