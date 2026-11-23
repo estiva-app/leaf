@@ -37,14 +37,6 @@ export interface TopicFacts {
 
 const byTitle = (a: TopicRowData, b: TopicRowData) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
 
-/** A topic is found by the start of a word of its title, as search is everywhere (Miky, 19 Oct). */
-export function findsTopic(title: string, query: string): boolean {
-  // Split as the title is, so "q4-pl" finds "Q4-plan".
-  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-  const titleWords = title.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-  return words.every((word) => titleWords.some((titleWord) => titleWord.startsWith(word)))
-}
-
 /**
  * Which topics Explore topics draws on each tab, as Ship's `topicsByTab`: every topic you can open, also those listing
  * nothing Leaf opens, never a space (conversation is Peek's). It is under Archived when it is archived, and only then.

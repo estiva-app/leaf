@@ -27,8 +27,8 @@ const open = () =>
     </TooltipProvider>,
   )
 const tab = (name: RegExp) => screen.getByRole('tab', { name })
-const rows = () => [...document.querySelectorAll('[data-topic]')].map((row) => within(row as HTMLElement).getAllByRole('link')[0].textContent)
-const rowOf = (title: string) => document.querySelector(`[data-topic]:has(a[href*="${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"])`) as HTMLElement
+const rows = () => [...document.querySelectorAll('[role="row"]:has(a)')].map((row) => within(row as HTMLElement).getAllByRole('link')[0].textContent)
+const rowOf = (title: string) => document.querySelector(`[role="row"]:has(a[href*="${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"])`) as HTMLElement
 
 let topics: Record<string, string> = {}
 /* A page you muted too: Join takes only the topic off the list. */
