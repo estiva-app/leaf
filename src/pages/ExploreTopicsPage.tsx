@@ -68,9 +68,10 @@ export function ExploreTopicsView({
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title="Explore initiatives" bodyClassName="px-12 pt-10 pb-24">
+        <Panel title="Explore initiatives" bodyClassName="px-6 py-5">
+          {/* The page's whole width, 24px in and 20px down, as Ship's and Peek's lists (Katerina, 23 November: "not compact, fix Leaf"). */}
           {/* 24px between the tabs and the list, the kit's step between a page's parts, as Peek's (Katerina, 16 November: 16 was too tight). */}
-          <div data-surface="explore-topics" className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+          <div data-surface="explore-topics" className="flex w-full flex-col gap-6">
             {lists === 'loading' ? (
               <SkeletonList rows={8} />
             ) : lists === 'failed' ? (

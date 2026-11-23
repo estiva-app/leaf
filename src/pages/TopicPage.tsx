@@ -138,9 +138,10 @@ export function TopicPageView({
               actions={page && !sendsOn ? toggle : undefined}
             />
           }
-          bodyClassName="px-12 pt-10 pb-24"
+          bodyClassName="px-6 py-5"
         >
-          <div data-topic-page className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+          {/* The page's whole width, 24px in and 20px down, as Ship's and Peek's lists (Katerina, 23 November: "not compact, fix Leaf"). */}
+          <div data-topic-page className="flex w-full flex-col gap-4">
             {state === 'failed' ? (
               <EmptyState scope="page" message="This initiative didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
             ) : !page || sendsOn ? (
