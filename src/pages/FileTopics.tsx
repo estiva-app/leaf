@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { IconHash, IconPlus, IconX } from '@tabler/icons-react'
-import { Button, Chip, CommandPalette, EmptyState, CommandPaletteSearch, IconButton, KindIcon, SkeletonBar, useToast, type CommandPaletteRow } from '@estiva-app/ui'
+import { Button, Chip, CommandPalette, CommandPaletteSearch, EmptyState, findsByWordStart, IconButton, KindIcon, SkeletonBar, useToast, type CommandPaletteRow } from '@estiva-app/ui'
 import { heldTopics, heldYourTopics, readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
 import { isKnownSpace, topicPath } from '../topics/topicLinks'
 import { useFileTopics, type FileTopicsState } from '../document/useFileTopics'
@@ -135,15 +135,6 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
   )
 }
 
-/**
- * Every typed word starts a word of the title, in any order: search matches word starts only, everywhere.
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-matches-every-word-as-a-word-start.md
- */
-function startsWords(title: string, words: readonly string[]): boolean {
-  const own = title.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-  return words.every((word) => own.some((w) => w.startsWith(word)))
-}
-
 /** A space opens in Peek, beside Leaf rather than in its place, as every other app's file does from Leaf. */
 function openBeside(event: { preventDefault: () => void }, url: string | undefined) {
   if (!url) return
@@ -178,10 +169,10 @@ function AddToTopic({ listed, readChoices, choicesNow, onPick, onClose }: {
       live = false
     }
   }, [readChoices])
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const asked = query.trim()
   const rows = (topics: readonly TopicOfFile[]): CommandPaletteRow[] =>
     topics
-      .filter((topic) => !listed.includes(topic.address) && startsWords(topic.title, words))
+      .filter((topic) => !listed.includes(topic.address) && findsByWordStart(topic.title, asked))
       .map((topic) => ({ id: topic.address, label: topic.title, icon: placeIcon(topic.address, 16), onSelect: () => onPick(topic) }))
   const groups = typeof choices === 'object' ? [{ label: 'Your initiatives', rows: rows(choices.yours) }, { label: 'Other initiatives', rows: rows(choices.others) }].filter((group) => group.rows.length > 0) : []
   return (
@@ -192,7 +183,7 @@ function AddToTopic({ listed, readChoices, choicesNow, onPick, onClose }: {
         placeholder="Find an initiative…"
         groups={groups}
         pending={choices === undefined ? 'Reading initiatives…' : undefined}
-        empty={choices === 'failed' ? 'Initiatives could not be read.' : words.length ? `No initiative is called “${query.trim()}”.` : 'No initiative to add it to.'}
+        empty={choices === 'failed' ? 'Initiatives could not be read.' : asked ? `No initiative is called “${asked}”.` : 'No initiative to add it to.'}
       />
     </CommandPalette>
   )
