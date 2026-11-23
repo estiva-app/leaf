@@ -1,3 +1,4 @@
+import type { ForeignObject } from '@estiva-app/interop'
 import {
   AppProvider,
   AppShell,
@@ -41,6 +42,7 @@ import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname, type Route } from './route'
 import { useTabTitle } from './tabTitle'
 import { TopicsSection } from './topics/TopicsSection'
+import { useInitiativeLitUnder } from './topics/openedFrom'
 import { useSidebarTopics } from './topics/useSidebarTopics'
 import { useReportFailure } from '@/lib/failureReports'
 
@@ -178,6 +180,11 @@ function Frame() {
   */
   const current = open ? fileKey(open.file) : onPage ? fileKey(onPage) : route.page === 'file' ? route.naddr : undefined
   const under = onPage?.parentRef ? findFileAt(folders, children, onPage.parentRef) : null
+  // One place is lit (Katerina, 23 November: "you have 2 selections in the sidebar"): a file clicked under an initiative is
+  // lit there, and the teams' tree neither lights nor opens for it, as Peek lights a row only in the column it was opened
+  // from; opened any other way, it is lit in its team.
+  const fileNow = (file: ForeignObject) => (file.address && inTree(file.address)) || file
+  const litUnder = useInitiativeLitUnder(topics, current, fileNow)
   useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore initiatives' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
@@ -296,19 +303,19 @@ function Frame() {
             {signedIn && (
               <TopicsSection
                 topics={topics}
-                current={current}
+                {...(litUnder && current ? { lit: { topic: litUnder, file: current } } : {})}
                 topicNow={route.page === 'topic' ? route.d : undefined}
                 exploreNow={route.page === 'topics'}
-                fileNow={(file) => (file.address && inTree(file.address)) || file}
+                fileNow={fileNow}
               />
             )}
             <TeamsTree
               groups={groups}
               {...(yours ? { yours } : {})}
               failed={!!workspace.failed}
-              selected={current}
-              selectedParent={under ? fileKey(under.file) : undefined}
-              openTeam={open?.folder.folder.id}
+              selected={litUnder ? undefined : current}
+              selectedParent={!litUnder && under ? fileKey(under.file) : undefined}
+              openTeam={litUnder ? undefined : open?.folder.folder.id}
               {...(takers.length ? { onNewDocument: () => setMaking(true) } : {})}
             />
           </Sidebar>

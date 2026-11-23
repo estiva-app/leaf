@@ -37,11 +37,14 @@ type Story = StoryObj<typeof meta>
 /** Your five newest; one with pages folds to them. */
 export const Five: Story = {}
 
-/** An initiative's page open: its row is lit, and it opens to its pages, as Ship's sidebar does. */
+/** An initiative's page open: its row is lit, its fold left as it is: only its arrow folds it, as Peek's rows (Katerina, 23 November). */
 export const OnAnInitiative: Story = { args: { topicNow: 'nav' } }
 
-/** A page open that an initiative lists: that initiative opens to it, the page's row lit (Katerina, 30 October). */
-export const AFileOpen: Story = { args: { current: 'naddr-plan' } }
+/**
+ * A page clicked under an initiative: that initiative opens to it, the page's row lit there; the teams' tree lights
+ * nothing (Katerina, 23 November: one place lit). Opened any other way, it is lit in its team and nothing here is.
+ */
+export const AFileOpen: Story = { args: { lit: { topic: `30840:${KAT}:launch`, file: 'naddr-plan' } } }
 
 /** Explore initiatives open: its row is lit. */
 export const ExploreOpen: Story = { args: { exploreNow: true } }

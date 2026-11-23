@@ -78,25 +78,27 @@ describe('the sidebar’s Topics', () => {
     expect(rows()).toEqual(['Explore initiatives'])
   })
 
-  it('opens the initiative holding the open file, and no other, as Ship’s sidebar does (review of 23 November, C11)', () => {
+  it('lights a file clicked under an initiative there, and opens that initiative and no other', () => {
     const plan = page('3518cd7b-5b85-49e8-ba94-4aacacad2163', 'Launch plan')
     render(
       <TooltipProvider>
-        <TopicsSection topics={[topicOf(1, [plan]), topicOf(2)]} current={rowOf(plan).id} fileNow={(f) => f} />
+        <TopicsSection topics={[topicOf(1, [plan]), topicOf(2)]} lit={{ topic: topicOf(1).address, file: rowOf(plan).id }} fileNow={(f) => f} />
       </TooltipProvider>,
     )
     expect(screen.getByRole('link', { name: /Launch plan/ }).getAttribute('aria-current')).toBe('page')
     expect(screen.queryByRole('link', { name: /Page 2/ })).toBeNull()
   })
 
-  it('opens the initiative whose own page is open, as Ship’s sidebar does (review of 23 November, C11)', () => {
+  // Katerina, 23 November: "in peek it doesnt … just expands when you click to the chevron only".
+  it('leaves an initiative folded when its own page is open: its row is lit, and only its arrow folds it', () => {
     render(
       <TooltipProvider>
         <TopicsSection topics={[topicOf(1), topicOf(2)]} topicNow="t2" fileNow={(f) => f} />
       </TooltipProvider>,
     )
-    expect(screen.getByRole('link', { name: /Page 2/ })).toBeTruthy()
-    expect(screen.queryByRole('link', { name: /Page 1/ })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Topic 2' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('button', { name: 'Show what is under Topic 2' }).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('link', { name: /Page 2/ })).toBeNull()
   })
 
   it('says you are in no initiatives yet, with Explore initiatives as the way in, when you have none', () => {

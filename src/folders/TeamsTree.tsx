@@ -1,10 +1,12 @@
 import { IconFilePlus } from '@tabler/icons-react'
 import { CollapsibleSection, NavTree, type NavTreeGroup } from '@estiva-app/ui'
+import { forgetOpenedFromInitiative } from '../topics/openedFrom'
 
 /**
  * The sidebar's teams, each a fold over its pages: yours first, the rest folded under "Other teams" with their count,
  * as Peek's Teams column splits them (Katerina, 23 November). The fold opens for a team in it whose page is open, as a
- * click would. Before Leaf knows which teams you are in (`yours` absent), every team is in one list, as before.
+ * click would. Before Leaf knows which teams you are in (`yours` absent), every team is in one list, as before. A row
+ * clicked here is lit here, even one lit under an initiative a moment ago (`openedFrom`).
  */
 export function TeamsTree({ groups, yours, failed, selected, selectedParent, openTeam, onNewDocument }: {
   /** Every team's group (`groupsOf`); `null` while the teams are read. */
@@ -23,12 +25,15 @@ export function TeamsTree({ groups, yours, failed, selected, selectedParent, ope
   const mine = groups && yours ? groups.filter((group) => yours.has(group.id)) : groups
   const others = groups && yours ? groups.filter((group) => !yours.has(group.id)) : []
   const otherOpen = !!openTeam && others.some((group) => group.id === openTeam)
+  // A plain click: the kit still follows the link after it.
+  const spend = () => forgetOpenedFromInitiative()
   return (
     <>
       <NavTree
         title="Teams"
         titleActions={onNewDocument ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: onNewDocument }] : undefined}
         groups={failed ? [] : mine}
+        onSelect={spend}
         selected={selected}
         selectedParent={selectedParent}
         emptyMessage={failed ? 'Your teams could not be read. Reload to try again.' : others.length > 0 ? '' : 'No teams yet.'}
@@ -36,7 +41,7 @@ export function TeamsTree({ groups, yours, failed, selected, selectedParent, ope
       {!failed && others.length > 0 && (
         // Peek's fold, word and look: the kit's fold as a row among rows, with its count (Katerina, 16 November).
         <CollapsibleSection look="row" title="Other teams" count={others.length} defaultOpen={otherOpen} {...(otherOpen && openTeam ? { openFor: openTeam } : {})} contentClassName="gap-0.5">
-          <NavTree groups={others} selected={selected} selectedParent={selectedParent} />
+          <NavTree groups={others} selected={selected} selectedParent={selectedParent} onSelect={spend} />
         </CollapsibleSection>
       )}
     </>

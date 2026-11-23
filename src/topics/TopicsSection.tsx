@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { rowOf } from '../folders/tree'
 import { dOf, EXPLORE_TOPICS_PATH } from '../route'
 import { topicPath } from './topicLinks'
+import { rememberClickUnderInitiative } from './openedFrom'
 import { TOPICS_SHOWN } from './sidebarTopics'
 import type { SidebarTopicsState } from './useSidebarTopics'
 import { useReportFailure } from '@/lib/failureReports'
@@ -14,19 +15,23 @@ import { useReportFailure } from '@/lib/failureReports'
  * Katerina's rename of 16 November): your five newest initiatives
  * (newest activity first, in the order the caller hands them), each folding to the files it lists that Leaf opens, then
  * Explore initiatives in More's place. With none, or when the read failed, the section still draws, with Explore initiatives, so
- * there is a way in. An initiative's name opens its page in Leaf (LTN-3); its icon, an arrow while pointed at, folds it; one
- * listing nothing Leaf opens has no fold.
+ * there is a way in. An initiative's name opens its page in Leaf (LTN-3); its icon, an arrow while pointed at, folds it, and
+ * nothing else does: its own page leaves its fold as it is, as Peek's rows (Katerina, 23 November). One listing nothing
+ * Leaf opens has no fold. A file clicked under an initiative is lit there and nowhere else (`openedFrom`).
  */
 export function TopicsSection({
   topics,
-  current,
+  lit,
   topicNow,
   exploreNow,
   fileNow,
 }: {
   topics: SidebarTopicsState
-  /** The open file's key, as the tree selects it. */
-  current?: string
+  /**
+   * The open file, when it was clicked under one of these initiatives (`useInitiativeLitUnder`): lit there, and that
+   * initiative opens. Absent, no file is lit here: it is lit in its team.
+   */
+  lit?: { topic: string; file: string }
   /** The `d` of the topic whose page is open. */
   topicNow?: string
   /** Explore topics is open. */
@@ -92,12 +97,20 @@ export function TopicsSection({
             {...link}
             open={open.has(topic.address)}
             onOpenChange={(to) => fold(topic.address, to)}
-            // Opens each time its page or one of its files is opened, as a click would; folded by hand, it stays so until
-            // then: the kit's tree does it, as Ship's sidebar (Katerina, 30 October; review of 23 November, C11).
-            openFor={link.active ? topic.address : current && rows.some((row) => row.id === current) ? current : undefined}
+            // Its arrow alone folds it, as Peek's rows: its own page leaves it as it is (Katerina, 23 November). It opens for
+            // a file clicked inside it, folded by hand since or not, as Ship's sidebar.
+            openFor={lit?.topic === topic.address ? lit.file : undefined}
           >
             {rows.map((row) => (
-              <NavItem key={row.id} href={row.href} label={row.label} icon={row.icon} hint={row.hint} active={row.id === current} />
+              <NavItem
+                key={row.id}
+                href={row.href}
+                label={row.label}
+                icon={row.icon}
+                hint={row.hint}
+                active={lit?.topic === topic.address && row.id === lit.file}
+                onClick={(event) => rememberClickUnderInitiative(event, topic.address, row.id)}
+              />
             ))}
           </NavItem>
         )
