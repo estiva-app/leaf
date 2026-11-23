@@ -37,8 +37,11 @@ type Story = StoryObj<typeof meta>
 /** Your five newest; one with pages folds to them. */
 export const Five: Story = {}
 
-/** An initiative's page open: its row is lit. */
+/** An initiative's page open: its row is lit, and it opens to its pages, as Ship's sidebar does. */
 export const OnAnInitiative: Story = { args: { topicNow: 'nav' } }
+
+/** A page open that an initiative lists: that initiative opens to it, the page's row lit (Katerina, 30 October). */
+export const AFileOpen: Story = { args: { current: 'naddr-plan' } }
 
 /** Explore initiatives open: its row is lit. */
 export const ExploreOpen: Story = { args: { exploreNow: true } }
