@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { ArchivedNotice, Banner, DeletedNotice, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, DeletedNotice, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, TeamChip, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -28,7 +28,6 @@ import { FileTopicsOf } from './FileTopics'
 import { archivedNoticeOf, deletedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
-import { TeamChip } from './TeamChip'
 import { lastEditLine, setMember, useFileFacts } from '../document/fileFacts'
 import { useDirectory } from '../comments/people'
 import { exactly } from '../home/recent'
@@ -304,7 +303,8 @@ function DocumentView({
       after={
         team || (opener && file.appName) ? (
           <>
-            {/* Its team, the one chip, then Open, in Peek's order (Katerina, 17 November). */}
+            {/* Its team, the one chip, then Open, in Peek's order (Katerina, 17 November). The kit's TeamChip with no
+                link: Leaf has no team page (18 November). */}
             {team && <TeamChip name={team} />}
             {opener && file.appName && <OpenIn opener={opener} appName={file.appName} />}
           </>

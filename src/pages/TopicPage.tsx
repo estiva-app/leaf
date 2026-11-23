@@ -17,6 +17,7 @@ import {
   ProgressRing,
   SectionHeader,
   SkeletonList,
+  TeamChip,
   Toolbar,
   ToolbarButton,
   WithTooltip,
@@ -36,7 +37,6 @@ import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
 import { useTopicPage, type TopicPageState } from '../topics/useTopicPage'
 import { useDirectory } from '../comments/people'
-import { TeamChip } from './TeamChip'
 import { Members } from './Members'
 import { heldTopics, loadTopics } from '../document/fileTopics'
 import { viewerPubkey } from '../relay/bridge'
