@@ -6,6 +6,7 @@ import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 
 /* LTN-3: a topic's own page in Leaf, as Miky opens it from the sidebar or any topic link inside Leaf. */
 
@@ -62,6 +63,35 @@ vi.mock('@estiva-app/interop', async (original) => {
       args[0].every((a) => a.startsWith('30840:')) ? interop.resolveForeignRoots(...args) : args[0].flatMap((a) => outside[a] ?? []),
   }
 })
+
+// Drawn once before any test's clock starts: `drawOnce` says why. Ahead of this file's own imports, so the
+// copy those load is the one a test's own `import()` finds.
+held = [
+  {
+    kind: 30840,
+    pubkey: MIKY,
+    created_at: 1_700_000_000,
+    tags: [['d', '00000000-0000-4000-8000-999999999999'], ['title', 'Widgets'], ['h', HQ], ['summary', 'Everything about the widgets.']],
+    content: '',
+    id: 'f'.repeat(64),
+    sig: '',
+  } as SignedEvent,
+]
+let forgetRead = () => {}
+await drawOnce(async () => {
+  const fresh = await import('./TopicPage')
+  // That copy marks its conversation read: no publish of it left waiting to fire inside a test.
+  forgetRead = (await import('../relay/readState')).resetReadStateForTests
+  return (
+    <TooltipProvider>
+      <ToastProvider>
+        <fresh.TopicPage d="00000000-0000-4000-8000-999999999999" folders={[{ id: HQ, name: 'Estiva HQ', hasState: true }]} inTree={() => null} treeRead />
+      </ToastProvider>
+    </TooltipProvider>
+  )
+}, () => screen.getByText('Everything about the widgets.'))
+forgetRead()
+held = []
 
 const { TopicPage } = await import('./TopicPage')
 const { resetTopicChoicesForTests } = await import('../document/fileTopics')
@@ -416,5 +446,22 @@ describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \
       await screen.findByText('Author')
       expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
     })
+  })
+
+  /* SHI-64: a move leaves the topic's `h` in the team it left, and the team it went to lists it by its id. */
+  it('names the team whose list names it by its id, not the team it was started in', async () => {
+    const d = topic('Moved widgets', [])
+    const moved: FolderSummary[] = [{ id: HQ, name: 'Estiva HQ', hasState: true, addresses: [] }, { id: 'steer', name: 'Steer', hasState: true, addresses: [], ids: [d] }]
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPage d={d} folders={moved} inTree={() => null} treeRead />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    // The name sits in the page's bar (direction A), not as a heading.
+    await nameInBar('Moved widgets')
+    expect(screen.getByText('Steer')).toBeTruthy()
+    expect(screen.queryByText('Estiva HQ')).toBeNull()
   })
 })

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { Failure } from '@estiva-app/platform'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { IconDotsVertical } from '@tabler/icons-react'
 import { ArchiveDialog, ConfirmDialog, Menu, MenuItem, MenuSeparator, MoveDialog, ToolbarButton, useToast, type MovePlace } from '@estiva-app/ui'
@@ -18,14 +19,15 @@ import {
   type MoveOutcome,
   type MoveTarget,
 } from '../document/fileMenu'
+import { listsFile } from '../folders/listing'
 import { titleOf } from '../folders/tree'
 import { readFolder, takesNewDocuments } from '../folders/workspace'
 import { navigate, pagePath } from '../route'
 import { archiveWordsOf } from './archive'
 
 /** The Folder that lists a page, by the sidebar's read, else its `h`. */
-export function listedInOf(file: ForeignObject, folders: readonly FolderSummary[] | undefined): string | undefined {
-  return (folders ?? []).find((folder) => folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))?.id ?? file.folder
+export function listedInOf(file: Pick<ForeignObject, 'address' | 'folder'>, folders: readonly FolderSummary[] | undefined): string | undefined {
+  return (folders ?? []).find((folder) => folder.hasState && !!file.address && listsFile(folder, file.address))?.id ?? file.folder
 }
 
 /**
@@ -38,7 +40,7 @@ export function useSetArchived(file: ForeignObject, listedIn: string | undefined
   return async function setArchived(archived: boolean, resolution?: string): Promise<boolean> {
     const result = await archiveDocument(file, archived, resolution)
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: archived ? 'not-archived' : 'not-restored' })
       return false
     }
     if (listedIn) void onChanged?.(listedIn)
@@ -86,7 +88,8 @@ export function DocumentMenu({
   // The places the open Move offered, by Folder: what the kit's choice names, with the path the toast says.
   const placesRead = useRef<Record<string, MoveTarget[]>>({})
   const title = titleOf(file)
-  const refuse = (label: string) => showToast({ label, type: 'error' })
+  // `failure` names what did not happen, from the reporter's fixed list: the label carries titles and the relay's words (PROD-5).
+  const refuse = (label: string, failure: Failure) => showToast({ label, type: 'error', failure })
   // The Folder that lists it, not its `h`: after a move they differ. Known from the sidebar, then from the last Move.
   const [movedTo, setMovedTo] = useState<string>()
   const listedIn = movedTo ?? listedInOf(file, folders)
@@ -99,7 +102,7 @@ export function DocumentMenu({
     if (reading.current) return
     reading.current = true
     void what
-      .then(open, () => refuse(failed))
+      .then(open, () => refuse(failed, 'not-loaded'))
       .finally(() => {
         reading.current = false
       })
@@ -110,7 +113,7 @@ export function DocumentMenu({
     const plan = await readDeletePlan(file).catch(() => shown)
     const result = await deleteDocument(file, plan)
     if (!result.ok) {
-      refuse(result.reason)
+      refuse(result.reason, 'not-deleted')
       return false
     }
     navigate(plan.to ? pagePath({ ...plan.to, title: titleOf(plan.to) }) : '/')
@@ -119,7 +122,7 @@ export function DocumentMenu({
       result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the team’s top.`,
       result.stillListed && 'It is still listed in a team; reload and try again.',
     ].filter(Boolean)
-    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success' })
+    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success', ...(after.length ? { failure: result.unmoved > 0 ? 'not-moved' : 'not-deleted' } : {}) })
     return true
   }
 
@@ -166,7 +169,7 @@ export function DocumentMenu({
       try {
         from = (await readMovePlace(file, folders)).from
       } catch {
-        refuse('The team it is in could not be read, so nothing was moved. Try again.')
+        refuse('The team it is in could not be read, so nothing was moved. Try again.', 'not-moved')
         return false
       }
       stale.current = false
@@ -174,14 +177,14 @@ export function DocumentMenu({
     const result = await moveDocument(file, { from, to, parent: parent.address })
     if (!result.ok) {
       stale.current = !!result.changed
-      refuse(result.reason)
+      refuse(result.reason, 'not-moved')
       return false
     }
     setMovedTo(to.id)
     // Both ends, the Folder it went to first, so the open page is found in one of them throughout.
     for (const id of new Set([to.id, ...from.map((folder) => folder.id)])) await onChanged?.(id)
     const half = halfMovedWords(to.name, result)
-    if (half) refuse(half)
+    if (half) refuse(half, 'not-moved')
     else showToast({ label: `Moved to ${parent.path.at(-1) ?? to.name}`, type: 'success' })
     return true
   }
@@ -269,7 +272,12 @@ export function DocumentMenu({
               : undefined
           }
         >
-          <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
+          {dialog.plan.marks ? (
+            // A delete that only marks the page (ALL-4), in Ship's words for its restorable delete, and where it comes back.
+            <p>It leaves every list and search. Its link still opens it, with Restore, and so does Peek’s Archive → Deleted.</p>
+          ) : (
+            <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
+          )}
           {dialog.words && <p>{dialog.words}</p>}
         </ConfirmDialog>
       )}
@@ -283,6 +291,13 @@ export function DocumentMenu({
  * Never "erased". Empty when nothing is under it.
  */
 export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeletePlan): string {
+  // A delete that only marks the page moves nothing (ALL-4): what is under it shows at the team's top until a restore.
+  if (plan.marks) {
+    if (plan.children.length === 0) return ''
+    const kinds = new Set(plan.children.map((child) => child.kind))
+    const what = kinds.size === 1 ? countOf(plan.children[0].kind, plan.children.length) : `${plan.children.length} files`
+    return `The ${what} under it ${plan.children.length === 1 ? 'shows' : 'show'} at the team’s top until it is restored.`
+  }
   const back = !!file.archived && !file.archived.with
   // On an archived page, only the pages archived with it come back; one archived itself moves up and stays archived.
   const children = back ? plan.children.filter((child) => !child.archived || child.archived.with) : plan.children

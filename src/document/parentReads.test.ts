@@ -38,6 +38,9 @@ vi.mock('../relay/bridge', () => ({ query, queryAll: query, publish: vi.fn(async
 vi.mock('../config', async (importOriginal) => ({ ...(await importOriginal<typeof import('../config')>()), RELAY_URL: 'https://relay.test' }))
 
 import { buildManifest } from '../manifest'
+// Loaded once here, before any test's clock starts: the first load takes seconds on a busy machine, and
+// inside the first test it ran that test out of time. Each test evaluates it again, in milliseconds.
+import './fileTopics'
 
 const LEAF = 'b'.repeat(64)
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'

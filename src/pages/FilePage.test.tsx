@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import type { Editor } from '@tiptap/react'
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { drawOnce } from '../test/drawOnce'
 
 const ME = 'a'.repeat(64)
 const FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
@@ -43,6 +44,15 @@ vi.mock('../relay/bridge', () => ({
     return answers.shift() ?? { ok: true }
   },
 }))
+
+// Drawn once before any test's clock starts: `drawOnce` says why. Ahead of this file's own imports, so the
+// copy those load is the one a test's own `import()` finds.
+await drawOnce(async () => {
+  const fresh = await import('./FilePage')
+  const fixtures = await import('./fixtures/shipFiles')
+  return <ToastProvider><fresh.FilePage file={fixtures.shipIssue()} loading={false} /></ToastProvider>
+}, () => screen.getByRole('textbox', { name: 'Document' }))
+published.length = 0
 
 const { FilePage } = await import('./FilePage')
 const { PROFILES, shipIssue, shipProject } = await import('./fixtures/shipFiles')
@@ -854,7 +864,8 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
     expect((await screen.findAllByText('Nothing was moved: the teams changed since you opened this. Try again.')).length).toBeGreaterThan(0)
     // Meanwhile someone moved it to Ops; the dialog is still open on the same choice.
     folderEvents = stateOf(OPS) as unknown as SignedEvent[]
-    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    // The toast is drawn before the dialog offers Move again: wait for the button, not only for the words.
+    fireEvent.click(await screen.findByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved to Steer')).toBeTruthy()
     expect(published.map((e) => [e.kind, tag(e, 'h'), tag(e, 'op'), tag(e, 'from')])).toEqual([
       [1852, STEER, 'move', FOLDER],

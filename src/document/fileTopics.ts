@@ -3,9 +3,13 @@ import {
   folderOf,
   isArchived,
   listFolders,
+  listsField,
+  openFile,
   planListInTopic,
   planRemoveFromTopic,
+  prevsAfterSwitch,
   readTopics,
+  writeChange,
   readYourTopics,
   resolveForeignRoots,
   topicsOfFile,
@@ -17,9 +21,9 @@ import {
 import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
 import { nip44 } from '../auth/nip44'
-import { publish, query as relayQuery, queryAll, viewerPubkey } from '../relay/bridge'
+import { changeWriter, publish, query as relayQuery, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
-import { archivedRootsOptions, listReadOffered, timesRead } from '../relay/projectFields'
+import { archivedRootsOptions, listReadOffered, timesRead, topicFields } from '../relay/projectFields'
 
 /** A topic that lists a file, as the file's Topics row draws it. */
 export interface TopicOfFile {
@@ -185,13 +189,40 @@ export async function readTopicChoices(): Promise<TopicChoices> {
   throw error ?? foldersError ?? new Error('Initiatives could not be read.')
 }
 
+/**
+ * A topic's list entry after the one it follows (SPEC §6.14, ALL-4), where topics are kept in order: its `prev` is the
+ * entry's current change, or the topic's first record for a file never listed. Two people adding different files never
+ * clash, each file being its own field; a stale entry is written again after the newer one.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+ */
+async function listInOrder(pubkey: string, topic: { address: string; folder: string }, file: string, listed: boolean): Promise<PublishResult> {
+  const [kind, author, ...d] = topic.address.split(':')
+  const pointer = { kind: Number(kind), pubkey: author!, d: d.join(':') }
+  const field = listsField(file)
+  const prev = (await prevsAfterSwitch(relayQuery, pointer, [field]).catch(() => undefined))?.[field]
+  if (!prev) return { ok: false, reason: 'The topic could not be read. Try again.' }
+  const plan = listed ? planListInTopic : planRemoveFromTopic
+  const result = await writeChange({
+    field,
+    value: listed ? 'true' : 'false',
+    prev,
+    build: (input) => plan(pubkey, input.createdAtMs, { topic, file, prev: input.prev })[0]!,
+    sign: changeWriter.sign,
+    publish: changeWriter.publish,
+    query: relayQuery,
+    current: async (asked) => (await openFile(relayQuery, pointer, { text: false }))?.fields[asked]?.event,
+  }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
+  return result.ok ? { ok: true } : { ok: false, reason: 'refused' in result ? result.refused : 'The topic changed. Try again.' }
+}
+
 /** Put a file on a topic's list, or take it off: one `lists:<d>` entry on the topic, signed by the reader. */
 export async function setListedInTopic(topic: Pick<TopicOfFile, 'address' | 'folder'>, file: string, listed: boolean): Promise<PublishResult> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to change its initiatives.' }
   const plan = listed ? planListInTopic : planRemoveFromTopic
-  const [entry] = plan(pubkey, Date.now(), { topic: { address: topic.address, folder: topic.folder }, file })
-  const result = await publish(entry)
+  const holder = { address: topic.address, folder: topic.folder }
+  const result = (await topicFields()) ? await listInOrder(pubkey, holder, file, listed) : await publish(plan(pubkey, Date.now(), { topic: holder, file })[0]!)
   if (result.ok) {
     listedHere = new Map(listedHere).set(topic.address, new Map(listedHere.get(topic.address)).set(file, listed))
     for (const listener of listedListeners) listener()

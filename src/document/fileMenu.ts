@@ -8,9 +8,12 @@ import {
   KIND_FOLDER_STATE,
   listedBeneath,
   nestingOf,
+  openFile,
   planMoveFromFolders,
+  prevsAfterSwitch,
   readMoveRefusal,
   resolveFolderContents,
+  writeChange,
   type FolderRef,
   type MoveRefusal,
   type FolderSummary,
@@ -20,8 +23,9 @@ import { addressToPointer, KIND, type SignedEvent, type UnsignedEvent } from '@e
 import { isListed, titleOf } from '../folders/tree'
 import { ownFailure } from '../folders/workspace'
 import { manifestContent } from '../manifest'
-import { publish, query, viewerPubkey } from '../relay/bridge'
+import { changeWriter, publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
+import { fieldsFor, inOrderTypes } from '../relay/projectFields'
 import { buildChange } from './save'
 
 /*
@@ -96,21 +100,72 @@ export interface DeletePlan {
   to?: ForeignObject
   /** The Folder's name, for "move up into <Folder>". */
   folderName?: string
+  /**
+   * Where pages are kept in order (ALL-4): the delete only marks the page, its sub-pages stay under it and show at the
+   * team's top while it is deleted, and a restore brings everything back as it was.
+   */
+  marks?: true
 }
 
 /** The plan for deleting `file`, from one listing of its Folder. Pure: the listing is the only read. */
-export function planDelete(file: Pick<ForeignObject, 'address'>, listing: readonly ForeignObject[], folderName?: string): DeletePlan {
+export function planDelete(file: Pick<ForeignObject, 'address'>, listing: readonly ForeignObject[], folderName?: string, marks = false): DeletePlan {
   const nesting = nestingOf(listing)
   const here = listing.find((one) => one.address === file.address)
-  if (!here) return { children: [], folderName }
-  return { children: nesting.childrenOf(here), to: nesting.parentOf(here), folderName }
+  const extra = marks ? { marks: true as const } : {}
+  if (!here) return { children: [], folderName, ...extra }
+  return { children: nesting.childrenOf(here), to: nesting.parentOf(here), folderName, ...extra }
 }
 
 /** Read the document's Folder, archived files included, and plan its delete. Throws when it cannot be read. */
 export async function readDeletePlan(file: Pick<ForeignObject, 'address' | 'folder'>): Promise<DeletePlan> {
-  if (!file.folder) return { children: [] }
+  const marks = !!(await fieldsFor(file.address))
+  if (!file.folder) return marks ? { children: [], marks } : { children: [] }
   const contents = await resolveFolderContents(file.folder, query, people.viaRelay(query), manifests, { includeArchived: true })
-  return planDelete(file, contents.files, contents.name)
+  return planDelete(file, contents.files, contents.name, marks)
+}
+
+/**
+ * Delete a page where pages are kept in order (SPEC §6.5, ALL-4): Leaf's own `delete`, built with `inOrder`, is the
+ * page's `deleted` change after the one it follows — interop writes it so where the relay keeps documents in order,
+ * and refuses a `kind:5` there. Anyone who may edit the page may write it. Nothing else: no team unlists it and no
+ * page under it moves, so a restore brings back exactly what was there.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+ */
+async function markDeleted(file: Document & { address: string; folder: string }, pubkey: string): Promise<DeleteOutcome> {
+  const pointer = addressToPointer(file.address)
+  const at = { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }
+  const inOrder = await inOrderTypes()
+  const prev = (await prevsAfterSwitch(query, at, ['deleted']).catch(() => undefined))?.deleted
+  if (!prev) return { ok: false, reason: 'The page could not be read, so nothing was deleted. Try again.' }
+  const result = await writeChange({
+    field: 'deleted',
+    value: 'true',
+    prev,
+    build: (input) => {
+      const built = buildActionEvents({
+        manifest: OWN_MANIFEST,
+        kind: file.kind,
+        address: file.address,
+        objectAuthor: pointer.pubkey,
+        folder: file.folder,
+        actionId: 'delete',
+        value: '',
+        pubkey,
+        createdAtMs: input.createdAtMs,
+        inOrder,
+        prev: input.prev,
+      })
+      return typeof built === 'string' ? built : built[0]!
+    },
+    sign: changeWriter.sign,
+    publish: changeWriter.publish,
+    query,
+    current: async (field) => (await openFile(query, at, { text: false }))?.fields[field]?.event,
+  }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
+  if (result.ok) return { ok: true, stillListed: false, unmoved: 0 }
+  console.warn('[relay] delete refused', result)
+  return { ok: false, reason: 'Nothing was deleted. Try again.' }
 }
 
 /** How a delete ended: refused before anything changed, or done, with what did not follow it. */
@@ -131,6 +186,7 @@ export async function deleteDocument(file: Document, plan: DeletePlan): Promise<
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to delete it.' }
   if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be deleted from here.' }
+  if (plan.marks) return markDeleted({ ...file, address: file.address, folder: file.folder }, pubkey)
   const author = addressToPointer(file.address).pubkey
   let listedIn
   try {

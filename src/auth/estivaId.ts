@@ -43,9 +43,26 @@ const client = ID_CONFIG
       storage: () => (typeof localStorage === 'undefined' ? null : localStorage),
       pendingStore: () => (typeof sessionStorage === 'undefined' ? null : sessionStorage),
       keyPrefix: KEY_PREFIX,
-      navigate: (url) => window.location.assign(url),
+      navigate: (url) => {
+        // Nothing a listener does may keep the tab from signing in.
+        for (const leave of leavingListeners)
+          try {
+            leave()
+          } catch {
+            // A timer that fails only loses this one timing.
+          }
+        window.location.assign(url)
+      },
     })
   : null
+
+const leavingListeners = new Set<() => void>()
+
+/** Calls back just before this tab leaves for Estiva ID to sign in: the page-open timer carries its open across. */
+export function onLeavingForSignIn(listener: () => void): () => void {
+  leavingListeners.add(listener)
+  return () => leavingListeners.delete(listener)
+}
 
 export const signInAvailable = client !== null
 

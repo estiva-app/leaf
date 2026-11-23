@@ -130,7 +130,8 @@ function DocumentView({
   const writes = writableFields(file)
   // Any file archived, itself or with the closest archived file above it at any depth (interop's walk, PEEKM-2), Leaf's
   // own pages included: its fields and its comments wait for it to be unarchived (SPEC §6.5), from the ⋯ menu (LED-4).
-  // A deleted project (SPEC §6.5) is read-only too: its link still opens, on the kit's notice of who deleted it (ALO-6).
+  // A deleted project or issue (SPEC §6.5) is read-only too: its link still opens, on the kit's notice of who deleted it
+  // and its Restore (ALO-6, ISS-6).
   const locked = isArchived(file) || !!file.deleted
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
   const listedIn = listedInOf(file, folders)
@@ -150,8 +151,10 @@ function DocumentView({
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
   )
-  // Restore for anyone its own app lets delete it: Ship's declared Delete and Restore write the `deleted` field.
-  const restorable = !!file.deleted && file.actions.some((action) => !action.declaredBy && action.field === 'deleted')
+  // Restore for anyone its own app lets delete it: Ship's declared Delete and Restore write the `deleted` field. A Leaf
+  // page where pages are kept in order too (ALL-4), whose published Delete stays a `kind:5` until every team switches:
+  // `merges` is that page's switch, and its delete there only marked it.
+  const restorable = !!file.deleted && ((own && merges) || file.actions.some((action) => !action.declaredBy && action.field === 'deleted'))
   const deletedNotice = file.deleted && (
     <DeletedNotice
       {...deletedNoticeOf(file.deleted, (pubkey) => directory[pubkey]?.displayName, me)}
@@ -159,7 +162,13 @@ function DocumentView({
         restorable
           ? async () => {
               const result = await setDeleted(target.current, false)
-              if (!result.ok) showToast({ label: 'Could not restore it. Try again.', type: 'error' })
+              if (!result.ok) showToast({ label: 'Could not restore it. Try again.', type: 'error', failure: 'not-restored' })
+              // The team that lists it is read again, as a delete reads it, so its tree draws it with the pages under it
+              // back beneath it (ALL-4).
+              else {
+                const listedIn = listedInOf(target.current, folders)
+                if (listedIn) void onChanged?.(listedIn)
+              }
             }
           : undefined
       }
@@ -181,7 +190,7 @@ function DocumentView({
       unadded.current = result.refused
       if (result.refused.length > 0) {
         const names = result.refused.map((pubkey) => knownName(pubkey) ?? 'someone').join(', ')
-        showToast({ label: `Could not add ${names}. Leaf tries again when you next save.`, type: 'error' })
+        showToast({ label: `Could not add ${names}. Leaf tries again when you next save.`, type: 'error', failure: 'not-added' })
       }
       return true
     },
@@ -192,17 +201,17 @@ function DocumentView({
   useEffect(() => {
     named.current = title
   }, [title])
-  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error' }), [showToast])
+  const leftUnsaved = useCallback(() => showToast({ label: `Your last changes to ${named.current} were not saved.`, type: 'error', failure: 'not-saved' }), [showToast])
   async function rename(value: string): Promise<boolean> {
     const next = value.trim()
     if (!next || next === title) return true
     // Archived while it was being typed: read-only now, nothing is written, and it says so (PEEKM-8).
     if (locked) {
-      showToast({ label: `Not renamed. ${fieldLine ?? 'It was archived.'}`, type: 'error' })
+      showToast({ label: `Not renamed. ${fieldLine ?? 'It was archived.'}`, type: 'error', failure: 'not-renamed' })
       return false
     }
     const result = await saveField(target.current, 'title', next)
-    if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error' })
+    if (!result.ok) showToast({ label: 'Could not rename it. Try again.', type: 'error', failure: 'not-renamed' })
     return result.ok
   }
   // The summary: the folded `summary` field, which interop draws as `subtitle` (SPEC §6.12, §7.2). A slot cut at
@@ -276,13 +285,13 @@ function DocumentView({
     const answers = await Promise.all(people.map((person) => setMember(file, person, true)))
     facts.reread()
     if (answers.every(Boolean)) return true
-    showToast({ label: 'Could not add everyone. Try again.', type: 'error' })
+    showToast({ label: 'Could not add everyone. Try again.', type: 'error', failure: 'not-added' })
     return false
   }
   async function setMine(member: boolean): Promise<boolean> {
     const ok = !!me && (await setMember(file, me, member))
     facts.reread()
-    if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error' })
+    if (!ok) showToast({ label: member ? 'Could not join. Try again.' : 'Could not leave. Try again.', type: 'error', failure: member ? 'not-joined' : 'not-left' })
     return ok
   }
   // The page's bar is the kit's PageHeader (ONE-5, step 5), in the panel's own bar's place, so the bar and the

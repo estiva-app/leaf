@@ -7,6 +7,7 @@ import { dOf, EXPLORE_TOPICS_PATH } from '../route'
 import { topicPath } from './topicLinks'
 import { TOPICS_SHOWN } from './sidebarTopics'
 import type { SidebarTopicsState } from './useSidebarTopics'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * The sidebar's Initiatives (LTN-2, TOPI-4, the approved story on `concept/topics-level-up`; called Topics until
@@ -37,6 +38,7 @@ export function TopicsSection({
   // Peek's row, word for word and with its icon, a list with a magnifier (Katerina, 16 November, her pick A; 18 November:
   // "Explore initiatives along with the icon we used in Peek"). Until then it had none (Miky, 6 Nov).
   const explore = <NavItem href={EXPLORE_TOPICS_PATH} label="Explore initiatives" icon={<IconListSearch size={16} stroke={1.5} aria-hidden />} active={exploreNow} />
+  useReportFailure(topics === 'failed' ? 'not-loaded' : undefined)
   if (topics === 'loading')
     return (
       <NavTree title="Initiatives">

@@ -1,6 +1,6 @@
 import type { SignedEvent } from '@estiva-app/protocol'
 import { describe, expect, it } from 'vitest'
-import { HOME_ROWS, rankRecent, recentFilters, textTargets, whenOf, type Page } from './recent'
+import { HOME_ROWS, ownSavesFilter, rankRecent, recentFilters, textTargets, whenOf, type Page } from './recent'
 
 const ME = 'a'.repeat(64)
 const ANA = 'b'.repeat(64)
@@ -70,6 +70,18 @@ describe("Home's rows", () => {
     const saves = [save(p, ME, 50), save(a, ME, 10, 'title'), save(b, ME, 20, 'status'), save(c, ME, 30, 'summary'), save(a, ME, 40)]
     expect(textTargets(saves)).toEqual([a.address, c.address])
     expect(textTargets(saves, 1)).toEqual([a.address])
+  })
+
+  // A relay answers `#K` with the changes carrying one of its values (NIP-01); a change says its file's type there (SPEC §6.2).
+  it('asks for your changes to issues, projects and topics by their type, and for no change to a page', () => {
+    const says = (type: string, at: number): SignedEvent => ({ id: `k${at}`, pubkey: ME, kind: 1851, created_at: at, tags: [['a', `x:${ME}:f${at}`], ['K', type]], content: '', sig: '' })
+    const held = [says('osnova.document', 1), says('osnova.issue', 2), says('osnova.project', 3), says('osnova.topic', 4)]
+    const filter = ownSavesFilter(ME) as { kinds: number[]; authors: string[]; '#K'?: string[]; limit: number }
+    // As a relay answers: a filter with no `#K` matches a change whatever its type.
+    const types = filter['#K']
+    const answered = held.filter((e) => filter.kinds.includes(e.kind) && filter.authors.includes(e.pubkey) && (!types || e.tags.some((t) => t[0] === 'K' && types.includes(t[1]))))
+    expect(answered.map((e) => e.id)).toEqual(['k2', 'k3', 'k4'])
+    expect(filter.authors).toEqual([ME])
   })
 
   it('does not count leaving, archiving or moving a page as an edit', () => {

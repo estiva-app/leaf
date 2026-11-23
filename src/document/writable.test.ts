@@ -35,6 +35,17 @@ describe('which fields Leaf writes on a file', () => {
     expect(sharesText(undrawn)).toBe(false)
   })
 
+  it('writes the text of a Ship project or issue that has none yet, so its page opens to an empty editor (ISS-6)', () => {
+    for (const file of [shipProject(), shipIssue()]) {
+      // interop leaves out an empty slot: a file with no text has no body at all.
+      const slots = { ...file.slots }
+      delete slots.body
+      const empty = { ...file, slots }
+      expect(sharesText(empty)).toBe(true)
+      expect([...writableFields(empty)].sort()).toEqual(['description', 'summary', 'title'])
+    }
+  })
+
   it("never writes a field through another app's borrowed action", () => {
     const issue = shipIssue()
     const borrowed = { ...issue, actions: issue.actions.map((a) => (a.field === 'description' ? { ...a, declaredBy: { address: 'x', appName: 'Other' } } : a)) }

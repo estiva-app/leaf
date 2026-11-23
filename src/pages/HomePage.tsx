@@ -6,6 +6,7 @@ import { relayLabel } from '../config'
 import { exactly, whenOf } from '../home/recent'
 import type { HomeRow, Recent } from '../home/useRecent'
 import { pagePath } from '../route'
+import { useReportFailure } from '@/lib/failureReports'
 
 export interface HomePageProps {
   /** The relay this build is set to, or `null` when the app runs alone. */
@@ -51,6 +52,7 @@ function placeAndWho(r: HomeRow): string {
 export function HomePage({ relay, state, name, recent = null, onNew, now }: HomePageProps) {
   // Home is drawn afresh each time it opens, so "now" is when it opened.
   const [opened] = useState(() => Date.now())
+  useReportFailure(state === 'failed' ? 'not-reached' : recent === 'failed' ? 'not-loaded' : undefined)
   if (!relay || state === 'off') {
     const line = !relay
       ? 'Running alone: no relay is set. Set VITE_RELAY_URL in .env.local to connect.'

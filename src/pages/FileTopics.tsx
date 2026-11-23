@@ -4,6 +4,7 @@ import { Button, Chip, CommandPalette, EmptyState, CommandPaletteSearch, IconBut
 import { heldTopics, heldYourTopics, readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
 import { isKnownSpace, topicPath } from '../topics/topicLinks'
 import { useFileTopics, type FileTopicsState } from '../document/useFileTopics'
+import { useReportFailure } from '@/lib/failureReports'
 
 const subscribeTopics = (listener: () => void) => heldTopics.subscribe(listener)
 const topicsNow = () => heldTopics.snapshot()
@@ -26,7 +27,7 @@ export function FileTopicsOf({ address }: { address: string | undefined }) {
   if (!file) return null
   async function change(topic: TopicOfFile, listed: boolean) {
     const result = await setListed(topic, listed)
-    if (!result.ok) showToast({ label: refusal(topic, listed, result.reason ?? ''), type: 'error' })
+    if (!result.ok) showToast({ label: refusal(topic, listed, result.reason ?? ''), type: 'error', failure: 'not-saved' })
   }
   return <FileTopics topics={state} busy={busy} onChange={(topic, listed) => void change(topic, listed)} readChoices={readTopicChoices} choicesNow={topicChoicesNow} />
 }
@@ -65,6 +66,7 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
   choicesNow?: () => TopicChoices | undefined
 }) {
   const [picking, setPicking] = useState(false)
+  useReportFailure(topics === 'failed' ? 'not-loaded' : undefined)
   // Drawn again when the topics read lands, so a space's chip goes to Peek once the read knows it is one.
   useSyncExternalStore(subscribeTopics, topicsNow)
   useSyncExternalStore(subscribeYours, yoursNow)
@@ -145,6 +147,7 @@ function AddToTopic({ listed, readChoices, choicesNow, onPick, onClose }: {
   const [query, setQuery] = useState('')
   // Choices already in hand draw with the palette, so it never says "Reading topics…" for them.
   const [choices, setChoices] = useState<TopicChoices | 'failed' | undefined>(() => choicesNow?.())
+  useReportFailure(choices === 'failed' ? 'not-loaded' : undefined)
   useEffect(() => {
     let live = true
     readChoices()

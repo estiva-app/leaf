@@ -9,6 +9,7 @@ import { findsTopic, topicsByTab, type TopicRowData, type TopicsTab } from '../t
 import { joinTopic } from '../topics/joinTopic'
 import { topicTitleOf, yourTopics } from '../topics/sidebarTopics'
 import { useHeldTopics, useMuted, useTopicActivity, useTopicMembers } from '../topics/topicReads'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** Peek's Explore initiatives, word for word (Katerina, 18 November: "everywhere a topic is mentioned, we should use Initiatives"). */
 const TABS: Record<TopicsTab, string> = { all: 'All', yours: 'Your initiatives', others: 'Other initiatives', archived: 'Archived' }
@@ -64,6 +65,7 @@ export function ExploreTopicsView({
   // Drawn afresh each time it opens, so "now" is when it opened, as Home's.
   const [opened] = useState(() => Date.now())
   const asked = query.trim()
+  useReportFailure(lists === 'failed' ? 'not-loaded' : undefined)
   const shown = typeof lists === 'string' ? [] : lists[tab].filter((topic) => !asked || findsTopic(topic.title, asked))
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
@@ -210,8 +212,8 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
     })
     const title = topicTitleOf(topic)
     // As Peek's Join says it. Joined while the mute stays: Join stays too, so a second click takes the mute out.
-    if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error' })
-    else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error' })
+    if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error', failure: 'not-joined' })
+    else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error', failure: 'not-saved' })
     else {
       // Peek's words for a Join on its Explore (Katerina, 18 November, E1), no Undo, as Peek's has none there. It lands at
       // Important, as Peek's (her "let's make it to important"); a level you chose before stays, and is said as Peek's bell

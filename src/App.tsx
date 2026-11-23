@@ -2,6 +2,7 @@ import {
   AppProvider,
   AppShell,
   EmptyState,
+  ErrorBoundary,
   IdentityMenu,
   NavItem,
   NavTree,
@@ -11,6 +12,7 @@ import {
   useToast,
   type Identity,
 } from '@estiva-app/ui'
+import { CrashOnPurpose, ScreenSteps } from '@/lib/errorReports'
 import { IconFilePlus, IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
@@ -21,6 +23,7 @@ import { naddrOf } from './fileAddress'
 import { fileKey, findArchivedAt, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
+import { isRowOnly } from './relay/rowOnly'
 import { useReferencePage } from './document/referencePicker'
 import { profileOf } from './document/save'
 import { useRecent } from './home/useRecent'
@@ -34,10 +37,11 @@ import { TopicPage } from './pages/TopicPage'
 import { viewerPubkey } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
-import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname } from './route'
+import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname, type Route } from './route'
 import { useTabTitle } from './tabTitle'
 import { TopicsSection } from './topics/TopicsSection'
 import { useSidebarTopics } from './topics/useSidebarTopics'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** A document that was made but its Folder does not list yet: shown in its place until the listing is retried. */
 type Unlisted = { address: string; folder: string; folderName: string }
@@ -55,6 +59,16 @@ export function App() {
 
 /** Where New document holds its fields through a passkey trip (AUT-5). */
 const NEW_DOCUMENT_HOLD = 'new-document'
+
+/**
+ * Which page is open, as the page boundary's key: the kind of page and the
+ * object it shows, never the address (a rename changes the slug, and must not
+ * draw the open document again).
+ */
+function pageKey(route: Route): string {
+  const which = 'd' in route ? route.d : 'naddr' in route ? route.naddr : 'ref' in route ? route.ref : ''
+  return `${route.page}:${which}`
+}
 
 /** The frame: the package's AppShell in its inset manner, the Folders tree in the sidebar, and the page open. */
 function Frame() {
@@ -116,9 +130,10 @@ function Frame() {
   // A document's own link is read by its `d` at once, beside the tree, so its text shows before the tree is read
   // (APP-3) — and an archived page, which every listing drops, still opens by its link (LED-4).
   const named = usePathAddress(
-    route.page === 'path' ? route : route.page === 'document' && !listedDocument ? { word: 'document', ref: route.d } : null,
+    // A page the tree read for its row only (ALL-4) is read by its `d` too: the tree's copy has no text to open.
+    route.page === 'path' ? route : route.page === 'document' && (!listedDocument || isRowOnly(listedDocument.file)) ? { word: 'document', ref: route.d } : null,
   )
-  const open =
+  const found =
     route.page === 'file'
       ? findFile(folders, children, route.naddr)
       : route.page === 'document'
@@ -126,8 +141,11 @@ function Frame() {
         : route.page === 'path' && named.address
           ? findFileAt(folders, children, named.address)
           : null
+  // A project or issue the tree read for its row only (ISS-6) has no text or actions: the page reads it by its address.
+  const open = found && isRowOnly(found.file) ? null : found
   // `[` on the open page offers its Folder's files, as the tree read them.
-  useReferencePage({ address: open?.file.address, folder: open?.folder.contents?.files })
+  // The tree's copy names the Folder even when the page reads the file again by address.
+  useReferencePage({ address: found?.file.address, folder: found?.folder.contents?.files })
   // The file opened by its address, read on its own while the tree is still read and until the tree lists it (APP-3):
   // the tree's copy takes over then, keyed the same, so the open editor stays.
   const naddr = route.page === 'file' ? route.naddr : named.address ? naddrOf(named.address) : null
@@ -143,7 +161,8 @@ function Frame() {
   const ownerPath = useOwnerPath(elsewhere)
   const relink = readable && isDocument(readable) ? pagePath({ ...readable, title: readable.slots.title?.value }) : elsewhere ? ownerPath : null
   useEffect(() => {
-    if (!relink || relink === window.location.pathname) return
+    // `/` is `pagePath`'s answer for a document with no address it can write (TES-4): stay on the page it is open at.
+    if (!relink || relink === '/' || relink === window.location.pathname) return
     if (shown?.address) rememberPath(relink, shown.address)
     replace(`${relink}${window.location.hash}`)
   }, [relink, shown])
@@ -167,6 +186,8 @@ function Frame() {
     nothing: Home says the Folders could not be read, and the link stays in the address bar for the reload.
   */
   const settled = workspace.folders !== null && !workspace.failed
+  // Drawn rather than toasted: the sidebar's "could not be read", and a document made but not listed (PROD-5).
+  useReportFailure(workspace.failed ? 'not-loaded' : unlisted ? 'not-added' : undefined)
   const handoffFolder = handoff && settled ? takers.find((f) => f.id === handoff) : undefined
   const refused = !!handoff && settled && !handoffFolder
 
@@ -175,7 +196,7 @@ function Frame() {
     if (!refused || toldRefused.current) return
     toldRefused.current = true
     // A Folder this person cannot read, or one that takes no document: nothing is written.
-    showToast({ label: 'You can’t add a document to that team.', type: 'error' })
+    showToast({ label: 'You can’t add a document to that team.', type: 'error', failure: 'not-created' })
     replace('/')
   }, [refused, showToast])
 
@@ -192,7 +213,7 @@ function Frame() {
     const go = handoff ? replace : navigate
     const result = await createDocument({ folder, title, summary, parent: inside && { address: inside.address, folder: inside.folder } })
     if (!result.ok && !result.made) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: 'not-created' })
       return false
     }
     if (!result.ok) {
@@ -214,7 +235,7 @@ function Frame() {
   async function relist(made: Unlisted) {
     const result = await listDocument({ folder: made.folder, address: made.address })
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: 'not-added' })
       return
     }
     await workspace.reloadFolder(made.folder)
@@ -291,7 +312,15 @@ function Frame() {
           </Sidebar>
         }
       >
-        {main}
+        <ScreenSteps />
+        {/* A page that crashes shows "Something went wrong … try again" in
+            its place, and the sidebar keeps working (PROD-4). Keyed by the
+            page and the object it shows, never the address: a rename changes
+            the slug, and must not draw the open document again. */}
+        <ErrorBoundary key={pageKey(route)}>
+          <CrashOnPurpose />
+          {main}
+        </ErrorBoundary>
       </AppShell>
       {(making || handoffFolder) && (
         <NewDocumentDialog

@@ -16,15 +16,23 @@ describe("a document's save", () => {
     const event = buildChange('a'.repeat(64), 1_760_000_000_123, { target: ADDRESS, field: 'description', value: 'text', folder: FOLDER, contentFormat: 'estiva-blocks-1' })
     expect(event.kind).toBe(1851)
     expect(event.created_at).toBe(1_760_000_000)
-    expect(event.tags.slice(0, 7)).toEqual([
+    expect(event.tags.slice(0, 8)).toEqual([
       ['a', ADDRESS],
       ['O', 'd1'],
+      ['K', 'osnova.document'],
       ['field', 'description'],
       ['value', 'text'],
       ['h', FOLDER],
       ['content-format', 'estiva-blocks-1'],
       ['ts', '1760000000123'],
     ])
+  })
+
+  it('still builds a change to a file of a named type, which says no type, and one to a team itself says none', () => {
+    for (const target of [`30852:${'b'.repeat(64)}:n1`, `39000:${'b'.repeat(64)}:${FOLDER}`]) {
+      const event = buildChange('a'.repeat(64), 1_760_000_000_123, { target, field: 'title', value: 'New name', folder: FOLDER })
+      expect(event.tags.map((t) => t[0])).toEqual(['a', 'O', 'field', 'value', 'h', 'ts'])
+    }
   })
 
   it('signs with the h of the document it saves, never another', async () => {

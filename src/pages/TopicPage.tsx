@@ -40,6 +40,8 @@ import { viewerPubkey } from '../relay/bridge'
 import { addToTopic, joinTopic, leaveTopic } from '../topics/joinTopic'
 import { useTopicPlace } from '../topics/topicMembers'
 import { useHeldTopics } from '../topics/topicReads'
+import { useReportFailure } from '@/lib/failureReports'
+import { listedInOf } from './DocumentMenu'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -83,7 +85,10 @@ export function TopicPage({
   }, [address, title, peekUrl, sendsOn])
   useTabTitle(page && !sendsOn ? page.title : undefined)
 
-  const team = page ? folders?.find((folder) => folder.id === page.folder)?.name : undefined
+  useReportFailure(state === 'failed' || page?.files === 'failed' ? 'not-loaded' : undefined)
+  // The team whose list names it, by address or id; its `h` only when none does: a move leaves the `h` behind (SHI-64).
+  const listedIn = page ? listedInOf(page, folders) : undefined
+  const team = listedIn ? folders?.find((folder) => folder.id === listedIn)?.name : undefined
 
   /*
     Who is in it: the members pill in the bar and the Members dialog it opens, with Join or Leave for you and Add members,
