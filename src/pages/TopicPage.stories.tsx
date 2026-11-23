@@ -3,6 +3,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { fn } from 'storybook/test'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { TopicPageView } from './TopicPage'
+import { Members } from './Members'
 import { shipIssue, shipProject, KATERINA, MIKY } from './fixtures/shipFiles'
 import type { TopicPageData } from '../topics/useTopicPage'
 
@@ -13,10 +14,12 @@ import type { TopicPageData } from '../topics/useTopicPage'
 */
 
 const FOLDER = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b'
+/** A third invented person, so the pill draws three faces. */
+const MARA = 'd'.repeat(64)
 const NOW = Math.floor(Date.now() / 1000)
 
 /** Who the rows name: a face and a first name in When ("Ana, 1h ago"). */
-const DIRECTORY = { [MIKY]: { displayName: 'Ana Duarte' }, [KATERINA]: { displayName: 'Ravi Mehta' } }
+const DIRECTORY = { [MIKY]: { displayName: 'Ana Duarte' }, [KATERINA]: { displayName: 'Ravi Mehta' }, [MARA]: { displayName: 'Mara Sato' } }
 
 /** A Leaf page, as the tree reads one: who changed it last and when. */
 const page = (d: string, title: string, hoursAgo = 2): ForeignObject =>
@@ -66,11 +69,27 @@ const initiative = (over: Partial<TopicPageData> = {}): TopicPageData => ({
   ...over,
 })
 
+/**
+ * Who is in it: Leaf's Members, the members pill and its dialog, as Ship's initiative page has them — its place listing
+ * by key, the author's row captioned "Author". You are Ana; Join and Leave, and Add once you are in, say nothing here.
+ */
+const members = (readOnly = false) => (
+  <Members
+    members={new Map([MIKY, KATERINA, MARA].map((key) => [key, { pubkey: key } as never]))}
+    me={MIKY}
+    directory={DIRECTORY}
+    readOnly={readOnly}
+    roles={[{ pubkey: MIKY, role: 'Author' }]}
+    onSetMine={async () => true}
+    onAdd={async () => true}
+  />
+)
+
 const meta = {
   title: 'Pages/Initiative page',
   component: TopicPageView,
   parameters: { layout: 'fullscreen' },
-  args: { state: initiative(), team: 'Launch team', directory: DIRECTORY, comments: { open: false, onOpenChange: fn() }, onRetry: fn() },
+  args: { state: initiative(), team: 'Launch team', directory: DIRECTORY, members: members(), comments: { open: false, onOpenChange: fn() }, onRetry: fn() },
   // The app's own providers (App.tsx): a card's actions say what they did in a toast.
   decorators: [
     (Story) => (
@@ -103,7 +122,7 @@ export const AllRows: Story = {
 }
 
 /** The initiative itself is archived. */
-export const Archived: Story = { args: { state: initiative({ archived: true }) } }
+export const Archived: Story = { args: { state: initiative({ archived: true }), members: members(true) } }
 
 /** It lists nothing Leaf opens. */
 export const Empty: Story = { args: { state: initiative({ files: { live: [], archived: [], looks: new Map() } }) } }

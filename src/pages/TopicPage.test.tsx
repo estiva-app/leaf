@@ -1,6 +1,7 @@
 // @vitest-environment-options {"url": "https://leaf.estiva.app/topic/x"}
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, planListInTopic } from '@estiva-app/interop'
+import { buildMembershipChange } from '@estiva-app/conversation'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -10,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 const ME = 'a'.repeat(64)
 const MIKY = 'b'.repeat(64)
-const HQ = 'hq-folder'
+// A team id as the relay mints them (lowercase UUID v4): who is in an initiative is read through its team's roster.
+const HQ = '0a0b0c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d'
 const PEEK = 'c'.repeat(64)
 
 /* What the relay holds, answered filter by filter as it matches. */
@@ -30,7 +32,14 @@ const answer = async (filters: Filter[]) => {
   if (down) throw new Error('rate-limited: slow down')
   return relay(filters)
 }
-vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, queryAll: answer }))
+/* Every event this tab handed the relay to sign, as handed; the relay takes it and holds it signed, so a read after sees it. */
+let sent: UnsignedEvent[] = []
+const take = async (event: UnsignedEvent) => {
+  sent.push(event)
+  held.push(sign(event))
+  return { ok: true as const }
+}
+vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, queryAll: answer, publish: take }))
 // A fresh cache, as Leaf's own: Peek's manifest names where the topic's conversation is.
 vi.mock('../relay/manifests', async () => {
   const { createProjectionCache } = await import('@estiva-app/interop')
@@ -125,6 +134,7 @@ beforeEach(() => {
     }),
   ]
   outside = {}
+  sent = []
   down = false
   resetTopicChoicesForTests()
   // Each case publishes its own manifests: what an earlier case's read remembered about them is forgotten.
@@ -356,5 +366,55 @@ describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \
     const projectCells = cells(/^Leaf edits any file's text/)
     expect(projectCells[1]?.textContent).toContain('Planned')
     expect(projectCells[2]?.querySelector('[aria-label="Ana Duarte"]')).not.toBeNull()
+  })
+
+  describe('who is in it: the members pill in the bar, as on Ship’s initiative page (Katerina, 23 November)', () => {
+    /** You in it already: your own member change on the initiative, held before the page opens. */
+    const joined = (d: string) =>
+      held.push(sign(buildMembershipChange(ME, 1_700_000_200_000, { file: `30840:${MIKY}:${d}`, folder: HQ, person: ME, member: true }) as UnsignedEvent))
+
+    it('shows who its place lists, by count, in the bar', async () => {
+      const d = topic('Widgets', [])
+      joined(d)
+      show(d)
+      await nameInBar('Widgets')
+      // Its maker and you: the listing Explore counts by.
+      expect(await screen.findByRole('button', { name: '2 members' })).toBeTruthy()
+    })
+
+    it('Join in its Members signs your own member change, as Explore’s Join does, and says so', async () => {
+      const d = topic('Widgets', [])
+      show(d)
+      fireEvent.click(await screen.findByRole('button', { name: '1 member' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Join' }))
+      await waitFor(() => expect(sent).toHaveLength(1))
+      expect(sent[0]!.kind).toBe(1851)
+      expect(sent[0]!.tags).toEqual(expect.arrayContaining([['a', `30840:${MIKY}:${d}`], ['h', HQ], ['field', `member:${ME}`], ['value', 'true']]))
+      expect(await screen.findByText('You joined Widgets. Notifications: Important.')).toBeTruthy()
+      // Read again: you are counted (the pill sits behind the still-open dialog, which hides the page from assistive tech).
+      expect(await screen.findByRole('button', { name: '2 members', hidden: true })).toBeTruthy()
+    })
+
+    it('Leave in its Members signs your leave, as Ship’s does, and you are no longer counted', async () => {
+      const d = topic('Widgets', [])
+      joined(d)
+      show(d)
+      fireEvent.click(await screen.findByRole('button', { name: '2 members' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Leave' }))
+      await waitFor(() => expect(sent.length).toBeGreaterThan(0))
+      expect(sent.every((event) => event.kind === 1851 && event.tags.some(([name, value]) => name === 'a' && value === `30840:${MIKY}:${d}`))).toBe(true)
+      expect(sent.some((event) => event.tags.some(([name, value]) => name === 'field' && value === `member:${ME}`) && event.tags.some(([name, value]) => name === 'value' && value === 'false'))).toBe(true)
+      expect(await screen.findByRole('button', { name: '1 member', hidden: true })).toBeTruthy()
+    })
+
+    it('an archived initiative’s Members offers no Join', async () => {
+      const d = topic('Widgets', [])
+      const root = held.find((e) => e.kind === 30840 && e.tags.some((t) => t[0] === 'd' && t[1] === d))!
+      held.push(sign({ kind: 1851, pubkey: MIKY, created_at: 1_700_000_300, tags: [['a', `30840:${MIKY}:${d}`], ['e', root.id], ['field', 'archived'], ['value', 'true'], ['h', HQ]], content: '' }))
+      show(d)
+      fireEvent.click(await screen.findByRole('button', { name: '1 member' }))
+      await screen.findByText('Author')
+      expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
+    })
   })
 })

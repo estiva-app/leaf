@@ -19,11 +19,12 @@ import {
   ToolbarButton,
   linkedFrom,
   thingKindOf,
+  useToast,
   type LinkedProfile,
   type ListTableColumn,
 } from '@estiva-app/ui'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { useEffect, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, type ReactNode, type RefObject } from 'react'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import { useSideColumn } from './sideColumn'
 import { isDocument, rowOf, typeOf } from '../folders/tree'
@@ -33,6 +34,12 @@ import { isSiblingHost, topicPath } from '../topics/topicLinks'
 import { useTopicPage, type TopicPageState } from '../topics/useTopicPage'
 import { useDirectory } from '../comments/people'
 import { TeamChip } from './TeamChip'
+import { Members } from './Members'
+import { heldTopics, loadTopics } from '../document/fileTopics'
+import { viewerPubkey } from '../relay/bridge'
+import { addToTopic, joinTopic, leaveTopic } from '../topics/joinTopic'
+import { useTopicPlace } from '../topics/topicMembers'
+import { useHeldTopics } from '../topics/topicReads'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -77,6 +84,65 @@ export function TopicPage({
   useTabTitle(page && !sendsOn ? page.title : undefined)
 
   const team = page ? folders?.find((folder) => folder.id === page.folder)?.name : undefined
+
+  /*
+    Who is in it: the members pill in the bar and the Members dialog it opens, with Join or Leave for you and Add members,
+    as Ship's initiative page has them (TOPI-8; Katerina, 23 November: "unify initiative page in Leaf and make it like
+    Ship"). Its people are the initiative's place listing, read when the page opens and after each change; its record
+    (your level, for Leave) is the one the topics read holds.
+  */
+  const { showToast } = useToast()
+  const heldRead = useHeldTopics()
+  const topic = page && typeof heldRead === 'object' ? heldRead.topics.find((candidate) => candidate.address === page.address) : undefined
+  const { place, reload: reloadPlace } = useTopicPlace(topic && !sendsOn ? topic : undefined)
+  const members = useMemo(() => (place ? new Map(place.listed.map((listed) => [listed.pubkey, listed])) : undefined), [place])
+  const me = viewerPubkey()
+  const nameOf = (pubkey: string) => directory[pubkey]?.displayName ?? 'Someone'
+  const pill = page && topic && !sendsOn && (
+    <Members
+      key={page.address}
+      members={members}
+      me={me}
+      directory={directory}
+      // Nothing changes on an archived initiative; Peek brings it back.
+      readOnly={page.archived}
+      // Who made it: the key in its address.
+      roles={[{ pubkey: page.address.split(':')[1] ?? '', role: 'Author' }]}
+      onSetMine={async (member) => {
+        if (member) {
+          const joined = await joinTopic(topic)
+          // As Explore initiatives' Join says it (Peek's words; lands at Important, a level chosen before stays).
+          if (!joined.ok) {
+            showToast({ label: `Nothing changed: “${page.title}” could not be joined. ${joined.reason}`, type: 'error' })
+            return false
+          }
+          if (joined.stillMuted) showToast({ label: `Joined “${page.title}”, but it is still muted. Join again to unmute it.`, type: 'error' })
+          else showToast({ label: `You joined ${page.title}. Notifications: ${joined.level === 'all' ? 'Everything' : 'Important'}.`, type: 'success' })
+        } else {
+          // Ship's Leave from its Members: Not following, said only when refused.
+          const left = await leaveTopic(topic)
+          if (!left.ok) {
+            showToast({ label: `Nothing changed: “${page.title}” could not be left. ${left.reason}`, type: 'error' })
+            return false
+          }
+        }
+        await Promise.all([reloadPlace(), heldTopics.reload(loadTopics)])
+        return true
+      }}
+      onAdd={async (pubkeys) => {
+        for (const pubkey of pubkeys) {
+          const added = await addToTopic(topic, pubkey, place?.events ?? [])
+          if (!added.ok) {
+            showToast({ label: `Nothing changed: ${nameOf(pubkey)} could not be added to “${page.title}”. ${added.reason}`, type: 'error' })
+            await reloadPlace()
+            return false
+          }
+        }
+        await reloadPlace()
+        return true
+      }}
+    />
+  )
   // Drawn once the topic is known and stays here: a space goes on to Peek, and a topic that did not load has none.
   const conversation = page && !sendsOn && (
     <CommentsColumn
@@ -93,7 +159,7 @@ export function TopicPage({
       topic
     />
   )
-  return <TopicPageView state={state} sendsOn={sendsOn} team={team} directory={directory} comments={comments} conversation={conversation} onRetry={retry} />
+  return <TopicPageView state={state} sendsOn={sendsOn} team={team} directory={directory} members={pill || undefined} comments={comments} conversation={conversation} onRetry={retry} />
 }
 
 /**
@@ -105,6 +171,7 @@ export function TopicPageView({
   sendsOn = false,
   team,
   directory = {},
+  members,
   comments,
   conversation,
   onRetry,
@@ -116,6 +183,8 @@ export function TopicPageView({
   team?: string
   /** The workspace's people by key: a row's face and who changed it last. */
   directory?: Record<string, LinkedProfile>
+  /** Who is in it: the members pill (Leaf's `Members`), in the bar's members place, as on Ship's initiative page. */
+  members?: ReactNode
   /** The column beside the page, open or not, remembered with a document's (LED-3). */
   comments: { open: boolean; onOpenChange: (open: boolean) => void }
   /** The initiative's conversation, drawn in that column. */
@@ -159,6 +228,7 @@ export function TopicPageView({
               leading={<KindIcon kind="topic" />}
               // Its team, the one chip after its name, as on Peek's initiative page (Katerina, 18 November, D4).
               after={team && !sendsOn ? <TeamChip name={team} /> : undefined}
+              members={page && !sendsOn ? members : undefined}
               actions={page && !sendsOn ? toggle : undefined}
             />
           }

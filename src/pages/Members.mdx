@@ -1,0 +1,43 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as Stories from './Members.stories'
+
+<Meta of={Stories} />
+
+# Members
+
+Who is in a document or an initiative: the package's **MembersPill** in the
+page's bar, and the **MembersDialog** it opens, with Join or Leave for you and
+Add members once you are in, as Peek's and Ship's pages have them.
+
+<Canvas of={Stories.Open} />
+
+## When
+
+- In **PageHeader**'s `members`, on a document's page and on an initiative's
+  page.
+- With `roles` on an initiative's page: its author's row says "Author", and an
+  author who left is listed after the rest, "· not following", as Ship's.
+
+## When not
+
+- In a list's row, which opens its thing: the package's **MembersPill** with
+  `readOnly`, nothing to press (**ListTable**'s Members column).
+- A team's people: Leaf has no team page.
+
+## How
+
+```tsx
+import { Members } from './Members'
+
+<PageHeader title={title} members={<Members members={listed} me={me} directory={directory} roles={roles} onSetMine={setMine} onAdd={add} />} />
+```
+
+- `members` is `undefined` until read: nothing is drawn rather than a wrong
+  count. A failed read stays `undefined`.
+- `readOnly` on an archived file or initiative: no Join, Leave or Add.
+
+## What it owns
+
+Who is listed in which order (you first, then by name), each row's caption,
+and which of Join, Leave and Add it offers. The pill's and the dialog's look
+are the package's.

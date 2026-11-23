@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Membership } from '@estiva-app/conversation'
+import type { Listed, Membership } from '@estiva-app/conversation'
 import { MembersDialog, MembersPill, type MembersDialogCandidate, type MembersDialogMember } from '@estiva-app/ui'
 import type { DirectoryPerson } from '../comments/people'
 
@@ -17,17 +17,23 @@ export function Members({
   me,
   directory,
   readOnly,
+  roles = [],
   onSetMine,
   onAdd,
 }: {
-  /** The file's members by key (SPEC §11.8); `undefined` until the first read. */
-  members: ReadonlyMap<string, Membership> | undefined
+  /** The file's members by key (SPEC §11.8), or an initiative's listing by key; `undefined` until the first read. */
+  members: ReadonlyMap<string, Membership | Listed> | undefined
   /** The viewer's key. */
   me: string | null
   /** The workspace's people: names and faces (an agent's is the robot), and whom "Add members" offers. */
   directory: Record<string, DirectoryPerson>
   /** No Join, Leave or Add: the file is archived. */
   readOnly?: boolean
+  /**
+   * Who holds a part in it — "Author" — drawn as the row's second line, and listed "· not following" once they have
+   * left, as Ship's Members draws an initiative's (TOPI-8). None: the rows as a document's.
+   */
+  roles?: { pubkey: string; role: string }[]
   /** Join (`true`) or leave (`false`). Resolves `true` once the relay took it. */
   onSetMine: (member: boolean) => Promise<boolean>
   /** Add these people. Resolves `true` once the relay took every one. */
@@ -40,12 +46,26 @@ export function Members({
   const named = (pubkey: string) => (pubkey === me ? 'You' : (directory[pubkey]?.displayName ?? '—'))
   // You first, then by name.
   const keys = [...members.keys()].sort((a, b) => Number(b === me) - Number(a === me) || named(a).localeCompare(named(b)))
-  const rows: MembersDialogMember[] = keys.map((pubkey) => ({
-    id: pubkey,
-    name: named(pubkey),
-    picture: directory[pubkey]?.picture,
-    bot: directory[pubkey]?.bot,
-  }))
+  const rolesOf = (pubkey: string) => roles.filter((r) => r.pubkey === pubkey).map((r) => r.role)
+  // Whoever holds a part but has left, after the rest, so a missed message has its reason on screen (as Ship's).
+  const left = [...new Set(roles.map((r) => r.pubkey))].filter((pubkey) => !members.has(pubkey)).sort((a, b) => named(a).localeCompare(named(b)))
+  const rows: MembersDialogMember[] = [
+    ...keys.map((pubkey) => ({
+      id: pubkey,
+      name: named(pubkey),
+      picture: directory[pubkey]?.picture,
+      bot: directory[pubkey]?.bot,
+      caption: rolesOf(pubkey).join(' · ') || undefined,
+    })),
+    // Their own id, so the picker (which leaves out rows by id) still offers them: anyone may add back somebody who left.
+    ...left.map((pubkey) => ({
+      id: `left:${pubkey}`,
+      name: named(pubkey),
+      picture: directory[pubkey]?.picture,
+      bot: directory[pubkey]?.bot,
+      caption: `${rolesOf(pubkey).join(' · ')} · not following`,
+    })),
+  ]
   const candidates: MembersDialogCandidate[] = Object.entries(directory).map(([pubkey, person]) => ({
     id: pubkey,
     label: pubkey === me ? 'You' : person.displayName,
