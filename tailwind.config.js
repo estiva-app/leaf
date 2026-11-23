@@ -12,5 +12,6 @@ import estiva, { estivaContent } from '@estiva-app/ui/tailwind-preset'
  */
 export default {
   presets: [estiva],
-  content: [...estivaContent, './index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
+  // The ⌘K box carries a few classes of its own (KIN-5).
+  content: [...estivaContent, './node_modules/@estiva-app/launcher/dist/*.js', './index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
 }

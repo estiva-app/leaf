@@ -84,6 +84,7 @@ import { COMMENTS_HASH, pagePath } from '../route'
 import { uploadFile } from '../relay/blobs'
 import { FileCard } from './CommentFiles'
 import { heldFields, releaseHeld, useHeldTyping } from '../auth/heldTyping'
+import { useOpenThreads } from '../launcher/openPage'
 import { knownName, useMentionPeople } from './people'
 import { useThreads } from './useThreads'
 import { useMarkRead } from './useMarkRead'
@@ -1053,10 +1054,17 @@ export interface CommentsColumnProps {
    * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-is-read-only-when-its-thread-is-opened.md
    */
   topic?: boolean
+  /** Changed when ⌘K put words in the box's draft (KIN-5): the box is drawn again, holding them. */
+  draftNonce?: number
+}
+
+/** Words for the page's new comment, held as its box's draft: ⌘K's Draft a comment (KIN-5). The box shows them once drawn again. */
+export function holdCommentDraft(address: string, text: string): void {
+  draftStore().write(draftKeys.object(address), text)
 }
 
 /** The comments column of a Leaf document, or a topic's conversation. */
-export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed, hidden = false, topic = false }: CommentsColumnProps) {
+export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDraft, closed, hidden = false, topic = false, draftNonce = 0 }: CommentsColumnProps) {
   const { threads, reactionsOmitted, reactionsCut, failed, readAt, reread } = useThreads(doc)
   useReportFailure(failed ? 'not-loaded' : undefined)
   const reading = topic && !hidden && threads !== null
@@ -1074,6 +1082,12 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
   // A highlight chosen in the text: its card comes into view in the column, each time; and the thread a sign-in ending
   // held open, once the comments are read (AUT-5).
   const [shown, setShown] = useState<{ id: string } | null>(() => (held?.active ? { id: held.active } : null))
+  // ⌘K reads the page's comments, and a cited one opens here (KIN-5).
+  const showThread = useCallback((id: string) => {
+    setActive(id)
+    setShown({ id })
+  }, [])
+  useOpenThreads(doc.address, threads, showThread)
   const [editingId, setEditingId] = useState<string | null>(held?.editing?.id ?? null)
   const typed = useRef<JSONContent | null>(held?.editing?.body ?? null)
   const edits = useMemo<OpenEdit>(
@@ -1338,7 +1352,7 @@ export function CommentsColumn({ doc, addressable, editor, docBody, draft, onDra
             box={
               // A new place to comment on is a new box, which takes the focus: its draft keeps what was written.
               <Box
-                key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}`}
+                key={`${address ?? ''}|${draft ? JSON.stringify(draft) : ''}|${draftNonce}`}
                 placeholder={draft ? (draft.quote ? 'Comment on these words…' : draft.blocks.length === 1 ? 'Comment on this block…' : 'Comment on these blocks…') : topic ? 'Start a conversation…' : 'Comment on this document…'}
                 draftKey={draftKeys.object(address ?? '')}
                 scope={pageScope}
