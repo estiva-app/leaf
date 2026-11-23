@@ -1,29 +1,48 @@
 import type { FolderSummary } from '@estiva-app/interop'
-import { EmptyState, Panel, SearchInput, SkeletonList, Tabs, useToast } from '@estiva-app/ui'
-import { IconTarget } from '@tabler/icons-react'
+import { ExploreList, exploreWords, KindIcon, useToast, type AvatarGroupMember, type ExploreRow, type ExploreTab } from '@estiva-app/ui'
 import { useEffect, useMemo, useState } from 'react'
+import { useDirectory } from '../comments/people'
 import { heldTopics, loadTopics } from '../document/fileTopics'
-import { findsTopic, topicsByTab, type TopicRowData, type TopicsTab } from '../topics/exploreTopics'
+import { whenOf } from '../home/recent'
+import { topicsByTab, type TopicRowData, type TopicsTab } from '../topics/exploreTopics'
 import { joinTopic } from '../topics/joinTopic'
 import { topicTitleOf, yourTopics } from '../topics/sidebarTopics'
 import { useHeldTopics, useMuted, useTopicActivity, useTopicMembers } from '../topics/topicReads'
-import { TopicRow } from '../topics/TopicRow'
 import { useReportFailure } from '@/lib/failureReports'
 
-const TABS: Record<TopicsTab, string> = { all: 'All', yours: 'Your topics', others: 'Other topics', archived: 'Archived' }
+/**
+ * Peek's Explore initiatives, word for word (Katerina, 18 November: "everywhere a topic is mentioned, we should use
+ * Initiatives"): its title, tabs All, Your initiatives, Other initiatives and Archived, what an empty tab says, and the
+ * search's words, all made by the kit from what it lists.
+ */
+const WORDS = exploreWords({ one: 'initiative', many: 'initiatives', a: 'an' })
 
-/** What an empty tab says; with no topic shown at all, every open tab says the first. */
-const EMPTY: Record<TopicsTab, string> = {
-  all: 'No topics yet.',
-  yours: 'You’re in no topics yet.',
-  others: 'No other topics.',
-  archived: 'No archived topics.',
+/** Nobody Leaf can name: a dash, as Peek's page draws them. */
+const NO_FACE = (): AvatarGroupMember => ({ name: '—' })
+
+/** One initiative as the kit's Explore row: its name and summary, its team, who is in it, and when it was last active. */
+function rowOf(topic: TopicRowData, now: number, faceOf: (pubkey: string) => AvatarGroupMember): ExploreRow {
+  return {
+    id: topic.address,
+    label: topic.title,
+    href: topic.href,
+    ...(topic.summary ? { description: topic.summary } : {}),
+    ...(topic.team !== undefined ? { team: topic.team } : {}),
+    // Up to three faces and the number, nothing to press (Katerina, 17 November); `undefined` until read: the dash.
+    ...(topic.members !== undefined ? { members: { faces: (topic.people ?? []).slice(0, 3).map(faceOf), count: topic.members } } : {}),
+    ...(topic.active ? { active: whenOf(topic.active * 1000, now) } : {}),
+    yours: topic.yours,
+    archived: topic.archived,
+  }
 }
 
 /**
- * Explore topics as it draws (TOPI-4): Ship's Topics view (estiva-ship `src/views/TopicsView.tsx`) in Leaf's page, as
- * Home is drawn — a search beside tabs All, Your topics, Other topics and Archived, each with its count, and Join on a
- * topic you are not in. The lists' order is the caller's.
+ * Explore initiatives as it draws (TOPI-4): Peek's page (peek `ExploreTopicsView`, Katerina, 18 November: "just like in
+ * Peek") in Leaf's page, the kit's ExploreList, which Peek's, Ship's and Leaf's each drew by hand (review of 23 November,
+ * C6): a search beside tabs All, Your initiatives, Other initiatives and Archived, each with its count, over the kit's
+ * list table: each initiative's name and summary, its team, who is in it (up to three faces and the number) and when it
+ * was last active, and Join on one you are not in. The search finds the start of a word of its name, as everywhere. The
+ * lists' order is the caller's.
  */
 export function ExploreTopicsView({
   lists,
@@ -32,75 +51,48 @@ export function ExploreTopicsView({
   onRetry,
   onJoin,
   joining,
+  faceOf = NO_FACE,
 }: {
   /** `loading` before the topics read lands, `failed` when it did not. */
   lists: Record<TopicsTab, TopicRowData[]> | 'loading' | 'failed'
   tab: TopicsTab
   onTab: (tab: TopicsTab) => void
   onRetry: () => void
-  /** Join a topic you are not in. */
+  /** Join an initiative you are not in. */
   onJoin: (address: string) => void
-  /** The topics whose Join is on its way. */
+  /** The initiatives whose Join is on its way. */
   joining?: ReadonlySet<string>
+  /** A person's face by their key, for each row's members pill. Default a dash: the number alone tells. */
+  faceOf?: (pubkey: string) => AvatarGroupMember
 }) {
-  const [query, setQuery] = useState('')
   // Drawn afresh each time it opens, so "now" is when it opened, as Home's.
   const [opened] = useState(() => Date.now())
-  const asked = query.trim()
   useReportFailure(lists === 'failed' ? 'not-loaded' : undefined)
-  const shown = typeof lists === 'string' ? [] : lists[tab].filter((topic) => !asked || findsTopic(topic.title, asked))
+  const rows = useMemo(
+    () => (typeof lists === 'string' ? lists : (Object.fromEntries(Object.entries(lists).map(([id, topics]) => [id, topics.map((topic) => rowOf(topic, opened, faceOf))])) as Record<ExploreTab, ExploreRow[]>)),
+    [lists, opened, faceOf],
+  )
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title="Explore topics" bodyClassName="px-12 pt-10 pb-24">
-          <div data-surface="explore-topics" className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-            {lists === 'loading' ? (
-              <SkeletonList rows={8} />
-            ) : lists === 'failed' ? (
-              <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message="Topics didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <Tabs<TopicsTab> aria-label="Topics" tabs={(Object.keys(TABS) as TopicsTab[]).map((id) => ({ id, label: TABS[id], count: lists[id].length }))} active={tab} onChange={onTab} />
-                  <div className="w-64">
-                    <SearchInput placeholder="Find a topic" aria-label="Find a topic" value={query} onChange={(event) => setQuery(event.target.value)} />
-                  </div>
-                </div>
-                {shown.length === 0 ? (
-                  <EmptyState scope="section" message={asked ? `No topic matches “${asked}”.` : lists.all.length === 0 && tab !== 'archived' ? EMPTY.all : EMPTY[tab]} />
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="hidden items-center gap-3 px-3 text-caption text-text-muted sm:flex">
-                      <span className="flex-1 pl-7">Name</span>
-                      <span className="w-28">Team</span>
-                      <span className="w-20">Members</span>
-                      <span className="w-24">Active</span>
-                      <span className="w-16" />
-                    </div>
-                    <div className="flex flex-col gap-px">
-                      {shown.map((topic) => (
-                        <TopicRow
-                          key={topic.address}
-                          topic={topic}
-                          now={opened}
-                          joining={joining?.has(topic.address)}
-                          {...(!topic.yours && !topic.archived ? { onJoin: () => onJoin(topic.address) } : {})}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </Panel>
+        {/* The page's whole width, 24px in and 20px down, as Ship's and Peek's lists (Katerina, 23 November: "not compact, fix Leaf"). */}
+        <ExploreList
+          lists={rows}
+          tab={tab}
+          onTab={onTab}
+          onRetry={onRetry}
+          onJoin={(row) => onJoin(row.id)}
+          {...(joining ? { joining } : {})}
+          words={WORDS}
+          icon={<KindIcon kind="topic" />}
+        />
       </div>
     </div>
   )
 }
 
 /**
- * Explore topics, which the sidebar's Explore topics opens at `/topics` (TOPI-4), as Ship's Topics page: every topic you
+ * Explore initiatives, which the sidebar's Explore initiatives opens at `/topics` (TOPI-4), as Peek's: every initiative you
  * can open, from the tab's one topics read (the sidebar's and Add to topic's), read afresh on open, opening on Your
  * topics, newest first as the sidebar orders them. Your topics' order waits for their activity, shared with the
  * sidebar; a tab's Members and Active are read when it is shown. A topic you join moves to Your topics once the topics
@@ -108,6 +100,12 @@ export function ExploreTopicsView({
  */
 export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary[] | undefined }) {
   const { showToast } = useToast()
+  // Who is in each row, by face: the workspace's people as every page here reads them; one not among them is a dash.
+  const directory = useDirectory()
+  const faceOf = useMemo(() => (pubkey: string): AvatarGroupMember => {
+    const person = directory[pubkey]
+    return person ? { name: person.displayName, ...(person.picture ? { picture: person.picture } : {}), ...(person.bot ? { bot: true } : {}) } : NO_FACE()
+  }, [directory])
   const [tab, setTab] = useState<TopicsTab>('yours')
   const [joining, setJoining] = useState<ReadonlySet<string>>(new Set())
   /** Joined here, each with whether you followed it before: its row loses Join at once, and counts you once. */
@@ -152,7 +150,13 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
     // As Peek's Join says it. Joined while the mute stays: Join stays too, so a second click takes the mute out.
     if (!result.ok) showToast({ label: `Nothing changed: “${title}” could not be joined. ${result.reason}`, type: 'error', failure: 'not-joined' })
     else if (result.stillMuted) showToast({ label: `Joined “${title}”, but it is still muted. Join again to unmute it.`, type: 'error', failure: 'not-saved' })
-    else setJoined((now) => new Map(now).set(address, topic.following.in))
+    else {
+      // Peek's words for a Join on its Explore (Katerina, 18 November, E1), no Undo, as Peek's has none there. It lands at
+      // Important, as Peek's (her "let's make it to important"); a level you chose before stays, and is said as Peek's bell
+      // says All: Everything.
+      showToast({ label: `You joined ${title}. Notifications: ${result.level === 'all' ? 'Everything' : 'Important'}.`, type: 'success' })
+      setJoined((now) => new Map(now).set(address, topic.following.in))
+    }
     // Read the topics again, so the joined one moves to Your topics now (Miky, 10 Nov).
     if (result.ok) void heldTopics.reload(loadTopics)
   }
@@ -165,6 +169,7 @@ export function ExploreTopicsPage({ folders }: { folders: readonly FolderSummary
       onRetry={() => void heldTopics.reload(loadTopics)}
       onJoin={(address) => void onJoin(address)}
       joining={joining}
+      faceOf={faceOf}
     />
   )
 }

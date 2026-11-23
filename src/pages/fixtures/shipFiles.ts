@@ -41,7 +41,7 @@ function projected(events: SignedEvent[], address: string): ForeignObject {
     ...found,
     appName: 'Ship',
     openUrl: 'https://ship.estiva.app/',
-    people: { [MIKY]: { displayName: 'Miky' }, [KATERINA]: { displayName: 'Katerina' } },
+    people: { [MIKY]: { displayName: 'Ana Duarte' }, [KATERINA]: { displayName: 'Ravi Mehta' } },
   }
 }
 
@@ -50,7 +50,7 @@ const ISSUE = `30851:${MIKY}:ltx-3`
 
 const DESCRIPTION = blocks(
   '## Who, when',
-  'Miky, 19 October: he opened Leaf and most rows in its tree only said "Open in Peek" or "Open in Ship".',
+  'Ana, 19 October: opened Leaf and most rows in its tree only said "Open in Peek" or "Open in Ship".',
   '## What changes',
   'A Ship project or issue opens in Leaf as a page, with Ship\'s row under its title and its text in Leaf\'s editor.',
   '## Done when',
@@ -89,16 +89,16 @@ export function shipProject(): ForeignObject {
   ], PROJECT)
 }
 
-/** The text after Katerina's save, for "someone else's newer save". */
+/** The text after Ravi's save, for "someone else's newer save". */
 export const NEWER_DESCRIPTION = blocks(
   '## Who, when',
-  'Katerina, 20 October: she rewrote this issue in Leaf while Miky had it open.',
+  'Ravi, 20 October: rewrote this issue in Leaf while Ana had it open.',
 )
 
 /** The profiles a story's relay answers with: the names on the row, in the comments and in `@`. */
 export const PROFILES: SignedEvent[] = [
-  event(0, MIKY, [], JSON.stringify({ name: 'Miky' })),
-  event(0, KATERINA, [], JSON.stringify({ name: 'Katerina' })),
+  event(0, MIKY, [], JSON.stringify({ name: 'Ana Duarte' })),
+  event(0, KATERINA, [], JSON.stringify({ name: 'Ravi Mehta' })),
 ]
 
 /** A comment as the column holds it. Its id is an event id, 64 hex as the relay's are, so `[` can name it. */

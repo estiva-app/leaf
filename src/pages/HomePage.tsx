@@ -78,8 +78,9 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
   return (
     <div className="flex min-h-0 flex-1 [contain:size]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Panel title="Home" bodyClassName="px-12 pt-10 pb-24">
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
+        <Panel title="Home" bodyClassName="px-6 py-5">
+          {/* The page's whole width, 24px in and 20px down, as Ship's and Peek's lists (Katerina, 23 November: "not compact, fix Leaf"). */}
+          <div className="flex w-full flex-col gap-2">
             <SectionHeader title="Recent" hover="none" />
             {recent === null ? (
               <SkeletonList rows={4} />

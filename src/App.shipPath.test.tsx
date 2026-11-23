@@ -175,7 +175,9 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     held = [event(30840, MIKY, [['d', TOPIC_D], ['title', 'Launch chat'], ['h', QA]])]
     window.history.replaceState(null, '', `/topic/${TOPIC_D}`)
     render(<App />)
-    expect(await screen.findByRole('heading', { name: 'Launch chat' })).toBeTruthy()
+    // Leaf's initiative page, its name in the page's bar (said once there since brainstorm 1.A, 18 November).
+    await waitFor(() => expect(document.querySelector('[data-topic-page]')).not.toBeNull())
+    expect(await screen.findAllByText('Launch chat')).not.toHaveLength(0)
     expect(screen.queryByRole('button', { name: 'Open in Peek' })).toBeNull()
     expect(screen.queryByRole('textbox', { name: 'Document' })).toBeNull()
     await waitFor(() => expect(window.location.pathname).toBe(`/topic/launch-chat-${TOPIC_D}`))

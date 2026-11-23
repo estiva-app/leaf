@@ -24,11 +24,11 @@ const issue = {
 
 const blockOf = (text: string) => descriptionTextToBlockDocument(text).content[0]
 const pointerOf = (address: string, block: { id?: string }) => ({ address, block: block.id ?? '' })
-const SHORT = blockOf('We ship on Friday, after the last review with Miky.')
+const SHORT = blockOf('We ship on Friday, after the last review with Ana.')
 const LONG = blockOf(
-  'We ship on Friday, after the last review with Miky. Before that, every app takes the new kit, the comments column ' +
+  'We ship on Friday, after the last review with Ana. Before that, every app takes the new kit, the comments column ' +
     'opens on the right in each of them, and the cards keep their pickers while the text is written. The release notes say ' +
-    'what moved and why, one line each, and the screenshots stay out of the repository. Katerina looks at each screen in ' +
+    'what moved and why, one line each, and the screenshots stay out of the repository. Ravi looks at each screen in ' +
     'Storybook first, then in the app, and says what still reads wrong; what she finds goes in before the release, not after. ' +
     'Anything left over becomes its own issue, with the screen it belongs to named in its title. On the day itself, the ' +
     'apps go out one at a time, Peek first, then Ship, then Leaf, each read back on its own host before the next one goes, ' +

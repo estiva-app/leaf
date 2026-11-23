@@ -18,7 +18,7 @@ function event(kind: number, pubkey: string, at: number, tags: string[][], conte
   return { id: serial.toString(16).padStart(64, 'e'), sig: '', kind, pubkey, created_at: Math.floor(at / 1000), tags, content }
 }
 
-/** What the relay holds for a file: Miky made it, Katerina edited its text two hours ago and was added, and she commented. */
+/** What the relay holds for a file: Ana made it, Ravi edited its text two hours ago and was added, and commented. */
 export function factsOf(file: ForeignObject): SignedEvent[] {
   const folder = file.folder ?? ''
   const address = file.address ?? ''

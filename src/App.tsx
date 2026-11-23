@@ -1,3 +1,4 @@
+import type { ForeignObject } from '@estiva-app/interop'
 import {
   AppProvider,
   AppShell,
@@ -5,7 +6,6 @@ import {
   ErrorBoundary,
   IdentityMenu,
   NavItem,
-  NavTree,
   Sidebar,
   ToastProvider,
   TooltipProvider,
@@ -13,7 +13,7 @@ import {
   type Identity,
 } from '@estiva-app/ui'
 import { CrashOnPurpose, ScreenSteps } from '@/lib/errorReports'
-import { IconFilePlus, IconHome } from '@tabler/icons-react'
+import { IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
 import { useReopenHeld } from './auth/heldTyping'
@@ -21,6 +21,8 @@ import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { heldUnder, NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
 import { naddrOf } from './fileAddress'
 import { fileKey, findArchivedAt, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
+import { useTeamsYouAreIn } from './folders/teamsYouAreIn'
+import { TeamsTree } from './folders/TeamsTree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { isRowOnly } from './relay/rowOnly'
@@ -40,6 +42,7 @@ import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname, type Route } from './route'
 import { useTabTitle } from './tabTitle'
 import { TopicsSection } from './topics/TopicsSection'
+import { useInitiativeLitUnder } from './topics/openedFrom'
 import { useSidebarTopics } from './topics/useSidebarTopics'
 import { useReportFailure } from '@/lib/failureReports'
 
@@ -118,6 +121,8 @@ function Frame() {
     () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
     [folders, children, opened, setOpen, setFolderOpen],
   )
+  // Which teams you are in: those first, the rest folded under Other teams (Katerina, 23 November, as Peek's Teams column).
+  const yours = useTeamsYouAreIn(useMemo(() => folders?.map(({ folder }) => folder.id), [folders]))
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   // Your topics, read once the Folders are, so the page's text is not behind them (LTN-2).
   const inTree = (address: string) => findFileAt(folders, children, address)?.file ?? null
@@ -175,7 +180,12 @@ function Frame() {
   */
   const current = open ? fileKey(open.file) : onPage ? fileKey(onPage) : route.page === 'file' ? route.naddr : undefined
   const under = onPage?.parentRef ? findFileAt(folders, children, onPage.parentRef) : null
-  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore topics' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
+  // One place is lit (Katerina, 23 November: "you have 2 selections in the sidebar"): a file clicked under an initiative is
+  // lit there, and the teams' tree neither lights nor opens for it, as Peek lights a row only in the column it was opened
+  // from; opened any other way, it is lit in its team.
+  const fileNow = (file: ForeignObject) => (file.address && inTree(file.address)) || file
+  const litUnder = useInitiativeLitUnder(topics, current, fileNow)
+  useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore initiatives' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
@@ -293,21 +303,20 @@ function Frame() {
             {signedIn && (
               <TopicsSection
                 topics={topics}
-                current={current}
+                {...(litUnder && current ? { lit: { topic: litUnder, file: current } } : {})}
                 topicNow={route.page === 'topic' ? route.d : undefined}
                 exploreNow={route.page === 'topics'}
-                fileNow={(file) => (file.address && inTree(file.address)) || file}
+                fileNow={fileNow}
               />
             )}
-            <NavTree
-              title="Teams"
-              titleActions={
-                takers.length ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => setMaking(true) }] : undefined
-              }
-              groups={workspace.failed ? [] : groups}
-              selected={current}
-              selectedParent={under ? fileKey(under.file) : undefined}
-              emptyMessage={workspace.failed ? 'Your teams could not be read. Reload to try again.' : 'No teams yet.'}
+            <TeamsTree
+              groups={groups}
+              {...(yours ? { yours } : {})}
+              failed={!!workspace.failed}
+              selected={litUnder ? undefined : current}
+              selectedParent={!litUnder && under ? fileKey(under.file) : undefined}
+              openTeam={litUnder ? undefined : open?.folder.folder.id}
+              {...(takers.length ? { onNewDocument: () => setMaking(true) } : {})}
             />
           </Sidebar>
         }

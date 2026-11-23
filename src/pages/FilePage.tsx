@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { BODY_SLOT, isArchived, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { ArchivedNotice, Banner, DeletedNotice, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
+import { ArchivedNotice, Banner, DeletedNotice, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, TeamChip, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
 import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
@@ -24,7 +24,7 @@ import { OverviewPanel } from './OverviewPanel'
 import { PageSkeleton } from './PageSkeleton'
 import { useSideColumn, type Shown } from './sideColumn'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
-import { FileTopicsOf } from './FileTopics'
+import { FileTopicsOf, takesInitiatives } from './FileTopics'
 import { archivedNoticeOf, deletedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
@@ -133,7 +133,10 @@ function DocumentView({
   // and its Restore (ALO-6, ISS-6).
   const locked = isArchived(file) || !!file.deleted
   const { field: fieldLine, comment: commentLine, above } = useArchivedLines(file, own)
-  const setArchived = useSetArchived(file, listedInOf(file, folders), onChanged)
+  const listedIn = listedInOf(file, folders)
+  const setArchived = useSetArchived(file, listedIn, onChanged)
+  // The team whose list holds it: the one chip after its name, as Peek draws a Ship or Leaf file (Katerina, 18 November, D7).
+  const team = listedIn ? folders?.find((folder) => folder.id === listedIn)?.name : undefined
   // Every archived file shows the kit's notice, Peek's and Ship's, in the line's place (a3257366), once the file above
   // it is read. Another app's file too, with no Unarchive and no Open (Katerina, 4 November): the same card in every
   // app, and Leaf cannot unarchive another app's file. A Leaf page's offers Unarchive, or opens the page above it is
@@ -291,13 +294,22 @@ function DocumentView({
     return ok
   }
   // The page's bar is the kit's PageHeader (ONE-5, step 5), in the panel's own bar's place, so the bar and the
-  // scrolling text are one panel as before: the name, cut to one line; another app's file with "Open" right after it;
+  // scrolling text are one panel as before: the name, cut to one line; its team's chip, then, for another app's file, "Open";
   // then its last edit, who is in it, and the page's own buttons, each where the kit puts it (Katerina, 3 November).
   // A Leaf page's ⋯ menu is last (LED-4).
   const header = (
     <PageHeader
       title={title}
-      after={opener && file.appName ? <OpenIn opener={opener} appName={file.appName} /> : undefined}
+      after={
+        team || (opener && file.appName) ? (
+          <>
+            {/* Its team, the one chip, then Open, in Peek's order (Katerina, 17 November). The kit's TeamChip with no
+                link: Leaf has no team page (18 November). */}
+            {team && <TeamChip name={team} />}
+            {opener && file.appName && <OpenIn opener={opener} appName={file.appName} />}
+          </>
+        ) : undefined
+      }
       time={time}
       members={<Members members={facts.members} me={me} directory={directory} readOnly={locked} onSetMine={setMine} onAdd={addMembers} />}
       actions={
@@ -374,9 +386,6 @@ function DocumentView({
             {deletedNotice || notice}
             {/* A page whose file above has no address to open keeps its line, so the way back is still named. */}
             {own && archive?.with && !aboveHref && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
-            {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6); an archived
-                page's notice stays first, straight under its title. */}
-            <FileTopicsOf address={file.address} />
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}
@@ -417,7 +426,8 @@ function DocumentView({
         <>
           <Divider orientation="vertical" />
           <div className="flex flex-none flex-col" data-overview-column>
-            <OverviewPanel />
+            {/* Its Initiatives in it, as Ship's Overview holds a project's (Katerina, 23 November); none for a file no initiative can list. */}
+            <OverviewPanel topics={takesInitiatives(file.address) ? <FileTopicsOf address={file.address} /> : undefined} />
           </div>
         </>
       )}

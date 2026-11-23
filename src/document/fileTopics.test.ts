@@ -132,7 +132,7 @@ function rootOf(author: string, d: string, title: string, folder = HQ, parent?: 
 const archive = (address: string, folder = HQ) =>
   held.push(sign({ kind: 1851, pubkey: MIKY, created_at: 1_700_000_200, tags: [['a', address], ['O', address.split(':')[2]], ['field', 'archived'], ['value', 'true'], ['h', folder]], content: '' }))
 
-describe('what Add to topic offers', () => {
+describe('what Add to initiative offers', () => {
   it('splits the topics you can add to into yours and the others, each A–Z, and leaves out archived ones', async () => {
     folderState(HQ)
     folderState(SUB)
@@ -187,7 +187,7 @@ describe('what Add to topic offers', () => {
     folderState(HQ)
     rootOf(MIKY, 'beta', 'Beta')
     viewer = undefined
-    await expect(readTopicChoices()).rejects.toThrow('Sign in to add it to a topic.')
+    await expect(readTopicChoices()).rejects.toThrow('Sign in to add it to an initiative.')
     expect(reads).toBe(0)
   })
 })

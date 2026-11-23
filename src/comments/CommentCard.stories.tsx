@@ -32,7 +32,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A project as its card, taken from the page's read: on a topic's page, or under a comment. */
+/** A project as its card, taken from the page's read: on an initiative's page, or under a comment. */
 export const Card: Story = { args: { uri: 'nostr:project' } }
 
 /** The same file as an old comment's one-line row. */

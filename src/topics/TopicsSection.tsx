@@ -1,30 +1,37 @@
 import type { ForeignObject } from '@estiva-app/interop'
 import { EmptyState, KindIcon, NavItem, NavTree, SkeletonList } from '@estiva-app/ui'
+import { IconListSearch } from '@tabler/icons-react'
 import { useState } from 'react'
 import { rowOf } from '../folders/tree'
 import { dOf, EXPLORE_TOPICS_PATH } from '../route'
 import { topicPath } from './topicLinks'
+import { rememberClickUnderInitiative } from './openedFrom'
 import { TOPICS_SHOWN } from './sidebarTopics'
 import type { SidebarTopicsState } from './useSidebarTopics'
 import { useReportFailure } from '@/lib/failureReports'
 
 /**
- * The sidebar's Topics (LTN-2, TOPI-4, the approved story on `concept/topics-level-up`): your five newest topics
+ * The sidebar's Initiatives (LTN-2, TOPI-4, the approved story on `concept/topics-level-up`; called Topics until
+ * Katerina's rename of 16 November): your five newest initiatives
  * (newest activity first, in the order the caller hands them), each folding to the files it lists that Leaf opens, then
- * Explore topics in More's place. With none, or when the read failed, the section still draws, with Explore topics, so
- * there is a way in. A topic's name opens its page in Leaf (LTN-3); its icon, an arrow while pointed at, folds it; one
- * listing nothing Leaf opens has no fold.
+ * Explore initiatives in More's place. With none, or when the read failed, the section still draws, with Explore initiatives, so
+ * there is a way in. An initiative's name opens its page in Leaf (LTN-3); its icon, an arrow while pointed at, folds it, and
+ * nothing else does: its own page leaves its fold as it is, as Peek's rows (Katerina, 23 November). One listing nothing
+ * Leaf opens has no fold. A file clicked under an initiative is lit there and nowhere else (`openedFrom`).
  */
 export function TopicsSection({
   topics,
-  current,
+  lit,
   topicNow,
   exploreNow,
   fileNow,
 }: {
   topics: SidebarTopicsState
-  /** The open file's key, as the tree selects it. */
-  current?: string
+  /**
+   * The open file, when it was clicked under one of these initiatives (`useInitiativeLitUnder`): lit there, and that
+   * initiative opens. Absent, no file is lit here: it is lit in its team.
+   */
+  lit?: { topic: string; file: string }
   /** The `d` of the topic whose page is open. */
   topicNow?: string
   /** Explore topics is open. */
@@ -33,31 +40,34 @@ export function TopicsSection({
   fileNow: (file: ForeignObject) => ForeignObject
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
-  // No icon: it is a way in, not another kind of topic (Miky, 6 Nov).
-  const explore = <NavItem href={EXPLORE_TOPICS_PATH} label="Explore topics" active={exploreNow} />
+  // Peek's row, word for word and with its icon, a list with a magnifier (Katerina, 16 November, her pick A; 18 November:
+  // "Explore initiatives along with the icon we used in Peek"). Until then it had none (Miky, 6 Nov).
+  const explore = <NavItem href={EXPLORE_TOPICS_PATH} label="Explore initiatives" icon={<IconListSearch size={16} stroke={1.5} aria-hidden />} active={exploreNow} />
   useReportFailure(topics === 'failed' ? 'not-loaded' : undefined)
+  // As many placeholder rows as it shows, then the way in, as Ship's sidebar while it reads (review of 23 November, C12).
   if (topics === 'loading')
     return (
-      <NavTree title="Topics">
-        <SkeletonList rows={3} />
+      <NavTree title="Initiatives">
+        <SkeletonList rows={TOPICS_SHOWN} />
+        {explore}
       </NavTree>
     )
-  // In the words Leaf's Folders use when they fail.
+  // In Peek's words for its Initiatives column (Katerina, 18 November: "everywhere a topic is mentioned, we should use Initiatives").
   if (topics === 'failed')
     return (
-      <NavTree title="Topics">
+      <NavTree title="Initiatives">
         {/* Lined up with the section's title, as the spec draws it, now that a row follows. */}
         <div className="px-2 py-1">
-          <EmptyState scope="section" message="Your topics could not be read. Reload to try again." />
+          <EmptyState scope="section" message="Couldn’t load your initiatives. Reload to try again." />
         </div>
         {explore}
       </NavTree>
     )
   if (topics.length === 0)
     return (
-      <NavTree title="Topics">
+      <NavTree title="Initiatives">
         <div className="px-2 py-1">
-          <EmptyState scope="section" message="You’re in no topics yet." />
+          <EmptyState scope="section" message="You’re in no initiatives yet." />
         </div>
         {explore}
       </NavTree>
@@ -70,7 +80,7 @@ export function TopicsSection({
       return next
     })
   return (
-    <NavTree title="Topics">
+    <NavTree title="Initiatives">
       {topics.slice(0, TOPICS_SHOWN).map((topic) => {
         const link = {
           href: topicPath(topic.address, topic.title),
@@ -80,12 +90,28 @@ export function TopicsSection({
         }
         // A topic listing nothing Leaf opens has no rows under it, so no fold.
         if (topic.files.length === 0) return <NavItem key={topic.address} {...link} />
+        const rows = topic.files.map((file) => rowOf(fileNow(file)))
         return (
-          <NavItem key={topic.address} {...link} open={open.has(topic.address)} onOpenChange={(to) => fold(topic.address, to)}>
-            {topic.files.map((file) => {
-              const row = rowOf(fileNow(file))
-              return <NavItem key={row.id} href={row.href} label={row.label} icon={row.icon} hint={row.hint} active={row.id === current} />
-            })}
+          <NavItem
+            key={topic.address}
+            {...link}
+            open={open.has(topic.address)}
+            onOpenChange={(to) => fold(topic.address, to)}
+            // Its arrow alone folds it, as Peek's rows: its own page leaves it as it is (Katerina, 23 November). It opens for
+            // a file clicked inside it, folded by hand since or not, as Ship's sidebar.
+            openFor={lit?.topic === topic.address ? lit.file : undefined}
+          >
+            {rows.map((row) => (
+              <NavItem
+                key={row.id}
+                href={row.href}
+                label={row.label}
+                icon={row.icon}
+                hint={row.hint}
+                active={lit?.topic === topic.address && row.id === lit.file}
+                onClick={(event) => rememberClickUnderInitiative(event, topic.address, row.id)}
+              />
+            ))}
           </NavItem>
         )
       })}

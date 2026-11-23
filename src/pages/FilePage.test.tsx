@@ -1,7 +1,7 @@
 import { BODY_SLOT, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Editor } from '@tiptap/react'
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -302,7 +302,7 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
   it('a Ship issue archived itself: the kit’s card says who and when, with no Unarchive, no Open and no line over its text; the comment line is the one every app shows', async () => {
     profiles = PROFILES
     render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived by Miky · /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived by Ana Duarte · /)).toBeTruthy()
     expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
     expect(screen.queryByText('Archived. Unarchive it in Ship to edit.')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
@@ -317,7 +317,7 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']], content: JSON.stringify(shipManifest) })]
     roots = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
     render(<ToastProvider><FilePage file={archived(shipIssue(), shipProject().address)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by Miky · /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by Ana Duarte · /)).toBeTruthy()
     expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
     expect(screen.queryByText('Unarchive the project in Estiva Ship to edit.')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open project' })).toBeNull()
@@ -556,14 +556,17 @@ describe('the Overview, in the comments’ place (ONE-5, step 5)', () => {
     return !!empty && !empty.closest('[hidden]')
   }
 
-  it('the header’s side-panel button shows it, empty for now, pressed while it is shown; hiding it brings the comments back', async () => {
+  it('the header’s side-panel button shows it, holding the page’s Initiatives, pressed while it is shown; hiding it brings the comments back', async () => {
     await reload(doc())
     await waitFor(() => expect(shownComments()).toBe(true))
     expect(screen.queryByText('Overview')).toBeNull()
+    // Not under the title any more (Katerina, 23 November): in the Overview, as Ship's.
+    expect(document.querySelector('[data-file-topics]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show side panel' }))
-    // The kit's empty line for one part of a page, under the panel's name.
     expect(screen.getByText('Overview')).toBeTruthy()
-    expect(screen.getByText('Nothing here yet.')).toBeTruthy()
+    const overview = document.querySelector<HTMLElement>('[data-overview-column]')!
+    expect(within(overview).getByText('Initiatives')).toBeTruthy()
+    expect(screen.queryByText('Nothing here yet.')).toBeNull()
     expect(shownComments()).toBe(false)
     expect(screen.getByRole('button', { name: 'Hide side panel' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('button', { name: 'Show comments' })).toBeTruthy()
@@ -871,5 +874,15 @@ describe('Move from a page’s ⋯ menu (LED-5)', () => {
       [1852, STEER, 'move', FOLDER],
       [1852, STEER, 'move', OPS],
     ])
+  })
+})
+
+describe('the team a page is in, in its bar (D7)', () => {
+  it('names the team whose list holds the page once, as the chip with the team icon after its name', async () => {
+    const folders = [{ id: FOLDER, name: 'Launch team', hasState: true, addresses: [ADDRESS] }] as unknown as FolderSummary[]
+    render(<ToastProvider><FilePage file={doc()} loading={false} folders={folders} /></ToastProvider>)
+    const named = await screen.findAllByText('Launch team')
+    expect(named).toHaveLength(1)
+    expect(named[0].closest('a, span, div')?.parentElement?.querySelector('svg.tabler-icon-users')).toBeTruthy()
   })
 })

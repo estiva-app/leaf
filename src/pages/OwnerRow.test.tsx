@@ -54,7 +54,7 @@ describe("Ship's row on a Ship issue's own page in Leaf", () => {
     row(shipIssue({ archived: true }))
     expect(screen.queryByRole('combobox')).toBeNull()
     expect(screen.getByText('In Progress')).toBeTruthy()
-    expect(screen.getByText('Katerina')).toBeTruthy()
+    expect(screen.getByText('Ravi Mehta')).toBeTruthy()
   })
 
   it('shows them as words to a reader who is not signed in', () => {

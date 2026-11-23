@@ -6,11 +6,12 @@ import * as Stories from './OverviewPanel.stories'
 # OverviewPanel
 
 A page's Overview: the kit's **Panel** "Overview" in the column beside the
-page, in the comments' place, empty for now (ONE-5, step 5; Katerina,
-3 November).
+page, in the comments' place, holding the page's Initiatives, as Ship's
+Overview holds a project's (ONE-5, step 5; Katerina, 23 November).
 
-**Seen in**: *Pages/OverviewPanel*: **Empty**; *Pages/File page*: **Overview
-Open** (press the header's side-panel button again and the comments come back).
+**Seen in**: *Pages/OverviewPanel*: **With initiatives**, **Empty**; *Pages/File
+page*: **Overview Open** (press the header's side-panel button again and the
+comments come back).
 
 ## When
 
@@ -22,7 +23,6 @@ Open** (press the header's side-panel button again and the comments come back).
 
 - Not for the comments. They are the column's other occupant,
   **CommentsColumn**, the kit's one column.
-- Not for the page's Topics. They stay under the title (`FileTopicsOf`).
 
 ## How
 
@@ -33,7 +33,7 @@ import { OverviewPanel } from './OverviewPanel'
   <>
     <Divider orientation="vertical" />
     <div className="flex flex-none flex-col" data-overview-column>
-      <OverviewPanel />
+      <OverviewPanel topics={takesInitiatives(file.address) ? <FileTopicsOf address={file.address} /> : undefined} />
     </div>
   </>
 )}
@@ -42,8 +42,11 @@ import { OverviewPanel } from './OverviewPanel'
 ## What it owns
 
 - **Its name**, "Overview", in the panel's bar.
+- **Its Initiatives**: the kit's **SectionHeader** "Initiatives", 16px under
+  the bar, its 8px inset brought to the panel's 16px edge, and the page's
+  `FileTopicsOf` under it, as Ship's Overview places a project's.
 - **Its empty line**, "Nothing here yet.", the kit's **EmptyState** for one
-  part of a page, placed by the kit's Panel padding (16px in, 12px under the
-  bar). Nothing is planned for it yet.
+  part of a page, for a page no initiative can list (no address, or an
+  initiative itself).
 - **Its width**: 384px, the comments column's, so the page does not move
   when one replaces the other.

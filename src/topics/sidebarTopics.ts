@@ -18,7 +18,7 @@ export interface SidebarTopic {
 const kindOf = (address: string) => Number(address.split(':')[0])
 
 /** A topic's title as Leaf draws it everywhere. */
-export const topicTitleOf = (topic: ReadTopic) => topic.object.slots.title?.value?.trim() || 'Untitled topic'
+export const topicTitleOf = (topic: ReadTopic) => topic.object.slots.title?.value?.trim() || 'Untitled initiative'
 
 /** This tab's own adds and removes since the read, by topic, then file address. */
 export type ListedHere = ReadonlyMap<string, ReadonlyMap<string, boolean>>

@@ -2,10 +2,11 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { rowOf } from '../folders/tree'
 import { TopicsSection } from './TopicsSection'
 import type { SidebarTopic } from './sidebarTopics'
 
-/* LTN-2, TOPI-4: Leaf's sidebar Topics as a person sees them: five, then Explore topics, each folding to the files it lists. */
+/* LTN-2, TOPI-4: Leaf's sidebar Initiatives as a person sees them: five, then Explore initiatives, each folding to the files it lists. */
 
 const page = (d: string, title: string): ForeignObject =>
   ({ address: `30842:${'a'.repeat(64)}:${d}`, kind: 30842, ref: d, naddr: `naddr-${d}`, slots: { title: { value: title } }, actions: [] }) as unknown as ForeignObject
@@ -22,25 +23,25 @@ const rows = () => screen.queryAllByRole('link').map((link) => link.textContent)
 afterEach(cleanup)
 
 describe('the sidebar’s Topics', () => {
-  it('shows five of your topics in the order handed, then Explore topics, which opens /topics; no More', () => {
+  it('shows five of your topics in the order handed, then Explore initiatives, which opens /topics; no More', () => {
     draw([1, 2, 3, 4, 5, 6, 7].map((i) => topicOf(i)))
-    expect(rows()).toEqual(['Topic 1', 'Topic 2', 'Topic 3', 'Topic 4', 'Topic 5', 'Explore topics'])
-    expect(screen.getByRole('link', { name: 'Explore topics' }).getAttribute('href')).toBe('/topics')
+    expect(rows()).toEqual(['Topic 1', 'Topic 2', 'Topic 3', 'Topic 4', 'Topic 5', 'Explore initiatives'])
+    expect(screen.getByRole('link', { name: 'Explore initiatives' }).getAttribute('href')).toBe('/topics')
     expect(screen.queryByRole('link', { name: 'More' })).toBeNull()
   })
 
-  it('marks Explore topics as the current row while it is open', () => {
+  it('marks Explore initiatives as the current row while it is open', () => {
     render(
       <TooltipProvider>
         <TopicsSection topics={[topicOf(1)]} exploreNow fileNow={(f) => f} />
       </TooltipProvider>,
     )
-    expect(screen.getByRole('link', { name: 'Explore topics' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('link', { name: 'Explore initiatives' }).getAttribute('aria-current')).toBe('page')
   })
 
   it('draws a topic listing nothing Leaf opens with no fold under it', () => {
     draw([topicOf(1, []), topicOf(2)])
-    expect(rows()).toEqual(['Topic 1', 'Topic 2', 'Explore topics'])
+    expect(rows()).toEqual(['Topic 1', 'Topic 2', 'Explore initiatives'])
     expect(screen.queryByRole('button', { name: 'Show what is under Topic 1' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Show what is under Topic 2' })).toBeTruthy()
   })
@@ -67,17 +68,42 @@ describe('the sidebar’s Topics', () => {
 
   it('shows placeholder rows while your topics are read, and says so when they could not be', () => {
     const { container, unmount } = draw('loading')
-    expect(screen.getByText('Topics')).toBeTruthy()
-    expect(within(container).queryAllByRole('link')).toEqual([])
+    expect(screen.getByText('Initiatives')).toBeTruthy()
+    // Five, as many as it shows, then the way in, as Ship's (review of 23 November, C12).
+    expect(container.querySelector('.animate-skeleton-in')?.children).toHaveLength(5)
+    expect(within(container).queryAllByRole('link').map((link) => link.textContent)).toEqual(['Explore initiatives'])
     unmount()
     draw('failed')
-    expect(screen.getByText('Your topics could not be read. Reload to try again.')).toBeTruthy()
-    expect(rows()).toEqual(['Explore topics'])
+    expect(screen.getByText('Couldn’t load your initiatives. Reload to try again.')).toBeTruthy()
+    expect(rows()).toEqual(['Explore initiatives'])
   })
 
-  it('says you are in no topics yet, with Explore topics as the way in, when you have none', () => {
+  it('lights a file clicked under an initiative there, and opens that initiative and no other', () => {
+    const plan = page('3518cd7b-5b85-49e8-ba94-4aacacad2163', 'Launch plan')
+    render(
+      <TooltipProvider>
+        <TopicsSection topics={[topicOf(1, [plan]), topicOf(2)]} lit={{ topic: topicOf(1).address, file: rowOf(plan).id }} fileNow={(f) => f} />
+      </TooltipProvider>,
+    )
+    expect(screen.getByRole('link', { name: /Launch plan/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.queryByRole('link', { name: /Page 2/ })).toBeNull()
+  })
+
+  // Katerina, 23 November: "in peek it doesnt … just expands when you click to the chevron only".
+  it('leaves an initiative folded when its own page is open: its row is lit, and only its arrow folds it', () => {
+    render(
+      <TooltipProvider>
+        <TopicsSection topics={[topicOf(1), topicOf(2)]} topicNow="t2" fileNow={(f) => f} />
+      </TooltipProvider>,
+    )
+    expect(screen.getByRole('link', { name: 'Topic 2' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('button', { name: 'Show what is under Topic 2' }).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('link', { name: /Page 2/ })).toBeNull()
+  })
+
+  it('says you are in no initiatives yet, with Explore initiatives as the way in, when you have none', () => {
     draw([])
-    expect(screen.getByText('You’re in no topics yet.')).toBeTruthy()
-    expect(rows()).toEqual(['Explore topics'])
+    expect(screen.getByText('You’re in no initiatives yet.')).toBeTruthy()
+    expect(rows()).toEqual(['Explore initiatives'])
   })
 })

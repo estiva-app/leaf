@@ -71,15 +71,15 @@ export async function archiveDocument(file: Document, archived: boolean, resolut
   return { ok: false, reason: archived ? 'Nothing was archived. Try again.' : 'It was not unarchived. Try again.' }
 }
 
-/** What archiving a document would hide with it, in words: "2 pages and 1 topic". Throws when it cannot be read. */
+/** What archiving a document would hide with it, in words: "2 pages and 1 initiative". Throws when it cannot be read. */
 export async function archiveHides(address: string): Promise<string> {
   const impact = await archiveImpact(address, query, { cache: manifests })
   return listOf(impact.hides.map(({ kind, count }) => countOf(kind, count)))
 }
 
-/** "1 page", "3 topics": what Leaf calls each kind that sits under a page. */
+/** "1 page", "3 initiatives": what Leaf calls each kind that sits under a page. */
 export function countOf(kind: number, count: number): string {
-  const [one, many] = kind === KIND.DOCUMENT ? ['page', 'pages'] : kind === KIND_BARE_FILE ? ['topic', 'topics'] : ['file', 'files']
+  const [one, many] = kind === KIND.DOCUMENT ? ['page', 'pages'] : kind === KIND_BARE_FILE ? ['initiative', 'initiatives'] : ['file', 'files']
   return `${count} ${count === 1 ? one : many}`
 }
 

@@ -1,6 +1,7 @@
 // @vitest-environment-options {"url": "https://leaf.estiva.app/topic/x"}
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, planListInTopic } from '@estiva-app/interop'
+import { buildMembershipChange } from '@estiva-app/conversation'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -11,7 +12,8 @@ import { drawOnce } from '../test/drawOnce'
 
 const ME = 'a'.repeat(64)
 const MIKY = 'b'.repeat(64)
-const HQ = 'hq-folder'
+// A team id as the relay mints them (lowercase UUID v4): who is in an initiative is read through its team's roster.
+const HQ = '0a0b0c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d'
 const PEEK = 'c'.repeat(64)
 
 /* What the relay holds, answered filter by filter as it matches. */
@@ -31,7 +33,14 @@ const answer = async (filters: Filter[]) => {
   if (down) throw new Error('rate-limited: slow down')
   return relay(filters)
 }
-vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, queryAll: answer }))
+/* Every event this tab handed the relay to sign, as handed; the relay takes it and holds it signed, so a read after sees it. */
+let sent: UnsignedEvent[] = []
+const take = async (event: UnsignedEvent) => {
+  sent.push(event)
+  held.push(sign(event))
+  return { ok: true as const }
+}
+vi.mock('../relay/bridge', () => ({ viewerPubkey: () => ME, query: answer, queryAll: answer, publish: take }))
 // A fresh cache, as Leaf's own: Peek's manifest names where the topic's conversation is.
 vi.mock('../relay/manifests', async () => {
   const { createProjectionCache } = await import('@estiva-app/interop')
@@ -130,6 +139,18 @@ const page = (d: string, tree: ForeignObject[], treeRead: boolean) => (
   </TooltipProvider>
 )
 const show = (d: string, tree: ForeignObject[] = []) => render(page(d, tree, true))
+/** The initiative's name, in the page's bar: found once it is drawn, and not again over the page (brainstorm 1.A). */
+const nameInBar = (title: string) =>
+  waitFor(() => {
+    const shown = screen.getAllByText(title).filter((element) => !element.closest('[data-topic-page]'))
+    expect(shown.length).toBeGreaterThan(0)
+    return shown[0]
+  })
+/** The heading over one kind of file, and the links under it in their order. */
+const linksUnder = (heading: string) => {
+  const section = [...document.querySelectorAll('[data-topic-kind]')].find((part) => part.querySelector('*')?.textContent?.startsWith(heading))
+  return section ? [...section.querySelectorAll('a')].map((link) => link.textContent?.trim() ?? '').filter(Boolean) : []
+}
 
 beforeEach(() => {
   held = [
@@ -143,6 +164,7 @@ beforeEach(() => {
     }),
   ]
   outside = {}
+  sent = []
   down = false
   resetTopicChoicesForTests()
   // Each case publishes its own manifests: what an earlier case's read remembered about them is forgotten.
@@ -163,7 +185,7 @@ describe("a topic's page in Leaf", () => {
     const address = `30840:${MIKY}:${d}`
     held.push(sign({ kind: 1111, pubkey: MIKY, created_at: 1_700_000_100, tags: [['A', address], ['K', '30840'], ['P', MIKY], ['a', address], ['k', '30840'], ['p', MIKY], ['h', HQ]], content: 'Said in the topic' }))
     show(d)
-    expect(await screen.findByRole('heading', { name: 'Widgets' })).toBeTruthy()
+    await nameInBar('Widgets')
     expect(screen.getByText('Estiva HQ')).toBeTruthy()
     expect(screen.getByText('Everything about the widgets.')).toBeTruthy()
     // Its conversation in the column beside the page, as Ship's topic page has it, in place of a link to Peek's.
@@ -175,14 +197,15 @@ describe("a topic's page in Leaf", () => {
     expect(document.querySelector('[data-comments-column]')!.closest('[hidden]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show conversation' }))
     expect(document.querySelector('[data-comments-column]')!.closest('[hidden]')).toBeNull()
-    // In the topic's one order, as it lists them (the issue first here), not pages first (TOPI-5); each a link inside Leaf.
+    // Each under its own kind's heading (brainstorm 1.A), each a link inside Leaf.
     const plans = await screen.findByRole('link', { name: /Launch plan/ })
     expect(plans.getAttribute('href')).toBe(`/document/launch-plan-${plan.address!.split(':')[2]}`)
     expect(screen.getByRole('link', { name: /Write the brief/ }).getAttribute('href')).toBe(`/f/${issue.naddr}`)
-    expect(screen.getByRole('link', { name: /Write the brief/ }).compareDocumentPosition(plans) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(plans.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('page')
+    expect(screen.getByRole('link', { name: /Write the brief/ }).closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('issue')
   })
 
-  it('draws a file as its card where the topic shows it as one, and the rest as rows (TOPI-5)', async () => {
+  it('draws every file as a row, even one the initiative shows as a card (Katerina, 23 November: "row and not card")', async () => {
     const plan = file(30842, 'Launch plan')
     const issue = file(30851, 'Write the brief')
     outside = { [plan.address!]: plan, [issue.address!]: issue }
@@ -199,23 +222,25 @@ describe("a topic's page in Leaf", () => {
       }),
     )
     show(d)
-    // The issue stays a row, a link named by its title; the page is its card, whose title opens it in Leaf.
+    // Both are rows, each a link inside Leaf under its own heading; nothing is drawn as a card, whose link is a whole URL.
     const brief = await screen.findByRole('link', { name: /^Write the brief/ })
-    const card = await screen.findByRole('link', { name: 'Launch plan' })
-    expect(card.getAttribute('href')).toBe(`https://leaf.estiva.app/document/launch-plan-${planD}`)
-    expect(document.querySelector(`[data-topic-page] a[href="/document/launch-plan-${planD}"]`)).toBeNull()
-    expect(brief.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const plan2 = await screen.findByRole('link', { name: /^Launch plan/ })
+    expect(plan2.getAttribute('href')).toBe(`/document/launch-plan-${planD}`)
+    expect(plan2.closest('[role="row"]')).not.toBeNull()
+    expect(document.querySelector('[data-topic-page] a[href^="https://"]')).toBeNull()
+    expect(plan2.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('page')
+    expect(brief.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('issue')
   })
 
-  it('draws a file nobody set as its own app says: a page as a card, an issue as a row (TOPI-5)', async () => {
+  it('draws a page its own app shows as a card as a row here too, as Ship lists them', async () => {
     const plan = file(30842, 'Launch plan', false, 'card')
     const issue = file(30851, 'Write the brief')
     outside = { [plan.address!]: plan, [issue.address!]: issue }
     show(topic('Widgets', [plan, issue]))
     const planD = plan.address!.split(':')[2]!
     expect((await screen.findByRole('link', { name: /^Write the brief/ })).getAttribute('href')).toBe(`/f/${issue.naddr}`)
-    expect((await screen.findByRole('link', { name: 'Launch plan' })).getAttribute('href')).toBe(`https://leaf.estiva.app/document/launch-plan-${planD}`)
-    expect(document.querySelector(`[data-topic-page] a[href="/document/launch-plan-${planD}"]`)).toBeNull()
+    expect((await screen.findByRole('link', { name: /^Launch plan/ })).getAttribute('href')).toBe(`/document/launch-plan-${planD}`)
+    expect(document.querySelector('[data-topic-page] a[href^="https://"]')).toBeNull()
   })
 
   it('takes a listed file the tree already read from the tree, with the title the tree has now', async () => {
@@ -231,21 +256,21 @@ describe("a topic's page in Leaf", () => {
     outside = new Proxy({} as Record<string, ForeignObject>, { get: () => (asked++, undefined) })
     const d = topic('Widgets', [plan])
     const { rerender } = render(page(d, [], false))
-    expect(await screen.findByRole('heading', { name: 'Widgets' })).toBeTruthy()
+    await nameInBar('Widgets')
     expect(screen.queryByRole('link', { name: /Launch plan/ })).toBeNull()
     rerender(page(d, [plan], true))
     expect(await screen.findByRole('link', { name: /Launch plan/ })).toBeTruthy()
     expect(asked).toBe(0)
   })
 
-  it('puts its archived files behind a link, which shows them', async () => {
+  it('folds its archived files away at the end, and opening the fold shows them', async () => {
     const plan = file(30842, 'Launch plan')
     const old = file(30842, 'Old plan', true)
     outside = { [plan.address!]: plan, [old.address!]: old }
     show(topic('Widgets', [plan, old]))
     await screen.findByRole('link', { name: /Launch plan/ })
     expect(screen.queryByRole('link', { name: /Old plan/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Archived · 1' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Archived/ }))
     expect(screen.getByRole('link', { name: /Old plan/ })).toBeTruthy()
   })
 
@@ -268,7 +293,8 @@ describe("a topic's page in Leaf", () => {
     held.push(sign({ kind: 30890, pubkey: MIKY, created_at: 1_700_000_000, tags: [['d', 'team'], ['h', HQ], ['a', `30840:${MIKY}:${d}`, '', 'space']], content: '' }))
     show(d)
     await waitFor(() => expect(replace).toHaveBeenCalledWith(`https://peek.estiva.app/topic/bugs-${d}`))
-    expect(screen.queryByRole('heading', { name: 'Bugs' })).toBeNull()
+    // Nothing of it is drawn on its way to Peek: no list, nor the line an empty one says.
+    expect(screen.queryByText('None yet. An initiative can be only a conversation.')).toBeNull()
   })
 
   it("says the topic didn't load, not that it can't be opened, when the read for a topic made since fails", async () => {
@@ -278,11 +304,11 @@ describe("a topic's page in Leaf", () => {
     const d = topic('Made since', [])
     down = true
     show(d)
-    expect(await screen.findByText('This topic didn’t load.')).toBeTruthy()
-    expect(screen.queryByText("You can't open this topic")).toBeNull()
+    expect(await screen.findByText('This initiative didn’t load.')).toBeTruthy()
+    expect(screen.queryByText("You can't open this initiative")).toBeNull()
     down = false
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByRole('heading', { name: 'Made since' })).toBeTruthy()
+    await nameInBar('Made since')
   })
 
   it('draws the page without a Peek link when the newest conversation app publishes a link that does not parse', async () => {
@@ -296,14 +322,130 @@ describe("a topic's page in Leaf", () => {
       }),
     )
     show(topic('Widgets', []))
-    expect(await screen.findByRole('heading', { name: 'Widgets' })).toBeTruthy()
+    await nameInBar('Widgets')
     expect(screen.queryByRole('link', { name: /Conversation in Peek/ })).toBeNull()
   })
 
   it("says it can't be opened when no topic the reader can read has that id", async () => {
     topic('Widgets', [])
     show(uuid(999))
-    expect(await screen.findByText("You can't open this topic")).toBeTruthy()
+    expect(await screen.findByText("You can't open this initiative")).toBeTruthy()
+  })
+})
+
+describe("an initiative's page, in Peek's team-page look (brainstorm 1.A)", () => {
+  it('says its name once, in the bar, not again as a big title over the page', async () => {
+    show(topic('Widgets', [], 'Everything about the widgets.'))
+    await nameInBar('Widgets')
+    expect(await screen.findByText('Everything about the widgets.')).toBeTruthy()
+    expect(screen.getAllByText('Widgets').filter((element) => element.closest('[data-topic-page]'))).toEqual([])
+  })
+
+  it('lists each kind under its own heading, keeping the initiative’s own order inside each', async () => {
+    const zebra = file(30842, 'Zebra notes')
+    const apple = file(30842, 'Apple notes')
+    const issue = file(30851, 'Write the brief')
+    outside = { [zebra.address!]: zebra, [apple.address!]: apple, [issue.address!]: issue }
+    // Listed: Zebra, the issue, Apple. The pages keep Zebra before Apple; the issue is under Issues.
+    show(topic('Widgets', [zebra, issue, apple]))
+    await screen.findByRole('link', { name: /Apple notes/ })
+    expect(linksUnder('Documents')).toEqual(['Zebra notes', 'Apple notes'])
+    expect(linksUnder('Issues')).toEqual(['Write the brief'])
+  })
+})
+
+describe("an initiative's team, in its page's bar (D4)", () => {
+  it('names its team once, as the chip with the team icon after its name, not as a line under its title', async () => {
+    const d = topic('Widgets', [])
+    show(d)
+    await nameInBar('Widgets')
+    const named = await screen.findAllByText('Estiva HQ')
+    expect(named).toHaveLength(1)
+    // Not in the page's body, where the grey line under the title was.
+    expect(named[0].closest('[data-topic-page]')).toBeNull()
+    expect(named[0].closest('a, span, div')?.parentElement?.querySelector('svg.tabler-icon-users')).toBeTruthy()
+  })
+})
+
+describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \"make it like Ship\")", () => {
+  it('puts each fact in its column: status in words, the owner’s face, and who changed it last and when', async () => {
+    const { TopicPageView } = await import('./TopicPage')
+    const { shipIssue, shipProject, MIKY: LEAD, KATERINA: ASSIGNEE } = await import('./fixtures/shipFiles')
+    const issue = shipIssue()
+    const project = shipProject()
+    const directory = { [LEAD]: { displayName: 'Ana Duarte' }, [ASSIGNEE]: { displayName: 'Ravi Mehta' } }
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPageView
+            state={{ address: `30840:${LEAD}:launch`, title: 'Launch', folder: HQ, archived: false, space: false, files: { live: [project, issue], archived: [], looks: new Map() } }}
+            directory={directory}
+            comments={{ open: false, onOpenChange: () => {} }}
+            onRetry={() => {}}
+          />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    // A row's cells: its name, then Status, People, Progress and When, as Ship's.
+    const cells = (title: RegExp) => [...screen.getByRole('link', { name: title }).closest('[role="row"]')!.querySelectorAll('[role="cell"]')]
+    const issueCells = cells(/^Sidebar should not show Peek topics/)
+    expect(issueCells[1]?.textContent).toContain('In Progress')
+    expect(issueCells[2]?.querySelector('[aria-label="Ravi Mehta"]')).not.toBeNull()
+    const editor = issue.changedBy ? directory[issue.changedBy]?.displayName.split(' ')[0] : undefined
+    expect(issueCells[4]?.textContent).toMatch(new RegExp(`^${editor}, `))
+    const projectCells = cells(/^Leaf edits any file's text/)
+    expect(projectCells[1]?.textContent).toContain('Planned')
+    expect(projectCells[2]?.querySelector('[aria-label="Ana Duarte"]')).not.toBeNull()
+  })
+
+  describe('who is in it: the members pill in the bar, as on Ship’s initiative page (Katerina, 23 November)', () => {
+    /** You in it already: your own member change on the initiative, held before the page opens. */
+    const joined = (d: string) =>
+      held.push(sign(buildMembershipChange(ME, 1_700_000_200_000, { file: `30840:${MIKY}:${d}`, folder: HQ, person: ME, member: true }) as UnsignedEvent))
+
+    it('shows who its place lists, by count, in the bar', async () => {
+      const d = topic('Widgets', [])
+      joined(d)
+      show(d)
+      await nameInBar('Widgets')
+      // Its maker and you: the listing Explore counts by.
+      expect(await screen.findByRole('button', { name: '2 members' })).toBeTruthy()
+    })
+
+    it('Join in its Members signs your own member change, as Explore’s Join does, and says so', async () => {
+      const d = topic('Widgets', [])
+      show(d)
+      fireEvent.click(await screen.findByRole('button', { name: '1 member' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Join' }))
+      await waitFor(() => expect(sent).toHaveLength(1))
+      expect(sent[0]!.kind).toBe(1851)
+      expect(sent[0]!.tags).toEqual(expect.arrayContaining([['a', `30840:${MIKY}:${d}`], ['h', HQ], ['field', `member:${ME}`], ['value', 'true']]))
+      expect(await screen.findByText('You joined Widgets. Notifications: Important.')).toBeTruthy()
+      // Read again: you are counted (the pill sits behind the still-open dialog, which hides the page from assistive tech).
+      expect(await screen.findByRole('button', { name: '2 members', hidden: true })).toBeTruthy()
+    })
+
+    it('Leave in its Members signs your leave, as Ship’s does, and you are no longer counted', async () => {
+      const d = topic('Widgets', [])
+      joined(d)
+      show(d)
+      fireEvent.click(await screen.findByRole('button', { name: '2 members' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Leave' }))
+      await waitFor(() => expect(sent.length).toBeGreaterThan(0))
+      expect(sent.every((event) => event.kind === 1851 && event.tags.some(([name, value]) => name === 'a' && value === `30840:${MIKY}:${d}`))).toBe(true)
+      expect(sent.some((event) => event.tags.some(([name, value]) => name === 'field' && value === `member:${ME}`) && event.tags.some(([name, value]) => name === 'value' && value === 'false'))).toBe(true)
+      expect(await screen.findByRole('button', { name: '1 member', hidden: true })).toBeTruthy()
+    })
+
+    it('an archived initiative’s Members offers no Join', async () => {
+      const d = topic('Widgets', [])
+      const root = held.find((e) => e.kind === 30840 && e.tags.some((t) => t[0] === 'd' && t[1] === d))!
+      held.push(sign({ kind: 1851, pubkey: MIKY, created_at: 1_700_000_300, tags: [['a', `30840:${MIKY}:${d}`], ['e', root.id], ['field', 'archived'], ['value', 'true'], ['h', HQ]], content: '' }))
+      show(d)
+      fireEvent.click(await screen.findByRole('button', { name: '1 member' }))
+      await screen.findByText('Author')
+      expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
+    })
   })
 
   /* SHI-64: a move leaves the topic's `h` in the team it left, and the team it went to lists it by its id. */
@@ -317,8 +459,72 @@ describe("a topic's page in Leaf", () => {
         </ToastProvider>
       </TooltipProvider>,
     )
-    expect(await screen.findByRole('heading', { name: 'Moved widgets' })).toBeTruthy()
+    // The name sits in the page's bar (direction A), not as a heading.
+    await nameInBar('Moved widgets')
     expect(screen.getByText('Steer')).toBeTruthy()
     expect(screen.queryByText('Estiva HQ')).toBeNull()
+  })
+})
+
+describe('the same page as Ship’s and Peek’s (review of 23 November)', () => {
+  it('opens the initiative in Peek from the bar: Open, after its team (A4; Katerina, 18 November, D5)', async () => {
+    const d = topic('Widgets', [])
+    show(d)
+    await nameInBar('Widgets')
+    const open = await screen.findByRole('link', { name: 'Open in Peek' })
+    expect(open.getAttribute('href')).toBe(`https://peek.estiva.app/topic/widgets-${d}`)
+    expect(open.getAttribute('target')).toBe('_blank')
+    expect(open.textContent).toBe('Open')
+    // In the bar, after the team chip, not in the page under it.
+    expect(open.closest('[data-topic-page]')).toBeNull()
+    expect(screen.getByText('Estiva HQ').compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('calls Leaf’s own files Documents, as Ship does (B1)', async () => {
+    const plan = file(30842, 'Launch plan')
+    outside = { [plan.address!]: plan }
+    show(topic('Widgets', [plan]))
+    await screen.findByRole('link', { name: /Launch plan/ })
+    expect(linksUnder('Documents')).toEqual(['Launch plan'])
+    expect(screen.queryByText('Pages')).toBeNull()
+  })
+
+  it('says Peek’s line when it lists nothing (B2)', async () => {
+    show(topic('Widgets', []))
+    expect(await screen.findByText('None yet. An initiative can be only a conversation.')).toBeTruthy()
+  })
+
+  it('says who archived it, when and why, in the kit’s notice, not a grey word (C1)', async () => {
+    const { TopicPageView } = await import('./TopicPage')
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPageView
+            state={{ address: `30840:${MIKY}:launch`, title: 'Launch', folder: HQ, archived: true, archive: { by: MIKY, at: 1_700_000_000, resolution: 'Shipped in March.' }, space: false, files: { live: [], archived: [], looks: new Map() } }}
+            directory={{ [MIKY]: { displayName: 'Ana Duarte' } }}
+            comments={{ open: false, onOpenChange: () => {} }}
+            onRetry={() => {}}
+          />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    expect(screen.getByText(/^Archived by Ana Duarte · /)).toBeTruthy()
+    expect(screen.getByText('Shipped in March.')).toBeTruthy()
+    // Peek brings an initiative back, not Leaf.
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
+  })
+
+  it('draws a page that did not load with the initiative’s ◎ and no team chip before its name is known (B2)', async () => {
+    const { TopicPageView } = await import('./TopicPage')
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPageView state="failed" team="Launch team" comments={{ open: false, onOpenChange: () => {} }} onRetry={() => {}} />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    expect(screen.getByText('This initiative didn’t load.')).toBeTruthy()
+    expect(screen.queryByText('Launch team')).toBeNull()
+    expect(screen.getByText('This initiative didn’t load.').closest('[data-topic-page]')!.querySelector('svg.tabler-icon-target')).not.toBeNull()
   })
 })
