@@ -201,7 +201,7 @@ async function listInOrder(pubkey: string, topic: { address: string; folder: str
   const pointer = { kind: Number(kind), pubkey: author!, d: d.join(':') }
   const field = listsField(file)
   const prev = (await prevsAfterSwitch(relayQuery, pointer, [field]).catch(() => undefined))?.[field]
-  if (!prev) return { ok: false, reason: 'The topic could not be read. Try again.' }
+  if (!prev) return { ok: false, reason: 'The initiative could not be read. Try again.' }
   const plan = listed ? planListInTopic : planRemoveFromTopic
   const result = await writeChange({
     field,
@@ -213,7 +213,7 @@ async function listInOrder(pubkey: string, topic: { address: string; folder: str
     query: relayQuery,
     current: async (asked) => (await openFile(relayQuery, pointer, { text: false }))?.fields[asked]?.event,
   }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
-  return result.ok ? { ok: true } : { ok: false, reason: 'refused' in result ? result.refused : 'The topic changed. Try again.' }
+  return result.ok ? { ok: true } : { ok: false, reason: 'refused' in result ? result.refused : 'The initiative changed. Try again.' }
 }
 
 /** Put a file on a topic's list, or take it off: one `lists:<d>` entry on the topic, signed by the reader. */
