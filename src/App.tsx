@@ -5,7 +5,6 @@ import {
   ErrorBoundary,
   IdentityMenu,
   NavItem,
-  NavTree,
   Sidebar,
   ToastProvider,
   TooltipProvider,
@@ -13,7 +12,7 @@ import {
   type Identity,
 } from '@estiva-app/ui'
 import { CrashOnPurpose, ScreenSteps } from '@/lib/errorReports'
-import { IconFilePlus, IconHome } from '@tabler/icons-react'
+import { IconHome } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { beginSignOut, heldToken, whoAmI } from './auth/estivaId'
 import { useReopenHeld } from './auth/heldTyping'
@@ -21,6 +20,8 @@ import { APP_TITLE, ID_CONFIG, RELAY_URL } from './config'
 import { heldUnder, NewDocumentDialog, type NewDocumentUnder } from './folders/NewDocumentDialog'
 import { naddrOf } from './fileAddress'
 import { fileKey, findArchivedAt, findDocument, findFile, findFileAt, groupsOf, isDocument, titleOf } from './folders/tree'
+import { useTeamsYouAreIn } from './folders/teamsYouAreIn'
+import { TeamsTree } from './folders/TeamsTree'
 import { useWorkspace } from './folders/useWorkspace'
 import { createDocument, listDocument, takesNewDocuments } from './folders/workspace'
 import { isRowOnly } from './relay/rowOnly'
@@ -118,6 +119,8 @@ function Frame() {
     () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
     [folders, children, opened, setOpen, setFolderOpen],
   )
+  // Which teams you are in: those first, the rest folded under Other teams (Katerina, 23 November, as Peek's Teams column).
+  const yours = useTeamsYouAreIn(useMemo(() => folders?.map(({ folder }) => folder.id), [folders]))
   const reading = workspace.folders === null || workspace.folders.some((f) => f.contents === null && !f.failed)
   // Your topics, read once the Folders are, so the page's text is not behind them (LTN-2).
   const inTree = (address: string) => findFileAt(folders, children, address)?.file ?? null
@@ -299,15 +302,14 @@ function Frame() {
                 fileNow={(file) => (file.address && inTree(file.address)) || file}
               />
             )}
-            <NavTree
-              title="Teams"
-              titleActions={
-                takers.length ? [{ icon: <IconFilePlus size={16} stroke={1.5} />, tooltip: 'New document', onClick: () => setMaking(true) }] : undefined
-              }
-              groups={workspace.failed ? [] : groups}
+            <TeamsTree
+              groups={groups}
+              {...(yours ? { yours } : {})}
+              failed={!!workspace.failed}
               selected={current}
               selectedParent={under ? fileKey(under.file) : undefined}
-              emptyMessage={workspace.failed ? 'Your teams could not be read. Reload to try again.' : 'No teams yet.'}
+              openTeam={open?.folder.folder.id}
+              {...(takers.length ? { onNewDocument: () => setMaking(true) } : {})}
             />
           </Sidebar>
         }
