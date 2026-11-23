@@ -68,7 +68,9 @@ describe('the sidebar’s Topics', () => {
   it('shows placeholder rows while your topics are read, and says so when they could not be', () => {
     const { container, unmount } = draw('loading')
     expect(screen.getByText('Initiatives')).toBeTruthy()
-    expect(within(container).queryAllByRole('link')).toEqual([])
+    // Five, as many as it shows, then the way in, as Ship's (review of 23 November, C12).
+    expect(container.querySelector('.animate-skeleton-in')?.children).toHaveLength(5)
+    expect(within(container).queryAllByRole('link').map((link) => link.textContent)).toEqual(['Explore initiatives'])
     unmount()
     draw('failed')
     expect(screen.getByText('Couldn’t load your initiatives. Reload to try again.')).toBeTruthy()

@@ -39,10 +39,12 @@ export function TopicsSection({
   // "Explore initiatives along with the icon we used in Peek"). Until then it had none (Miky, 6 Nov).
   const explore = <NavItem href={EXPLORE_TOPICS_PATH} label="Explore initiatives" icon={<IconListSearch size={16} stroke={1.5} aria-hidden />} active={exploreNow} />
   useReportFailure(topics === 'failed' ? 'not-loaded' : undefined)
+  // As many placeholder rows as it shows, then the way in, as Ship's sidebar while it reads (review of 23 November, C12).
   if (topics === 'loading')
     return (
       <NavTree title="Initiatives">
-        <SkeletonList rows={3} />
+        <SkeletonList rows={TOPICS_SHOWN} />
+        {explore}
       </NavTree>
     )
   // In Peek's words for its Initiatives column (Katerina, 18 November: "everywhere a topic is mentioned, we should use Initiatives").
