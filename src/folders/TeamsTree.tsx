@@ -1,5 +1,5 @@
 import { IconFilePlus } from '@tabler/icons-react'
-import { CollapsibleSection, NavTree, type NavTreeGroup } from '@estiva-app/ui'
+import { NavTree, NavTreeSection, type NavTreeGroup } from '@estiva-app/ui'
 import { forgetOpenedFromInitiative } from '../topics/openedFrom'
 
 /**
@@ -39,10 +39,11 @@ export function TeamsTree({ groups, yours, failed, selected, selectedParent, ope
         emptyMessage={failed ? 'Your teams could not be read. Reload to try again.' : others.length > 0 ? '' : 'No teams yet.'}
       />
       {!failed && others.length > 0 && (
-        // Peek's fold, word and look: the kit's fold as a row among rows, with its count (Katerina, 16 November).
-        <CollapsibleSection look="row" title="Other teams" count={others.length} defaultOpen={otherOpen} {...(otherOpen && openTeam ? { openFor: openTeam } : {})} contentClassName="gap-0.5">
+        // Peek's word, in the look of the team names around it: Leaf's teams are the tree's headings, not rows as Peek's are
+        // (Katerina, 23 November: yes).
+        <NavTreeSection id="other-teams" title="Other teams" count={others.length} defaultOpen={otherOpen} {...(otherOpen && openTeam ? { openFor: openTeam } : {})}>
           <NavTree groups={others} selected={selected} selectedParent={selectedParent} onSelect={spend} />
-        </CollapsibleSection>
+        </NavTreeSection>
       )}
     </>
   )
