@@ -1,4 +1,4 @@
-import { isArchived, type FileLook, type ForeignObject, type ReadTopic, type TopicsRead } from '@estiva-app/interop'
+import { isArchived, type Archive, type FileLook, type ForeignObject, type ReadTopic, type TopicsRead } from '@estiva-app/interop'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { heldTopics, listedInTab, loadTopics } from '../document/fileTopics'
 import { dOf } from '../route'
@@ -13,6 +13,8 @@ export interface TopicPageData {
   /** Its team's id, from its root (§6.2). */
   folder: string
   archived: boolean
+  /** Who archived it, when, and what they wrote: the kit's notice says it, as Ship's initiative page (review, C1). */
+  archive?: Archive
   /** A team marks it one of its spaces: Peek's, so the page sends it on (D4). */
   space: boolean
   /** "Conversation in Peek": the topic's path on Peek's host. */
@@ -128,6 +130,7 @@ export function useTopicPage(
       ...(summary ? { summary } : {}),
       folder: topic.folder,
       archived: isArchived(topic.object),
+      ...(topic.object.archived ? { archive: topic.object.archived } : {}),
       space: topic.space,
       ...(peekUrl ? { peekUrl } : {}),
       // Drawn from what was read for this topic and this tab's adds; a newer ask is still on its way until then.

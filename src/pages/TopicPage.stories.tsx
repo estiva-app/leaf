@@ -124,7 +124,9 @@ export const AllRows: Story = {
 }
 
 /** The initiative itself is archived. */
-export const Archived: Story = { args: { state: initiative({ archived: true }), members: members(true) } }
+export const Archived: Story = {
+  args: { state: initiative({ archived: true, archive: { by: MIKY, at: NOW - 26 * 3600, resolution: 'Launched on the 3rd. What is left moved to Spring launch.' } }), members: members(true) },
+}
 
 /** It lists nothing Leaf opens. */
 export const Empty: Story = { args: { state: initiative({ files: { live: [], archived: [], looks: new Map() } }) } }

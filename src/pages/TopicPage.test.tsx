@@ -494,6 +494,26 @@ describe('the same page as Ship’s and Peek’s (review of 23 November)', () =>
     expect(await screen.findByText('None yet. An initiative can be only a conversation.')).toBeTruthy()
   })
 
+  it('says who archived it, when and why, in the kit’s notice, not a grey word (C1)', async () => {
+    const { TopicPageView } = await import('./TopicPage')
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPageView
+            state={{ address: `30840:${MIKY}:launch`, title: 'Launch', folder: HQ, archived: true, archive: { by: MIKY, at: 1_700_000_000, resolution: 'Shipped in March.' }, space: false, files: { live: [], archived: [], looks: new Map() } }}
+            directory={{ [MIKY]: { displayName: 'Ana Duarte' } }}
+            comments={{ open: false, onOpenChange: () => {} }}
+            onRetry={() => {}}
+          />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    expect(screen.getByText(/^Archived by Ana Duarte · /)).toBeTruthy()
+    expect(screen.getByText('Shipped in March.')).toBeTruthy()
+    // Peek brings an initiative back, not Leaf.
+    expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
+  })
+
   it('draws a page that did not load with the initiative’s ◎ and no team chip before its name is known (B2)', async () => {
     const { TopicPageView } = await import('./TopicPage')
     render(

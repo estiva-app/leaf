@@ -1,6 +1,7 @@
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { archivedLine } from '@estiva-app/conversation'
 import {
+  ArchivedNotice,
   Avatar,
   Button,
   CollapsibleSection,
@@ -44,6 +45,7 @@ import { useTopicPlace } from '../topics/topicMembers'
 import { useHeldTopics } from '../topics/topicReads'
 import { useReportFailure } from '@/lib/failureReports'
 import { listedInOf } from './DocumentMenu'
+import { archivedNoticeOf } from './archive'
 
 /**
  * A topic's page in Leaf (LTN-3), as the approved story draws it (estiva-ui `concept/cross-app-navigation`,
@@ -265,8 +267,14 @@ export function TopicPageView({
               <SkeletonList rows={6} />
             ) : (
               <>
-                {/* Its name is said once, in the bar (Katerina, 18 November, brainstorm 1.A); an archived one still says so first. */}
-                {page.archived && <span className="text-caption text-text-muted">Archived</span>}
+                {/* Its name is said once, in the bar (Katerina, 18 November, brainstorm 1.A); an archived one says so first, in the
+                    kit's notice every archived file shows (who, when, why), as Ship's initiative page (review of 23 November, C1).
+                    No Unarchive: Peek brings an initiative back. Archived with its team, it names the team. */}
+                {page.archive && (
+                  <ArchivedNotice
+                    {...archivedNoticeOf(page.archive, (pubkey) => directory[pubkey]?.displayName, page.archive.with ? { noun: 'team', ...(team ? { title: team } : {}) } : undefined)}
+                  />
+                )}
                 {page.summary && <p className="text-body-2 text-text-secondary">{page.summary}</p>}
                 {files === 'loading' || files === undefined ? (
                   <SkeletonList rows={3} />
