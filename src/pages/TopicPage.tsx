@@ -231,8 +231,9 @@ export function TopicPageView({
             <PageHeader
               title={page?.title ?? ''}
               leading={<KindIcon kind="topic" />}
-              // Its team, the one chip after its name, as on Peek's initiative page (Katerina, 18 November, D4).
-              after={team && !sendsOn ? <TeamChip name={team} /> : undefined}
+              // Its team, the one chip after its name, as on Peek's initiative page (Katerina, 18 November, D4); none before
+              // the name is known, so a page that did not load shows no chip with nothing before it (review, B2).
+              after={page && team && !sendsOn ? <TeamChip name={team} /> : undefined}
               members={page && !sendsOn ? members : undefined}
               actions={page && !sendsOn ? toggle : undefined}
             />
@@ -242,7 +243,8 @@ export function TopicPageView({
           {/* The page's whole width, 24px in and 20px down, as Ship's and Peek's lists (Katerina, 23 November: "not compact, fix Leaf"). */}
           <div data-topic-page className="flex w-full flex-col gap-4">
             {state === 'failed' ? (
-              <EmptyState scope="page" message="This initiative didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
+              // The initiative's ◎, as Ship's page that did not load (review, B2).
+              <EmptyState icon={<KindIcon kind="topic" />} scope="page" message="This initiative didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
             ) : !page || sendsOn ? (
               <SkeletonList rows={6} />
             ) : (
@@ -321,7 +323,8 @@ function Listed({ files, directory }: { files: { live: ForeignObject[]; archived
   return (
     // 24px between its parts, as Peek's team page and Explore (Katerina, 16 November).
     <div className="flex flex-col gap-6">
-      {files.live.length === 0 && <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />}
+      {/* Peek's own line when it lists nothing (peek `TopicFiles`); Ship's says the same (review of 23 November, B2). */}
+      {files.live.length === 0 && <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'None yet. An initiative can be only a conversation.'} />}
       {KINDS.map(({ kind, title }) => {
         const ofKind = files.live.filter((file) => kindOf(file) === kind)
         if (ofKind.length === 0) return null

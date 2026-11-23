@@ -294,7 +294,7 @@ describe("a topic's page in Leaf", () => {
     show(d)
     await waitFor(() => expect(replace).toHaveBeenCalledWith(`https://peek.estiva.app/topic/bugs-${d}`))
     // Nothing of it is drawn on its way to Peek: no list, nor the line an empty one says.
-    expect(screen.queryByText('No pages, projects or issues.')).toBeNull()
+    expect(screen.queryByText('None yet. An initiative can be only a conversation.')).toBeNull()
   })
 
   it("says the topic didn't load, not that it can't be opened, when the read for a topic made since fails", async () => {
@@ -475,5 +475,24 @@ describe('the same page as Ship’s and Peek’s (review of 23 November)', () =>
     await screen.findByRole('link', { name: /Launch plan/ })
     expect(linksUnder('Documents')).toEqual(['Launch plan'])
     expect(screen.queryByText('Pages')).toBeNull()
+  })
+
+  it('says Peek’s line when it lists nothing (B2)', async () => {
+    show(topic('Widgets', []))
+    expect(await screen.findByText('None yet. An initiative can be only a conversation.')).toBeTruthy()
+  })
+
+  it('draws a page that did not load with the initiative’s ◎ and no team chip before its name is known (B2)', async () => {
+    const { TopicPageView } = await import('./TopicPage')
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPageView state="failed" team="Launch team" comments={{ open: false, onOpenChange: () => {} }} onRetry={() => {}} />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    expect(screen.getByText('This initiative didn’t load.')).toBeTruthy()
+    expect(screen.queryByText('Launch team')).toBeNull()
+    expect(screen.getByText('This initiative didn’t load.').closest('[data-topic-page]')!.querySelector('svg.tabler-icon-target')).not.toBeNull()
   })
 })
