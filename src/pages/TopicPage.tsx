@@ -273,9 +273,13 @@ const noDraft = () => {}
 
 type Kind = 'page' | 'project' | 'issue' | 'file'
 
-/** The kinds in the page's order, each under its own heading. "Files": another app's, its type on its line. */
+/**
+ * The kinds in the page's order, each under its own heading. Leaf's own files are "Documents", as Ship's initiative page
+ * and Leaf's own New document say them (review of 23 November, B1); a document's pages stay pages. "Files": another
+ * app's, its type on its line.
+ */
 const KINDS: { kind: Kind; title: string }[] = [
-  { kind: 'page', title: 'Pages' },
+  { kind: 'page', title: 'Documents' },
   { kind: 'project', title: 'Projects' },
   { kind: 'issue', title: 'Issues' },
   { kind: 'file', title: 'Files' },

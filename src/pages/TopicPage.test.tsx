@@ -349,7 +349,7 @@ describe("an initiative's page, in Peek's team-page look (brainstorm 1.A)", () =
     // Listed: Zebra, the issue, Apple. The pages keep Zebra before Apple; the issue is under Issues.
     show(topic('Widgets', [zebra, issue, apple]))
     await screen.findByRole('link', { name: /Apple notes/ })
-    expect(linksUnder('Pages')).toEqual(['Zebra notes', 'Apple notes'])
+    expect(linksUnder('Documents')).toEqual(['Zebra notes', 'Apple notes'])
     expect(linksUnder('Issues')).toEqual(['Write the brief'])
   })
 })
@@ -463,5 +463,17 @@ describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \
     await nameInBar('Moved widgets')
     expect(screen.getByText('Steer')).toBeTruthy()
     expect(screen.queryByText('Estiva HQ')).toBeNull()
+  })
+})
+
+describe('the same page as Ship’s and Peek’s (review of 23 November)', () => {
+
+  it('calls Leaf’s own files Documents, as Ship does (B1)', async () => {
+    const plan = file(30842, 'Launch plan')
+    outside = { [plan.address!]: plan }
+    show(topic('Widgets', [plan]))
+    await screen.findByRole('link', { name: /Launch plan/ })
+    expect(linksUnder('Documents')).toEqual(['Launch plan'])
+    expect(screen.queryByText('Pages')).toBeNull()
   })
 })
