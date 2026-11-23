@@ -86,13 +86,13 @@ export const InItsTeam: Story = {
 /** While a file is read, before Leaf knows what it is: a page in its shape, with the comments column beside it (ONE-5, step 5). */
 export const Loading: Story = { args: { file: null, loading: true } }
 
-/** The side-panel button pressed: the Overview in the comments' place, empty for now. Press it again and the comments come back. */
+/** The side-panel button pressed: the Overview in the comments' place, holding the page's Initiatives, as Ship's. Press it again and the comments come back. */
 export const OverviewOpen: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await canvas.findByText('Edited 2 hours ago by Ravi Mehta')
     await userEvent.click(canvas.getByRole('button', { name: 'Show side panel' }))
-    await expect(await canvas.findByText('Nothing here yet.')).toBeVisible()
+    await expect(await canvas.findByText('Initiatives')).toBeVisible()
     // As after a mouse press: the pressed fill, without the focus ring the scripted press leaves.
     canvas.getByRole('button', { name: 'Hide side panel' }).blur()
   },

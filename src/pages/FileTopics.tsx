@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { IconPlus, IconX } from '@tabler/icons-react'
+import { IconHash, IconPlus, IconX } from '@tabler/icons-react'
 import { Button, Chip, CommandPalette, EmptyState, CommandPaletteSearch, IconButton, KindIcon, SkeletonBar, useToast, type CommandPaletteRow } from '@estiva-app/ui'
 import { heldTopics, heldYourTopics, readTopicChoices, topicChoicesNow, type TopicChoices, type TopicOfFile } from '../document/fileTopics'
 import { isKnownSpace, topicPath } from '../topics/topicLinks'
@@ -12,8 +12,21 @@ const topicsNow = () => heldTopics.snapshot()
 const subscribeYours = (listener: () => void) => heldYourTopics.subscribe(listener)
 const yoursNow = () => heldYourTopics.snapshot()
 
+/**
+ * Its own icon before each place's name: # for a team's topic, ◎ for an initiative, as Peek draws them (Katerina,
+ * 23 November: a file's # topics stay in its Initiatives, each with #). # is drawn as Peek draws it; the kit has no kind for it.
+ */
+function placeIcon(address: string, size: 14 | 16) {
+  return isKnownSpace(address) ? <IconHash size={size} stroke={1.5} aria-hidden /> : <KindIcon kind="topic" size={size} tone="inherit" />
+}
+
 /** A topic's address kind: a topic lists no other topic (Miky, TOP-3 kickoff), so a topic has no Topics row. */
 const TOPIC = '30840:'
+
+/** Whether a file can be in an initiative: it has an address, and it is not a topic itself. */
+export function takesInitiatives(address: string | undefined): address is string {
+  return !!address && !address.startsWith(TOPIC)
+}
 
 /**
  * A file's Topics row on its page in Leaf (TOP-6): the topics whose list names it, Add to topic and Remove, read and
@@ -21,7 +34,7 @@ const TOPIC = '30840:'
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-keeps-its-own-list-of-files.md
  */
 export function FileTopicsOf({ address }: { address: string | undefined }) {
-  const file = address && !address.startsWith(TOPIC) ? address.split(':')[2] : undefined
+  const file = takesInitiatives(address) ? address.split(':')[2] : undefined
   const { state, busy, setListed } = useFileTopics(file)
   const { showToast } = useToast()
   if (!file) return null
@@ -70,23 +83,30 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
   // Drawn again when the topics read lands, so a space's chip goes to Peek once the read knows it is one.
   useSyncExternalStore(subscribeTopics, topicsNow)
   useSyncExternalStore(subscribeYours, yoursNow)
-  return (
-    <div className="flex min-h-6 flex-wrap items-center gap-2 text-body-2" data-file-topics>
-      <span className="text-text-secondary">Initiatives</span>
-      {topics === undefined ? (
+  if (topics === undefined) {
+    return (
+      // Held back 150ms, as Ship's, so a fast read never flashes it.
+      <div className="animate-skeleton-in" aria-hidden>
         <SkeletonBar className="h-3.5 w-24" />
-      ) : topics === 'failed' ? (
-        <span className="text-text-muted">Initiatives could not be read.</span>
+      </div>
+    )
+  }
+  if (topics === 'failed') return <span className="text-caption text-text-muted">Initiatives could not be read.</span>
+  // In the Overview under its heading, as Ship's Overview draws a file's Initiatives (Katerina, 23 November, Q9): the chips,
+  // then Add to initiative under them.
+  return (
+    <div className="flex flex-col items-start gap-2" data-file-topics>
+      {topics.length === 0 ? (
+        <EmptyState scope="section" message="None" />
       ) : (
-        <>
-          {topics.length === 0 && <EmptyState scope="section" message="None" />}
+        <div className="flex flex-wrap items-center gap-1">
           {topics.map((topic) => (
             <span key={topic.address} className="flex items-center" data-file-topic={topic.address}>
-              {isKnownSpace(topic.address) ? (
-                <Chip label={topic.title} leadingIcon={<KindIcon kind="topic" size={14} tone="inherit" />} href={topic.openUrl} onClick={(event) => openBeside(event, topic.openUrl)} />
-              ) : (
-                <Chip label={topic.title} leadingIcon={<KindIcon kind="topic" size={14} tone="inherit" />} href={topicPath(topic.address, topic.title)} />
-              )}
+              <Chip
+                label={topic.archived ? `${topic.title} (archived)` : topic.title}
+                leadingIcon={placeIcon(topic.address, 14)}
+                {...(isKnownSpace(topic.address) ? { href: topic.openUrl, onClick: (event: { preventDefault: () => void }) => openBeside(event, topic.openUrl) } : { href: topicPath(topic.address, topic.title) })}
+              />
               {!topic.archived && !busy.has(topic.address) && (
                 <IconButton variant="muted" aria-label={`Remove from ${topic.title}`} tooltip={`Remove from ${topic.title}`} onClick={() => onChange(topic, false)}>
                   <IconX size={12} stroke={1.5} />
@@ -94,22 +114,22 @@ export function FileTopics({ topics, busy, onChange, readChoices, choicesNow }: 
               )}
             </span>
           ))}
-          <Button size="small" variant="muted" leadingIcon={<IconPlus size={14} stroke={1.5} />} onClick={() => setPicking(true)}>
-            Add to initiative
-          </Button>
-          {picking && (
-            <AddToTopic
-              listed={topics.map((topic) => topic.address)}
-              readChoices={readChoices}
-              choicesNow={choicesNow}
-              onPick={(topic) => {
-                setPicking(false)
-                onChange(topic, true)
-              }}
-              onClose={() => setPicking(false)}
-            />
-          )}
-        </>
+        </div>
+      )}
+      <Button size="small" variant="muted" leadingIcon={<IconPlus size={14} stroke={1.5} />} onClick={() => setPicking(true)}>
+        Add to initiative
+      </Button>
+      {picking && (
+        <AddToTopic
+          listed={topics.map((topic) => topic.address)}
+          readChoices={readChoices}
+          choicesNow={choicesNow}
+          onPick={(topic) => {
+            setPicking(false)
+            onChange(topic, true)
+          }}
+          onClose={() => setPicking(false)}
+        />
       )}
     </div>
   )
@@ -162,7 +182,7 @@ function AddToTopic({ listed, readChoices, choicesNow, onPick, onClose }: {
   const rows = (topics: readonly TopicOfFile[]): CommandPaletteRow[] =>
     topics
       .filter((topic) => !listed.includes(topic.address) && startsWords(topic.title, words))
-      .map((topic) => ({ id: topic.address, label: topic.title, icon: <KindIcon kind="topic" tone="inherit" />, onSelect: () => onPick(topic) }))
+      .map((topic) => ({ id: topic.address, label: topic.title, icon: placeIcon(topic.address, 16), onSelect: () => onPick(topic) }))
   const groups = typeof choices === 'object' ? [{ label: 'Your initiatives', rows: rows(choices.yours) }, { label: 'Other initiatives', rows: rows(choices.others) }].filter((group) => group.rows.length > 0) : []
   return (
     <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Add to initiative">

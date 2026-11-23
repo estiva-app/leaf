@@ -57,7 +57,15 @@ function show(address = ADDRESS) {
   )
 }
 
-const row = () => screen.findByText('Initiatives').then((label) => label.closest('[data-file-topics]') as HTMLElement)
+/** The file's Initiatives, once drawn: its heading is the Overview's, so the part is found by its mark. */
+const row = async () => {
+  let found: HTMLElement | null = null
+  await waitFor(() => {
+    found = document.querySelector<HTMLElement>('[data-file-topics]')
+    expect(found).toBeTruthy()
+  })
+  return found as unknown as HTMLElement
+}
 const tag = (e: UnsignedEvent, name: string) => e.tags.filter((t) => t[0] === name).map((t) => t[1])
 
 beforeEach(() => {
@@ -88,6 +96,19 @@ describe('a file’s Topics row', () => {
     expect(screen.getByRole('link', { name: /Widgets/ }).getAttribute('href')).toBe('https://peek.estiva.app/topic/widgets')
   })
 
+  // Katerina, 23 November: a team's # topic stays in a file's Initiatives, with its own #, not an initiative's ◎.
+  it("gives a team's # topic its #, and an initiative its ◎", async () => {
+    const { heldTopics } = await import('../document/fileTopics')
+    onTestFinished(() => heldTopics.clear())
+    reads.topics = [WIDGETS, DESIGN]
+    const space = { address: WIDGETS.address, space: true, yours: true, folder: 'hq-folder', listed: [], object: {} }
+    await heldTopics.reload(async () => ({ me: ME, topics: [space], membership: {} }) as unknown as TopicsRead)
+    show()
+    const iconOf = async (name: RegExp) => (await screen.findByRole('link', { name })).querySelector('svg')?.getAttribute('class') ?? ''
+    expect(await iconOf(/Widgets/)).toContain('tabler-icon-hash')
+    expect(await iconOf(/Design/)).toContain('tabler-icon-target')
+  })
+
   it('says None when no topic lists the file, and still offers Add to initiative', async () => {
     reads.topics = []
     show()
@@ -106,7 +127,8 @@ describe('a file’s Topics row', () => {
     reads.topics = [OLD, WIDGETS]
     show()
     await screen.findByRole('link', { name: /Widgets/ })
-    expect(screen.getByText('Old launch')).toBeTruthy()
+    // As Ship's chip says it: the word after its name.
+    expect(screen.getByText('Old launch (archived)')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Remove from Old launch' })).toBeNull()
   })
 

@@ -1,7 +1,7 @@
 import { BODY_SLOT, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider } from '@estiva-app/ui'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Editor } from '@tiptap/react'
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -556,14 +556,17 @@ describe('the Overview, in the comments’ place (ONE-5, step 5)', () => {
     return !!empty && !empty.closest('[hidden]')
   }
 
-  it('the header’s side-panel button shows it, empty for now, pressed while it is shown; hiding it brings the comments back', async () => {
+  it('the header’s side-panel button shows it, holding the page’s Initiatives, pressed while it is shown; hiding it brings the comments back', async () => {
     await reload(doc())
     await waitFor(() => expect(shownComments()).toBe(true))
     expect(screen.queryByText('Overview')).toBeNull()
+    // Not under the title any more (Katerina, 23 November): in the Overview, as Ship's.
+    expect(document.querySelector('[data-file-topics]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show side panel' }))
-    // The kit's empty line for one part of a page, under the panel's name.
     expect(screen.getByText('Overview')).toBeTruthy()
-    expect(screen.getByText('Nothing here yet.')).toBeTruthy()
+    const overview = document.querySelector<HTMLElement>('[data-overview-column]')!
+    expect(within(overview).getByText('Initiatives')).toBeTruthy()
+    expect(screen.queryByText('Nothing here yet.')).toBeNull()
     expect(shownComments()).toBe(false)
     expect(screen.getByRole('button', { name: 'Hide side panel' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('button', { name: 'Show comments' })).toBeTruthy()

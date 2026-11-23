@@ -6,8 +6,8 @@ import { heldTopics, type TopicOfFile } from '../document/fileTopics'
 import { FileTopics } from './FileTopics'
 
 /*
-  A file's Initiatives line, as a document's page draws it under its title: each initiative that lists the file as a
-  chip with ✕, then Add to initiative. Invented names only.
+  A file's Initiatives, as a document's Overview draws them under its heading: each initiative that lists the file as a
+  chip with ✕, then Add to initiative under them. Invented names only.
 */
 
 const AUTHOR = 'b'.repeat(64)
@@ -36,9 +36,8 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {}
 
 /**
- * The file is also listed on a team's # topic (a Peek space, `isKnownSpace`): its chip opens Peek beside Leaf. Drawn as
- * the app draws it today, with the initiative's ◎ (review of 23 November, A1 and E4; what it should wear waits on
- * Katerina's answer to question 1).
+ * The file is also listed on a team's # topic (a Peek space, `isKnownSpace`): its chip opens Peek beside Leaf, and wears
+ * # beside the initiative's ◎ (Katerina, 23 November: the # topics stay in a file's Initiatives, each with #).
  */
 export const OnATopic: Story = {
   args: { topics: [LAUNCH, GENERAL] },

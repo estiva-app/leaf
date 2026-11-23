@@ -24,7 +24,7 @@ import { OverviewPanel } from './OverviewPanel'
 import { PageSkeleton } from './PageSkeleton'
 import { useSideColumn, type Shown } from './sideColumn'
 import { DocumentMenu, listedInOf, useSetArchived } from './DocumentMenu'
-import { FileTopicsOf } from './FileTopics'
+import { FileTopicsOf, takesInitiatives } from './FileTopics'
 import { archivedNoticeOf, deletedNoticeOf } from './archive'
 import { navigate } from '../route'
 import { Members } from './Members'
@@ -386,9 +386,6 @@ function DocumentView({
             {deletedNotice || notice}
             {/* A page whose file above has no address to open keeps its line, so the way back is still named. */}
             {own && archive?.with && !aboveHref && fieldLine && <FieldLine tone="helper">{fieldLine}</FieldLine>}
-            {/* Under the owning app's row, as the Per app prototype draws a file's Topics after its Status (TOP-6); an archived
-                page's notice stays first, straight under its title. */}
-            <FileTopicsOf address={file.address} />
             <LiveDocument
               readOnly={locked}
               value={body?.value ?? ''}
@@ -429,7 +426,8 @@ function DocumentView({
         <>
           <Divider orientation="vertical" />
           <div className="flex flex-none flex-col" data-overview-column>
-            <OverviewPanel />
+            {/* Its Initiatives in it, as Ship's Overview holds a project's (Katerina, 23 November); none for a file no initiative can list. */}
+            <OverviewPanel topics={takesInitiatives(file.address) ? <FileTopicsOf address={file.address} /> : undefined} />
           </div>
         </>
       )}
