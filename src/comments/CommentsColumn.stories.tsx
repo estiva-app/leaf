@@ -21,7 +21,7 @@ import { useThreads } from './useThreads'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const ADDRESS = `30842:${MIKY}:launch-plan`
-const TEXT = descriptionTextToBlockDocument('# Launch plan\n\nWe ship the beta to the first ten teams on Monday.\n\nKaterina owns the press notes and the launch post.')
+const TEXT = descriptionTextToBlockDocument('# Launch plan\n\nWe ship the beta to the first ten teams on Monday.\n\nRavi owns the press notes and the launch post.')
 const [, FIRST, SECOND] = blockIds(TEXT)
 const NOW = Date.now()
 

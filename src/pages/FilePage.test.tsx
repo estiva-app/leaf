@@ -302,7 +302,7 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
   it('a Ship issue archived itself: the kit’s card says who and when, with no Unarchive, no Open and no line over its text; the comment line is the one every app shows', async () => {
     profiles = PROFILES
     render(<ToastProvider><FilePage file={shipIssue({ archived: true })} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived by Miky · /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived by Ana Duarte · /)).toBeTruthy()
     expect(screen.getByText('Archived. Unarchive it to comment.')).toBeTruthy()
     expect(screen.queryByText('Archived. Unarchive it in Ship to edit.')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
@@ -317,7 +317,7 @@ describe('an archived file is read-only, its comments included (PEEKM-8)', () =>
     manifests = [manifestEvent({ kind: 31990, pubkey: 'c'.repeat(64), created_at: 1_700_000_000, tags: [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']], content: JSON.stringify(shipManifest) })]
     roots = [{ kind: 30850, pubkey: ME, created_at: 1_700_000_000, tags: [['d', 'ltx'], ['name', 'Leaf edits any file\'s text'], ['h', FOLDER]], content: '', id: 'f'.repeat(64), sig: '' } as SignedEvent]
     render(<ToastProvider><FilePage file={archived(shipIssue(), shipProject().address)} loading={false} /></ToastProvider>)
-    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by Miky · /)).toBeTruthy()
+    expect(await screen.findByText(/^Archived with its project “Leaf edits any file's text” by Ana Duarte · /)).toBeTruthy()
     expect(screen.getByText('Unarchive the project to comment.')).toBeTruthy()
     expect(screen.queryByText('Unarchive the project in Estiva Ship to edit.')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open project' })).toBeNull()

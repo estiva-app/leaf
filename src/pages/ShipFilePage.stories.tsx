@@ -25,11 +25,11 @@ import { KATERINA, MIKY, NEWER_DESCRIPTION, PROFILES, shipIssue, shipProject, th
 type Hear = (folder: string, event?: SignedEvent) => void
 
 /**
- * Katerina saves the file's text a moment after you start typing in it, as the relay hands the open page someone
- * else's save: on the tab's live connection, to what watches the file's Folder, and a read of the file then finds her
+ * Ravi saves the file's text a moment after you start typing in it, as the relay hands the open page someone
+ * else's save: on the tab's live connection, to what watches the file's Folder, and a read of the file then finds their
  * text. Only typing in this story's own canvas starts it. Gives back the connection and the read when it is left.
  */
-function katerinaSavesWhileYouWrite(file: ForeignObject, canvas: HTMLElement): () => void {
+function raviSavesWhileYouWrite(file: ForeignObject, canvas: HTMLElement): () => void {
   const watching = new Set<Hear>()
   let saved = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -105,7 +105,7 @@ type Story = StoryObj<typeof meta>
 export const Issue: Story = {
   args: { file: shipIssue() },
   play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByText('Edited 2 hours ago by Katerina')).toBeVisible()
+    await expect(await within(canvasElement).findByText('Edited 2 hours ago by Ravi Mehta')).toBeVisible()
   },
 }
 
@@ -143,12 +143,12 @@ export const SaveRefused: Story = {
 /** Someone else saved while you were writing: theirs waits behind yours, with "Load it". */
 export const NewerSave: Story = {
   args: { file: shipIssue() },
-  beforeEach: ({ args, canvasElement }) => (args.file ? katerinaSavesWhileYouWrite(args.file, canvasElement) : undefined),
+  beforeEach: ({ args, canvasElement }) => (args.file ? raviSavesWhileYouWrite(args.file, canvasElement) : undefined),
   play: async ({ canvasElement }) => {
     const text = await within(canvasElement).findByRole('textbox', { name: 'Document' })
     await userEvent.click(text)
     await userEvent.keyboard(' One more line.')
-    await expect(await within(canvasElement).findByText('Katerina saved a newer version.', { exact: false }, { timeout: 4000 })).toBeVisible()
+    await expect(await within(canvasElement).findByText('Ravi Mehta saved a newer version.', { exact: false }, { timeout: 4000 })).toBeVisible()
   },
 }
 

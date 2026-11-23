@@ -33,7 +33,7 @@ function leafPage(): ForeignObject {
       title: { value: 'Launch plan' },
       subtitle: { value: 'What ships on launch day, who does what, and the order we do it in.' },
       [BODY_SLOT]: {
-        value: serializeBlockDocument(descriptionTextToBlockDocument('We ship the beta to the first ten teams on Monday.\n\nKaterina owns the press notes and the launch post.')),
+        value: serializeBlockDocument(descriptionTextToBlockDocument('We ship the beta to the first ten teams on Monday.\n\nRavi owns the press notes and the launch post.')),
         format: 'blocks',
       },
     },
@@ -71,7 +71,7 @@ type Story = StoryObj<typeof meta>
 /** A Leaf page: its name in the bar, when it was last edited and by whom, who is in it, and the page's own buttons; its comments beside it. */
 export const LeafPage: Story = {
   play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByText('Edited 2 hours ago by Katerina')).toBeVisible()
+    await expect(await within(canvasElement).findByText('Edited 2 hours ago by Ravi Mehta')).toBeVisible()
   },
 }
 
@@ -90,7 +90,7 @@ export const Loading: Story = { args: { file: null, loading: true } }
 export const OverviewOpen: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByText('Edited 2 hours ago by Katerina')
+    await canvas.findByText('Edited 2 hours ago by Ravi Mehta')
     await userEvent.click(canvas.getByRole('button', { name: 'Show side panel' }))
     await expect(await canvas.findByText('Nothing here yet.')).toBeVisible()
     // As after a mouse press: the pressed fill, without the focus ring the scripted press leaves.
@@ -108,6 +108,6 @@ export const NarrowWindow: Story = {
     const canvas = within(canvasElement)
     await canvas.findByRole('button', { name: '2 members' })
     await userEvent.click(canvas.getByRole('button', { name: /^More/ }))
-    await expect(await within(canvasElement.ownerDocument.body).findByRole('menuitem', { name: 'Edited 2 hours ago by Katerina' })).toBeVisible()
+    await expect(await within(canvasElement.ownerDocument.body).findByRole('menuitem', { name: 'Edited 2 hours ago by Ravi Mehta' })).toBeVisible()
   },
 }
