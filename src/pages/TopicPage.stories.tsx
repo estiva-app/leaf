@@ -3,19 +3,23 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { fn } from 'storybook/test'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { TopicPageView } from './TopicPage'
-import { shipIssue, shipProject, MIKY } from './fixtures/shipFiles'
+import { shipIssue, shipProject, KATERINA, MIKY } from './fixtures/shipFiles'
 import type { TopicPageData } from '../topics/useTopicPage'
 
 /*
   An initiative's page in Leaf, handed what it shows (TopicPageView): a page of Leaf's, a Ship project and a Ship issue,
-  in the initiative's order, each drawn with the look it has there (a page and a project as cards, an issue as a row, as
-  their manifests say), and one archived. Invented names only.
+  in the initiative's order, every one a row in Ship's four columns (Katerina, 23 November: "make it like row and not
+  card"), and one archived. Invented names only: the directory names the fixtures' two keys.
 */
 
 const FOLDER = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b'
+const NOW = Math.floor(Date.now() / 1000)
 
-/** A Leaf page, as the tree reads one. */
-const page = (d: string, title: string): ForeignObject =>
+/** Who the rows name: a face and a first name in When ("Ana, 1h ago"). */
+const DIRECTORY = { [MIKY]: { displayName: 'Ana Duarte' }, [KATERINA]: { displayName: 'Ravi Mehta' } }
+
+/** A Leaf page, as the tree reads one: who changed it last and when. */
+const page = (d: string, title: string, hoursAgo = 2): ForeignObject =>
   ({
     kind: 30842,
     ref: `30842:${MIKY}:${d}`,
@@ -26,7 +30,26 @@ const page = (d: string, title: string): ForeignObject =>
     meta: [],
     actions: [],
     slots: { title: { value: title }, subtitle: { value: 'Who does what on launch day, and in which order.' } },
+    changedAt: NOW - hoursAgo * 3600,
+    changedBy: MIKY,
   }) as unknown as ForeignObject
+
+/** Another app's file, which Leaf opens as a page because its app shares its text. */
+const tide = {
+  kind: 30911,
+  ref: `30911:${MIKY}:spring`,
+  address: `30911:${MIKY}:spring`,
+  folder: FOLDER,
+  naddr: 'naddr1spring',
+  eventId: 'spring',
+  appName: 'Tide table',
+  noun: 'reading',
+  meta: [],
+  actions: [],
+  slots: { title: { value: 'Spring tides' } },
+  changedAt: NOW - 3 * 86400,
+  changedBy: KATERINA,
+} as unknown as ForeignObject
 
 const issue = shipIssue()
 const project = shipProject()
@@ -47,7 +70,7 @@ const meta = {
   title: 'Pages/Initiative page',
   component: TopicPageView,
   parameters: { layout: 'fullscreen' },
-  args: { state: initiative(), team: 'Launch team', comments: { open: false, onOpenChange: fn() }, onRetry: fn() },
+  args: { state: initiative(), team: 'Launch team', directory: DIRECTORY, comments: { open: false, onOpenChange: fn() }, onRetry: fn() },
   // The app's own providers (App.tsx): a card's actions say what they did in a toast.
   decorators: [
     (Story) => (
@@ -63,14 +86,18 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A page, a project and an issue it lists, and one archived. */
+/** A page, a project and an issue it lists, each a row with its facts in Ship's four columns, and one archived. */
 export const Default: Story = {}
 
-/** Every file it lists drawn as a row: the look chosen on the initiative (TOPI-5). */
+/**
+ * Every kind it can list, each a row, the initiative's order kept inside each kind: two pages, a project, an issue, and
+ * another app's file, which says its type under its name. A look someone gave a file on the initiative (a card) is a hint
+ * Leaf leaves to its rows, as Ship does.
+ */
 export const AllRows: Story = {
   args: {
     state: initiative({
-      files: { live: [page('launch-plan', 'Launch plan'), page('press-notes', 'Press notes'), project, issue], archived: [], looks: new Map([[`30842:${MIKY}:launch-plan`, 'row'], [`30842:${MIKY}:press-notes`, 'row'], [project.address!, 'row']]) },
+      files: { live: [page('launch-plan', 'Launch plan'), tide, project, page('press-notes', 'Press notes', 26), issue], archived: [], looks: new Map([[project.address!, 'card']]) },
     }),
   },
 }

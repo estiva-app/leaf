@@ -1,18 +1,37 @@
-import type { FileLook, FolderSummary, ForeignObject } from '@estiva-app/interop'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { archivedLine } from '@estiva-app/conversation'
-import { CollapsibleSection, Divider, EmptyState, KindIcon, ListTable, ListTableRow, NoAccessNotice, PageHeader, Panel, SectionHeader, SkeletonList, Toolbar, ToolbarButton, thingKindOf, type ListTableColumn } from '@estiva-app/ui'
+import {
+  Avatar,
+  CollapsibleSection,
+  Divider,
+  EmptyState,
+  KindIcon,
+  LinkPickers,
+  ListTable,
+  ListTableRow,
+  NoAccessNotice,
+  PageHeader,
+  Panel,
+  ProgressRing,
+  SectionHeader,
+  SkeletonList,
+  Toolbar,
+  ToolbarButton,
+  linkedFrom,
+  thingKindOf,
+  type LinkedProfile,
+  type ListTableColumn,
+} from '@estiva-app/ui'
 import { IconMessage, IconMessageOff } from '@tabler/icons-react'
-import { Fragment, useEffect, type ReactNode, type RefObject } from 'react'
+import { useEffect, type ReactNode, type RefObject } from 'react'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import { useSideColumn } from './sideColumn'
 import { isDocument, rowOf, typeOf } from '../folders/tree'
 import { replace } from '../route'
 import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
-import { lookOf, useTopicPage, type TopicPageState } from '../topics/useTopicPage'
-import { CommentCard } from '../comments/CommentCard'
-import { CardActsProvider } from '../document/linked'
-import { ReferencesProvider } from '../document/references'
+import { useTopicPage, type TopicPageState } from '../topics/useTopicPage'
+import { useDirectory } from '../comments/people'
 import { TeamChip } from './TeamChip'
 
 /**
@@ -38,6 +57,8 @@ export function TopicPage({
   treeRead: boolean
 }) {
   const { state, retry } = useTopicPage(d, inTree, treeRead)
+  // The workspace's people, for each row's face and "who changed it last" (as the cards read them).
+  const directory = useDirectory()
   // Shown or hidden as a document's comments are, remembered on this browser across both (LED-3).
   const { comments } = useSideColumn()
   const page = typeof state === 'object' ? state : null
@@ -72,7 +93,7 @@ export function TopicPage({
       topic
     />
   )
-  return <TopicPageView state={state} sendsOn={sendsOn} team={team} comments={comments} conversation={conversation} onRetry={retry} />
+  return <TopicPageView state={state} sendsOn={sendsOn} team={team} directory={directory} comments={comments} conversation={conversation} onRetry={retry} />
 }
 
 /**
@@ -83,6 +104,7 @@ export function TopicPageView({
   state,
   sendsOn = false,
   team,
+  directory = {},
   comments,
   conversation,
   onRetry,
@@ -92,6 +114,8 @@ export function TopicPageView({
   sendsOn?: boolean
   /** Its team's name, as the tree read the teams. */
   team?: string
+  /** The workspace's people by key: a row's face and who changed it last. */
+  directory?: Record<string, LinkedProfile>
   /** The column beside the page, open or not, remembered with a document's (LED-3). */
   comments: { open: boolean; onOpenChange: (open: boolean) => void }
   /** The initiative's conversation, drawn in that column. */
@@ -156,7 +180,7 @@ export function TopicPageView({
                 ) : files === 'failed' ? (
                   <EmptyState scope="section" message="What it lists didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
                 ) : (
-                  <Listed files={files} readOnly={!!page.archived} />
+                  <Listed files={files} directory={directory} />
                 )}
               </>
             )}
@@ -174,7 +198,7 @@ const noDraft = () => {}
 
 type Kind = 'page' | 'project' | 'issue' | 'file'
 
-/** The kinds in the page's order, each under its own heading. "Files": another app's, its type in a column. */
+/** The kinds in the page's order, each under its own heading. "Files": another app's, its type on its line. */
 const KINDS: { kind: Kind; title: string }[] = [
   { kind: 'page', title: 'Pages' },
   { kind: 'project', title: 'Projects' },
@@ -189,89 +213,101 @@ function kindOf(file: ForeignObject): Kind {
   return thing === 'project' || thing === 'issue' ? thing : 'file'
 }
 
-/** A file whose heading does not name its kind says its type in this column; under Pages, Projects or Issues, nothing. */
-const TYPE_COLUMN: ListTableColumn[] = [{ label: 'Type', width: 'medium' }]
+/**
+ * The four columns Ship's initiative page lists every file in (Ship's `WorkList`), the same widths, so a row's facts sit
+ * where Ship's do (Katerina, 23 November: "unify initiative page in Leaf and make it like Ship"): its status, its person
+ * (a project's lead, an issue's assignee, a page's last editor), its progress, and who changed it last and when. Who and
+ * when give way first in a narrow window.
+ */
+const COLUMNS: ListTableColumn[] = [
+  { label: 'Status', width: 'medium' },
+  { label: 'People', width: 'large', keep: 'low' },
+  { label: 'Progress', width: 'small' },
+  { label: 'When', width: 'medium', keep: 'low' },
+]
+
+/** Nothing: a fact this file does not have. The kit's row draws its dash only for an absent cell ("not read yet"). */
+const NONE = ''
 
 /**
- * **What an initiative lists, by kind** (Katerina, 18 November, brainstorm 1.A: the page in Peek's team-page look): one
- * part per kind, under the kit's heading with its count, the initiative's own order kept inside each, as the record
- * asks of an app that groups its files ("an app that groups them, by kind say, keeps it inside each group"). A file
- * shown as a row is the kit's list row; one shown as a card stays its card (TOPI-5: Leaf draws the look the initiative
- * chose, or its own app's), in its place among the rows. The archived ones are one fold at the end, open when nothing
- * else is listed.
+ * **What an initiative lists, by kind** (Katerina, 18 November, brainstorm 1.A; 23 November: "make it like row and not
+ * card"): one part per kind, under the kit's heading with its count, every file a row in Ship's four columns, the
+ * initiative's own order kept inside each, as the record asks of an app that groups its files ("an app that groups
+ * them, by kind say, keeps it inside each group"). The look a file was given on the initiative is a hint the record
+ * leaves to the reading app ("the reading app decides how it looks"): Leaf lists them as its own rows, as Ship does.
+ * The archived ones are one fold at the end, open when nothing else is listed, each kind its own list inside it.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md
  */
-function Listed({ files, readOnly }: { files: { live: ForeignObject[]; archived: ForeignObject[]; looks: ReadonlyMap<string, FileLook> }; readOnly: boolean }) {
-  // The cards take the files as the page read them, not one read each; on an archived initiative their status and owner only show.
-  const all = [...files.live, ...files.archived]
-  const read = Object.fromEntries(all.flatMap((file) => (file.naddr ? [[`nostr:${file.naddr}`, file]] : [])))
+function Listed({ files, directory }: { files: { live: ForeignObject[]; archived: ForeignObject[] }; directory: Record<string, LinkedProfile> }) {
   return (
-    <ReferencesProvider value={read}>
-      <CardActsProvider value={!readOnly}>
-        {/* 24px between its parts, as Peek's team page and Explore (Katerina, 16 November). */}
-        <div className="flex flex-col gap-6">
-          {files.live.length === 0 && <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />}
+    // 24px between its parts, as Peek's team page and Explore (Katerina, 16 November).
+    <div className="flex flex-col gap-6">
+      {files.live.length === 0 && <EmptyState scope="section" message={files.archived.length > 0 ? 'Everything it lists is archived.' : 'No pages, projects or issues.'} />}
+      {KINDS.map(({ kind, title }) => {
+        const ofKind = files.live.filter((file) => kindOf(file) === kind)
+        if (ofKind.length === 0) return null
+        return (
+          <section key={kind} className="flex flex-col gap-1" data-topic-kind={kind}>
+            <SectionHeader title={title} count={ofKind.length} hover="none" />
+            <FileRows files={ofKind} label={title} directory={directory} />
+          </section>
+        )
+      })}
+      {files.archived.length > 0 && (
+        <CollapsibleSection title="Archived" count={files.archived.length} defaultOpen={files.live.length === 0} contentClassName="flex flex-col gap-2">
           {KINDS.map(({ kind, title }) => {
-            const ofKind = files.live.filter((file) => kindOf(file) === kind)
-            if (ofKind.length === 0) return null
-            return (
-              <section key={kind} className="flex flex-col gap-1" data-topic-kind={kind}>
-                <SectionHeader title={title} count={ofKind.length} hover="none" />
-                <Runs files={ofKind} looks={files.looks} label={title} typed={kind === 'file'} />
-              </section>
-            )
+            const ofKind = files.archived.filter((file) => kindOf(file) === kind)
+            return ofKind.length > 0 ? <FileRows key={kind} files={ofKind} label={`Archived ${title.toLowerCase()}`} directory={directory} /> : null
           })}
-          {files.archived.length > 0 && (
-            <CollapsibleSection title="Archived" count={files.archived.length} defaultOpen={files.live.length === 0}>
-              <Runs files={files.archived} looks={files.looks} label="Archived" typed />
-            </CollapsibleSection>
-          )}
-        </div>
-      </CardActsProvider>
-    </ReferencesProvider>
+        </CollapsibleSection>
+      )}
+    </div>
   )
 }
 
+/** The first word of a name: "Ana" of "Ana Duarte", as Ship's rows say who changed a file ("Ana, 1h ago"). */
+const firstName = (name: string) => name.split(' ')[0] ?? name
+
 /**
- * Files in their order, as rows and cards: each stretch of rows one kit list, each card its own, so a card keeps its
- * place between the rows. `typed` adds the Type column where the heading does not say the kind (Files, Archived).
+ * Files of one kind in their order, each a row of the kit's list in Ship's four columns. Each row's facts are the ones
+ * the kit's card reads from the file (`linkedFrom`): its status in words, its owner's face (a lead, an assignee; a page,
+ * who changed it last), its progress as the kit's small ring, and When as Ship words it, who changed it last and when
+ * ("Ana, 1h ago"). Another app's file says its type on the line under its name, which nothing else here says; an issue
+ * says what it is in, as Ship's rows name an issue's project.
  */
-function Runs({ files, looks, label, typed }: { files: readonly ForeignObject[]; looks: ReadonlyMap<string, FileLook>; label: string; typed: boolean }) {
-  const runs: ({ card: ForeignObject } | { rows: ForeignObject[] })[] = []
-  for (const file of files) {
-    // Its card where the initiative shows it as one, or its own app draws it so (TOPI-5).
-    if (file.naddr && lookOf(file, file.address ? looks.get(file.address) : undefined) === 'card') runs.push({ card: file })
-    else {
-      const last = runs[runs.length - 1]
-      if (last && 'rows' in last) last.rows.push(file)
-      else runs.push({ rows: [file] })
-    }
-  }
+function FileRows({ files, label, directory }: { files: readonly ForeignObject[]; label: string; directory: Record<string, LinkedProfile> }) {
   return (
-    <>
-      {runs.map((run, index) => {
-        if ('card' in run) {
-          const row = rowOf(run.card)
-          // The kit's card, as under a comment. It opens where the row would. A written link counts only as a whole https
-          // URL on an app's host, so the row's path goes in absolute; else the card would open at the address a manifest
-          // gives, which anyone may publish.
-          return (
-            <div key={row.id} data-topic-file={run.card.address} className="py-1.5">
-              <CommentCard uri={`nostr:${run.card.naddr}`} opensAt={new URL(row.href, window.location.origin).href} />
-            </div>
-          )
-        }
+    <ListTable aria-label={label} columns={COLUMNS} headings={false}>
+      {files.map((file) => {
+        const row = rowOf(file)
+        const kind = kindOf(file)
+        const linked = linkedFrom(file, { hrefOf: () => row.href, previewText: () => '', directory })
+        const status = linked.status?.options.find((option) => option.value === linked.status?.value)
+        const owner = linked.owner?.options.find((option) => option.value === linked.owner?.value)
+        // Who changed it last, as the directory names them; a key the directory does not name says only when.
+        const editor = file.changedBy ? directory[file.changedBy] : undefined
+        const editorName = editor?.displayName
+        // A page's person is who changed it last; a project's or an issue's, its owner.
+        const person = owner ? { name: owner.label, picture: owner.picture, bot: owner.bot } : kind === 'page' && editorName ? { name: editorName, picture: editor?.picture, bot: editor?.bot } : undefined
+        const when = linked.updated ? (editorName ? `${firstName(editorName)}, ${linked.updated}` : linked.updated) : NONE
+        const line = kind === 'file' ? typeOf(file) : kind === 'issue' ? linked.subtitle : undefined
         return (
-          <Fragment key={`rows-${index}`}>
-            <ListTable aria-label={label} columns={typed ? TYPE_COLUMN : []} headings={false}>
-              {run.rows.map((file) => {
-                const row = rowOf(file)
-                return <ListTableRow key={row.id} data-topic-file={file.address} href={row.href} label={row.label} icon={<KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />} cells={typed ? [typeOf(file)] : []} />
-              })}
-            </ListTable>
-          </Fragment>
+          <ListTableRow
+            key={row.id}
+            data-topic-file={file.address}
+            href={row.href}
+            label={row.label}
+            {...(line ? { description: line } : {})}
+            icon={<KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />}
+            cells={[
+              status && linked.status ? <LinkPickers status={linked.status} readOnly /> : NONE,
+              person ? <Avatar name={person.name} src={person.picture} bot={person.bot} size={16} label={person.name} /> : NONE,
+              linked.done ? <ProgressRing done={linked.done.done} total={linked.done.total} /> : NONE,
+              when,
+            ]}
+          />
         )
       })}
-    </>
+    </ListTable>
   )
 }

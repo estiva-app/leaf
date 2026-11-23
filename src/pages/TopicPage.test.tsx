@@ -165,7 +165,7 @@ describe("a topic's page in Leaf", () => {
     expect(screen.getByRole('link', { name: /Write the brief/ }).closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('issue')
   })
 
-  it('draws a file as its card where the topic shows it as one, and the rest as rows (TOPI-5)', async () => {
+  it('draws every file as a row, even one the initiative shows as a card (Katerina, 23 November: "row and not card")', async () => {
     const plan = file(30842, 'Launch plan')
     const issue = file(30851, 'Write the brief')
     outside = { [plan.address!]: plan, [issue.address!]: issue }
@@ -182,24 +182,25 @@ describe("a topic's page in Leaf", () => {
       }),
     )
     show(d)
-    // The issue stays a row, a link named by its title; the page is its card, whose title opens it in Leaf, under Pages.
+    // Both are rows, each a link inside Leaf under its own heading; nothing is drawn as a card, whose link is a whole URL.
     const brief = await screen.findByRole('link', { name: /^Write the brief/ })
-    const card = await screen.findByRole('link', { name: 'Launch plan' })
-    expect(card.getAttribute('href')).toBe(`https://leaf.estiva.app/document/launch-plan-${planD}`)
-    expect(document.querySelector(`[data-topic-page] a[href="/document/launch-plan-${planD}"]`)).toBeNull()
-    expect(card.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('page')
+    const plan2 = await screen.findByRole('link', { name: /^Launch plan/ })
+    expect(plan2.getAttribute('href')).toBe(`/document/launch-plan-${planD}`)
+    expect(plan2.closest('[data-topic-file]')).not.toBeNull()
+    expect(document.querySelector('[data-topic-page] a[href^="https://"]')).toBeNull()
+    expect(plan2.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('page')
     expect(brief.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('issue')
   })
 
-  it('draws a file nobody set as its own app says: a page as a card, an issue as a row (TOPI-5)', async () => {
+  it('draws a page its own app shows as a card as a row here too, as Ship lists them', async () => {
     const plan = file(30842, 'Launch plan', false, 'card')
     const issue = file(30851, 'Write the brief')
     outside = { [plan.address!]: plan, [issue.address!]: issue }
     show(topic('Widgets', [plan, issue]))
     const planD = plan.address!.split(':')[2]!
     expect((await screen.findByRole('link', { name: /^Write the brief/ })).getAttribute('href')).toBe(`/f/${issue.naddr}`)
-    expect((await screen.findByRole('link', { name: 'Launch plan' })).getAttribute('href')).toBe(`https://leaf.estiva.app/document/launch-plan-${planD}`)
-    expect(document.querySelector(`[data-topic-page] a[href="/document/launch-plan-${planD}"]`)).toBeNull()
+    expect((await screen.findByRole('link', { name: /^Launch plan/ })).getAttribute('href')).toBe(`/document/launch-plan-${planD}`)
+    expect(document.querySelector('[data-topic-page] a[href^="https://"]')).toBeNull()
   })
 
   it('takes a listed file the tree already read from the tree, with the title the tree has now', async () => {
@@ -323,5 +324,37 @@ describe("an initiative's team, in its page's bar (D4)", () => {
     // Not in the page's body, where the grey line under the title was.
     expect(named[0].closest('[data-topic-page]')).toBeNull()
     expect(named[0].closest('a, span, div')?.parentElement?.querySelector('svg.tabler-icon-users')).toBeTruthy()
+  })
+})
+
+describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \"make it like Ship\")", () => {
+  it('puts each fact in its column: status in words, the owner’s face, and who changed it last and when', async () => {
+    const { TopicPageView } = await import('./TopicPage')
+    const { shipIssue, shipProject, MIKY: LEAD, KATERINA: ASSIGNEE } = await import('./fixtures/shipFiles')
+    const issue = shipIssue()
+    const project = shipProject()
+    const directory = { [LEAD]: { displayName: 'Ana Duarte' }, [ASSIGNEE]: { displayName: 'Ravi Mehta' } }
+    render(
+      <TooltipProvider>
+        <ToastProvider>
+          <TopicPageView
+            state={{ address: `30840:${LEAD}:launch`, title: 'Launch', folder: HQ, archived: false, space: false, files: { live: [project, issue], archived: [], looks: new Map() } }}
+            directory={directory}
+            comments={{ open: false, onOpenChange: () => {} }}
+            onRetry={() => {}}
+          />
+        </ToastProvider>
+      </TooltipProvider>,
+    )
+    // A row's cells: its name, then Status, People, Progress and When, as Ship's.
+    const cells = (title: RegExp) => [...screen.getByRole('link', { name: title }).closest('[data-topic-file]')!.querySelectorAll('[role="cell"]')]
+    const issueCells = cells(/^Sidebar should not show Peek topics/)
+    expect(issueCells[1]?.textContent).toContain('In Progress')
+    expect(issueCells[2]?.querySelector('[aria-label="Ravi Mehta"]')).not.toBeNull()
+    const editor = issue.changedBy ? directory[issue.changedBy]?.displayName.split(' ')[0] : undefined
+    expect(issueCells[4]?.textContent).toMatch(new RegExp(`^${editor}, `))
+    const projectCells = cells(/^Leaf edits any file's text/)
+    expect(projectCells[1]?.textContent).toContain('Planned')
+    expect(projectCells[2]?.querySelector('[aria-label="Ana Duarte"]')).not.toBeNull()
   })
 })
