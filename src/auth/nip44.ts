@@ -7,6 +7,7 @@
  */
 import { ID_CONFIG } from '../config'
 import { heldToken, renew } from './estivaId'
+import { heardFailure } from '../lib/heardFailures'
 
 /** `/nip44/*` answered, and not with 200. */
 export class Nip44Error extends Error {
@@ -18,6 +19,17 @@ export class Nip44Error extends Error {
 }
 
 async function call(op: 'encrypt' | 'decrypt', body: object): Promise<unknown> {
+  try {
+    return await asked(op, body)
+  } catch (error) {
+    // Why, for the report of the failure a screen draws next (34396209): Estiva ID's own limit, or a sign-in that
+    // ended. Its 400 is a blob that will never decrypt, which is no failure, and is not said.
+    if (!(error instanceof Nip44Error) || error.status !== 400) heardFailure(error, 'id')
+    throw error
+  }
+}
+
+async function asked(op: 'encrypt' | 'decrypt', body: object): Promise<unknown> {
   const ask = (accessToken: string) =>
     fetch(`${ID_CONFIG!.base.replace(/\/+$/, '')}/nip44/${op}`, {
       method: 'POST',

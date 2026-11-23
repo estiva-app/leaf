@@ -48,12 +48,12 @@ export const WAIT_OUT_MS = 180_000
  */
 async function waitingOut<T>(read: (relay: Relay) => Promise<T>): Promise<T> {
   const asked = bridge()
-  if (!asked) throw new Error('Not signed in to a relay.')
+  if (!asked) throw notSignedIn()
   const giveUpAt = Date.now() + WAIT_OUT_MS
   for (;;) {
     // Whoever is signed in now: a read that waited through a sign-out is not asked again as the person before.
     const b = bridge()
-    if (!b || b.pubkey !== asked.pubkey) throw new Error('Not signed in to a relay.')
+    if (!b || b.pubkey !== asked.pubkey) throw notSignedIn()
     try {
       return await read(b.relay)
     } catch (error) {
@@ -69,6 +69,12 @@ async function waitingOut<T>(read: (relay: Relay) => Promise<T>): Promise<T> {
       await new Promise((resolve) => setTimeout(resolve, clearAt - now))
     }
   }
+}
+/** A read with nobody signed in, said for the report as any failed read is (34396209). */
+function notSignedIn(): Error {
+  const error = new Error('Not signed in to a relay.')
+  heardFailure(error)
+  return error
 }
 /**
  * When this tab asks again: one moment for every read refused in the same minute, so they go out together and as few

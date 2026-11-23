@@ -12,10 +12,13 @@ import { createHeardFailures, failureReasonOf } from '@estiva-app/platform'
 
 export const heardFailures = createHeardFailures()
 
-/** A read or a signature that failed, by what it threw: its name, status and the relay's prefix. Never throws. */
-export function heardFailure(error: unknown): void {
+/**
+ * A read or a signature that failed, by what it threw: its name, status and the relay's prefix. `from` is `'id'` for a
+ * request Leaf makes to Estiva ID itself (a decrypt), whose 429 is Estiva ID's own limit. Never throws.
+ */
+export function heardFailure(error: unknown, from: 'relay' | 'id' = 'relay'): void {
   try {
-    heardFailures.heard(failureReasonOf(error))
+    heardFailures.heard(failureReasonOf(error, undefined, from))
   } catch {
     /* what the request said stands */
   }

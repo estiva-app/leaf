@@ -31,6 +31,7 @@ vi.mock('@estiva-app/identity', async (original) => {
   }
 })
 
+import { nip44 } from '@/auth/nip44'
 import { query } from '@/relay/bridge'
 import { startErrorReports } from './errorReports'
 import { reportFailureNow } from './failureReports'
@@ -51,6 +52,8 @@ beforeEach(() => {
         reports.push(JSON.parse(String(init?.body)))
         return new Response(null, { status: 202 })
       }
+      // Estiva ID's own per-minute limit, which the mute list's decrypt reaches.
+      if (String(url).endsWith('/nip44/decrypt')) return new Response('Too many encryption requests', { status: 429 })
       // The relay, with this person's minute spent for longer than a read waits.
       return new Response(JSON.stringify({ error: 'rate-limited: quota exceeded; retry in 400s' }), { status: 429 })
     }),
@@ -74,7 +77,7 @@ async function readFailsAndIsDrawn() {
   await vi.advanceTimersByTimeAsync(0)
 }
 
-it('a page that did not load is reported with why: the relay said wait, then the sign-in had ended, never in their words', async () => {
+it('a page that did not load is reported with why: the relay said wait, the sign-in had ended, Estiva ID said wait, never in their words', async () => {
   startErrorReports()
 
   await readFailsAndIsDrawn()
@@ -82,12 +85,18 @@ it('a page that did not load is reported with why: the relay said wait, then the
   signIn.ended = true
   await readFailsAndIsDrawn()
 
+  await expect(nip44.decrypt('ciphertext')).rejects.toThrow()
+  reportFailureNow('not-loaded')
+  await vi.advanceTimersByTimeAsync(0)
+
   expect(reports.map((r) => [r.how, r.named, r.reason])).toEqual([
     ['failure', 'not-loaded', 'told-to-wait'],
     ['failure', 'not-loaded', 'signed-out'],
+    ['failure', 'not-loaded', 'id-told-to-wait'],
   ])
   for (const body of bodies) {
     expect(body).not.toContain('quota')
     expect(body).not.toContain('expired')
+    expect(body).not.toContain('encryption')
   }
 })
