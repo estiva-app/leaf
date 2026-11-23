@@ -71,7 +71,9 @@ const meta = {
   title: 'Pages/Ship file in Leaf',
   component: FilePage,
   parameters: { layout: 'fullscreen' },
-  args: { loading: false },
+  // Its team, as the app hands every page the teams it read: the one chip after the name, then Open (Katerina,
+  // 18 November, D7). Without it no story reached the chip (review of 23 November, E3).
+  args: { loading: false, folders: [{ id: shipIssue().folder ?? '', name: 'Launch team', hasState: true }] },
   // The relay's answers, handed in: the file's comments, the names on them, and the page's own reads (who is in it
   // and its last edit, `fixtures/relay.ts`). A save is taken, as the relay takes one; Save Refused's is refused.
   beforeEach: ({ args }) => {
@@ -99,17 +101,19 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * A Ship issue: "Open" right after its name in the bar, and no ⋯, which is Ship's; its key above the title, Ship's row
- * under it (status, then assignee, the pickers its card has), its text in Leaf's editor, its comments beside it.
+ * A Ship issue: its team's chip, then "Open", right after its name in the bar, and no ⋯, which is Ship's; its key above
+ * the title, Ship's row under it (status, then assignee, the pickers its card has), its text in Leaf's editor, its
+ * comments beside it.
  */
 export const Issue: Story = {
   args: { file: shipIssue() },
   play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText('Launch team')).toBeVisible()
     await expect(await within(canvasElement).findByText('Edited 2 hours ago by Ravi Mehta')).toBeVisible()
   },
 }
 
-/** A Ship project: its key above the title, then status and lead, the pickers its card has; "Open" after the title in the bar. */
+/** A Ship project: its key above the title, then status and lead, the pickers its card has; its team's chip, then "Open", after the title in the bar. */
 export const Project: Story = { args: { file: shipProject() } }
 
 /**
