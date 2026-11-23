@@ -85,12 +85,20 @@ export function TopicsSection({
         }
         // A topic listing nothing Leaf opens has no rows under it, so no fold.
         if (topic.files.length === 0) return <NavItem key={topic.address} {...link} />
+        const rows = topic.files.map((file) => rowOf(fileNow(file)))
         return (
-          <NavItem key={topic.address} {...link} open={open.has(topic.address)} onOpenChange={(to) => fold(topic.address, to)}>
-            {topic.files.map((file) => {
-              const row = rowOf(fileNow(file))
-              return <NavItem key={row.id} href={row.href} label={row.label} icon={row.icon} hint={row.hint} active={row.id === current} />
-            })}
+          <NavItem
+            key={topic.address}
+            {...link}
+            open={open.has(topic.address)}
+            onOpenChange={(to) => fold(topic.address, to)}
+            // Opens each time its page or one of its files is opened, as a click would; folded by hand, it stays so until
+            // then: the kit's tree does it, as Ship's sidebar (Katerina, 30 October; review of 23 November, C11).
+            openFor={link.active ? topic.address : current && rows.some((row) => row.id === current) ? current : undefined}
+          >
+            {rows.map((row) => (
+              <NavItem key={row.id} href={row.href} label={row.label} icon={row.icon} hint={row.hint} active={row.id === current} />
+            ))}
           </NavItem>
         )
       })}

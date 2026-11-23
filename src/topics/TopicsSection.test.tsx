@@ -2,6 +2,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { rowOf } from '../folders/tree'
 import { TopicsSection } from './TopicsSection'
 import type { SidebarTopic } from './sidebarTopics'
 
@@ -75,6 +76,27 @@ describe('the sidebar’s Topics', () => {
     draw('failed')
     expect(screen.getByText('Couldn’t load your initiatives. Reload to try again.')).toBeTruthy()
     expect(rows()).toEqual(['Explore initiatives'])
+  })
+
+  it('opens the initiative holding the open file, and no other, as Ship’s sidebar does (review of 23 November, C11)', () => {
+    const plan = page('3518cd7b-5b85-49e8-ba94-4aacacad2163', 'Launch plan')
+    render(
+      <TooltipProvider>
+        <TopicsSection topics={[topicOf(1, [plan]), topicOf(2)]} current={rowOf(plan).id} fileNow={(f) => f} />
+      </TooltipProvider>,
+    )
+    expect(screen.getByRole('link', { name: /Launch plan/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.queryByRole('link', { name: /Page 2/ })).toBeNull()
+  })
+
+  it('opens the initiative whose own page is open, as Ship’s sidebar does (review of 23 November, C11)', () => {
+    render(
+      <TooltipProvider>
+        <TopicsSection topics={[topicOf(1), topicOf(2)]} topicNow="t2" fileNow={(f) => f} />
+      </TooltipProvider>,
+    )
+    expect(screen.getByRole('link', { name: /Page 2/ })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Page 1/ })).toBeNull()
   })
 
   it('says you are in no initiatives yet, with Explore initiatives as the way in, when you have none', () => {
