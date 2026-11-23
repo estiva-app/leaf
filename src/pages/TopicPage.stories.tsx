@@ -65,6 +65,8 @@ const initiative = (over: Partial<TopicPageData> = {}): TopicPageData => ({
   folder: FOLDER,
   archived: false,
   space: false,
+  // Where Open in the bar goes: the initiative on Peek's host.
+  peekUrl: 'https://peek.estiva.app/topic/launch-launch',
   files: { live: [page('launch-plan', 'Launch plan'), project, issue], archived: [archivedIssue], looks: new Map() },
   ...over,
 })

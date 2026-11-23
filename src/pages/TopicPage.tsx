@@ -2,6 +2,7 @@ import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { archivedLine } from '@estiva-app/conversation'
 import {
   Avatar,
+  Button,
   CollapsibleSection,
   Divider,
   EmptyState,
@@ -17,13 +18,14 @@ import {
   SkeletonList,
   Toolbar,
   ToolbarButton,
+  WithTooltip,
   linkedFrom,
   thingKindOf,
   useToast,
   type LinkedProfile,
   type ListTableColumn,
 } from '@estiva-app/ui'
-import { IconMessage, IconMessageOff } from '@tabler/icons-react'
+import { IconExternalLink, IconMessage, IconMessageOff } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode, type RefObject } from 'react'
 import { CommentsColumn } from '../comments/CommentsColumn'
 import { useSideColumn } from './sideColumn'
@@ -232,8 +234,22 @@ export function TopicPageView({
               title={page?.title ?? ''}
               leading={<KindIcon kind="topic" />}
               // Its team, the one chip after its name, as on Peek's initiative page (Katerina, 18 November, D4); none before
-              // the name is known, so a page that did not load shows no chip with nothing before it (review, B2).
-              after={page && team && !sendsOn ? <TeamChip name={team} /> : undefined}
+              // the name is known, so a page that did not load shows no chip with nothing before it (review, B2). Then Open
+              // into Peek, as Ship's initiative page has it and as Leaf opens another app's file (18 November, D5; review, A4).
+              after={
+                page && !sendsOn && (team || page.peekUrl) ? (
+                  <>
+                    {team && <TeamChip name={team} />}
+                    {page.peekUrl && (
+                      <WithTooltip label="Open in Peek">
+                        <Button href={page.peekUrl} external size="small" className="shrink-0" leadingIcon={<IconExternalLink size={14} stroke={1.5} />} aria-label="Open in Peek">
+                          Open
+                        </Button>
+                      </WithTooltip>
+                    )}
+                  </>
+                ) : undefined
+              }
               members={page && !sendsOn ? members : undefined}
               actions={page && !sendsOn ? toggle : undefined}
             />

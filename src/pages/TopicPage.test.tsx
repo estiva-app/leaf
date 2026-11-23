@@ -467,6 +467,18 @@ describe("an initiative's rows, in Ship's four columns (Katerina, 23 November: \
 })
 
 describe('the same page as Ship’s and Peek’s (review of 23 November)', () => {
+  it('opens the initiative in Peek from the bar: Open, after its team (A4; Katerina, 18 November, D5)', async () => {
+    const d = topic('Widgets', [])
+    show(d)
+    await nameInBar('Widgets')
+    const open = await screen.findByRole('link', { name: 'Open in Peek' })
+    expect(open.getAttribute('href')).toBe(`https://peek.estiva.app/topic/widgets-${d}`)
+    expect(open.getAttribute('target')).toBe('_blank')
+    expect(open.textContent).toBe('Open')
+    // In the bar, after the team chip, not in the page under it.
+    expect(open.closest('[data-topic-page]')).toBeNull()
+    expect(screen.getByText('Estiva HQ').compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 
   it('calls Leaf’s own files Documents, as Ship does (B1)', async () => {
     const plan = file(30842, 'Launch plan')
