@@ -390,7 +390,7 @@ const refusalWhy: Record<ReturnType<typeof readMoveRefusal>['why'], string | und
  * from anyone else cannot make a stateless Folder look stateful (Peek's
  * `relayStates`). One per Folder.
  */
-async function relayStates(filter: Record<string, unknown>): Promise<SignedEvent[]> {
+export async function relayStates(filter: Record<string, unknown>): Promise<SignedEvent[]> {
   const states = await query([filter])
   const ids = [...new Set(states.map(dOf).filter((id): id is string => !!id))]
   if (ids.length === 0) return []
