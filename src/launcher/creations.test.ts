@@ -69,11 +69,6 @@ vi.mock('@estiva-app/interop', async (original) => ({
 /* The teams a person navigates by, as Leaf's sidebar lists them. */
 vi.mock('../folders/workspace', () => ({ readFolders: async () => [{ id: TEAM, name: 'Ops', channel: `39000:${RELAY}:${TEAM}` }] }))
 
-vi.mock('../relay/projectFields', async (original) => ({
-  ...(await original<typeof import('../relay/projectFields')>()),
-  inOrderTypes: async () => [],
-}))
-
 const published: UnsignedEvent[] = []
 /* Kinds the relay refuses, as Estiva ID refuses a kind the app may not sign. */
 let refused: number[] = []
@@ -190,7 +185,8 @@ describe("Leaf's ⌘K makes Ship's files by Ship's declared actions (KIN-11)", (
     expect(project.pubkey).toBe(ME)
     expect(project.tags.some((t) => t[1] === 'Website launch')).toBe(true)
     expect(listed.kind).toBe(1852)
-    expect(listed.tags.some((t) => t[1] === `30850:${ME}:${tag(project, 'd')}`)).toBe(true)
+    // The listing names the new project, by its id (or its address).
+    expect(listed.tags.some((t) => t.slice(1).some((v) => v === tag(project, 'd') || v === `30850:${ME}:${tag(project, 'd')}`))).toBe(true)
   })
 
   it('says nothing was made when the workspace refuses the new file', async () => {

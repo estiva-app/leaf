@@ -18,7 +18,6 @@ import { relayStates } from '../document/fileMenu'
 import { readFolders } from '../folders/workspace'
 import { changeWriter, publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
-import { inOrderTypes } from '../relay/projectFields'
 
 const people = createPeopleCache()
 
@@ -140,7 +139,6 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
       return fail('The team could not be read, so nothing was made. Try again.')
     }
   }
-  const inOrder = await inOrderTypes()
   const common = {
     manifest: resolved.manifest,
     kind: pointer.kind,
@@ -150,7 +148,6 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
     actionId: args.actionId,
     newId,
     pubkey,
-    inOrder,
     ...listing,
   }
 
@@ -171,7 +168,6 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
   const made = await createFile({
     root: record,
     ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
-    inOrder,
     build: (input) => {
       const one = buildActionEvents({
         ...common,
