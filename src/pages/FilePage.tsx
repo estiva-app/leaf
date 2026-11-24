@@ -278,8 +278,8 @@ function DocumentView({
   }
   /*
     ⌘K about this page (KIN-5): it reads the editor's blocks, and turns an answer into a new comment (the box holding
-    the words, unsent) or a block under the passage it cites first (Miky, KIN-5 kickoff). An archived or read-only page
-    takes neither, and the box says so.
+    the words, unsent) or a block where the cursor was, else under the passage it cites first (Miky, KIN-5 kickoff and
+    the approved story). An archived or read-only page is offered neither.
   */
   const [draftNonce, setDraftNonce] = useState(0)
   const commentable = addressable && !locked
@@ -290,6 +290,11 @@ function DocumentView({
           address,
           title,
           editor,
+          canComment: commentable,
+          canEdit: !locked && !!editor?.isEditable,
+          showComments: () => {
+            if (!comments.open) comments.onOpenChange(true)
+          },
           draftComment: (text: string, blocks: string[] | null) => {
             if (!commentable) return false
             holdCommentDraft(address, text)

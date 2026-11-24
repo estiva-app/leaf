@@ -193,7 +193,9 @@ function Frame() {
   const takers = summaries.filter(takesNewDocuments)
   // ⌘K (KIN-5): one box for the whole app, about the page open when it was opened, hidden rather than thrown away while
   // it holds a sentence or an answer; the top bar's search opens it and carries its dot. New document, where a team takes one.
-  const kept = useKeptLauncher(captureOpenPage, (box) => <LeafLauncher {...box} {...(takers.length ? { onNewDocument: () => setMaking(true) } : {})} />)
+  // The story's "In Launch team": said when there is one team it can go in; with more, the dialog asks which.
+  const newDocument = takers.length ? { onNewDocument: () => setMaking(true), ...(takers.length === 1 ? { newDocumentIn: takers[0].name } : {}) } : {}
+  const kept = useKeptLauncher(captureOpenPage, (box) => <LeafLauncher {...box} {...newDocument} />)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
   // Under the page it was opened under, when it was, as the dialog held it.
   useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(heldUnder(NEW_DOCUMENT_HOLD) ?? true))

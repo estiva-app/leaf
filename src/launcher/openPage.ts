@@ -12,6 +12,12 @@ import { knownName } from '../comments/people'
 
 /** What the open page lets the box do: put an answer in a new comment, or into the page; show a part it cites. */
 export interface OpenPageActions {
+  /** Whether a new comment can be written on it (not archived, an address to comment on). */
+  canComment: boolean
+  /** Whether its text can be changed by you now. */
+  canEdit: boolean
+  /** Bring the comments column into view, when it was hidden. */
+  showComments: () => void
   /** A new comment on these blocks (or the whole page), holding the text, for the person to edit and send. */
   draftComment: (text: string, blocks: string[] | null) => boolean
   /** The text as a new block under this one (or at the end of the page). False when the page cannot be edited. */
@@ -28,6 +34,8 @@ let page: OpenPage | null = null
 let threads: { address: string; list: readonly Thread[]; show: (thread: string) => void } | null = null
 /** Each comment the box was last handed: its thread, and the blocks it was written on (none: the whole page). */
 const comments = new Map<string, { thread: string; blocks: string[] | null }>()
+/** The block the cursor was in when the box was opened from the page you were writing in; none from anywhere else. */
+let cursorBlock: string | null = null
 
 /** The page puts itself here while it is drawn. */
 export function useOpenPage(open: OpenPage | null): void {
@@ -68,7 +76,14 @@ const short = (text: string) => (text.length > 40 ? `${text.slice(0, 40).trimEnd
 
 /** What is open, for the box: the page and its parts, or nothing on a page that is no document (Home, a topic). */
 export function captureOpenPage(): LauncherContext {
+  cursorBlock = null
   if (!page) return {}
+  // Opened with ⌘K while writing: the editor still has focus, and the answer can go where you were.
+  const editor = page.editor
+  if (editor?.isFocused && editor.isEditable) {
+    const top = editor.state.selection.$from.node(1)
+    cursorBlock = top?.attrs.blockId ? String(top.attrs.blockId) : null
+  }
   const passages = passagesOf(page.editor)
   const textOf = new Map(passages.map((p) => [p.id, p.text]))
   comments.clear()
@@ -122,11 +137,17 @@ export function openPageActions(): OpenPageActions | null {
   return page
 }
 
+/** Where you were writing when the box was opened, if you were. */
+export function cursorBlockAtOpen(): string | null {
+  return cursorBlock
+}
+
 /** Bring a cited part into view: a passage's block, or a comment's thread in the column. False when it is not there. */
 export function showPart(part: LauncherMessage): boolean {
   if (part.where !== PASSAGE) {
     const comment = comments.get(part.id)
     if (!comment || !threads) return false
+    page?.showComments()
     threads.show(comment.thread)
     return true
   }

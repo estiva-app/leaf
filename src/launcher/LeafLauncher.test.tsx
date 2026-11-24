@@ -100,14 +100,18 @@ const editor = () => (screen.getByRole('textbox', { name: 'Document' }) as Edito
 const field = () => document.querySelector<HTMLTextAreaElement | HTMLInputElement>('[data-command-palette-field]')
 const option = (title: string) => screen.queryAllByRole('option').find((o) => o.textContent?.includes(title))
 
-/** Open the page with its two comments read, press Ctrl+K, and ask; resolves once the answer's actions show. */
-async function ask(sentence: string, answer: string) {
+/**
+ * Open the page with its two comments read, press Ctrl+K, and ask; resolves once the answer's actions show. `before`
+ * runs on the drawn page first: writing in it, or starting a comment.
+ */
+async function ask(sentence: string, answer: string, before?: () => void | Promise<void>) {
   relay.events = [profile(RAVI, 'Ravi Mehta'), profile(KATERINA, 'Katerina Novak'), ON_FAQ, MOVED, resolution(MOVED)]
   model.answer = answer
   render(<Frame />)
   await waitFor(() => expect(editor()?.isInitialized).toBe(true))
   await screen.findByText('Who writes the FAQ?')
   await waitFor(() => expect(document.body.textContent).toContain('Katerina Novak'))
+  await before?.()
   act(() => void fireEvent.keyDown(document, { key: 'k', ctrlKey: true }))
   await waitFor(() => expect(field()).toBeTruthy())
   fireEvent.change(field()!, { target: { value: sentence } })
@@ -138,6 +142,38 @@ describe("Leaf's ⌘K about the open page (KIN-5)", () => {
     editor().state.doc.forEach((node) => void texts.push(node.textContent))
     expect(texts).toEqual(['Launch plan', 'Launch date: to be confirmed.', 'The launch date is not confirmed.', 'The FAQ ships with the launch.'])
     expect(texts.indexOf('The launch date is not confirmed.')).toBe(blockIds(BODY).indexOf(DATE) + 1)
+  })
+
+  it('Insert into the page puts the answer where you were writing when you pressed ⌘K, not by the passage it cites', async () => {
+    await ask('what is still open on this page', 'The launch date is not confirmed [2].', () => {
+      // The cursor in the FAQ paragraph, the editor focused: someone writing there.
+      let at = 0
+      editor().state.doc.forEach((node, offset) => {
+        if (node.attrs.blockId === FAQ) at = offset + 2
+      })
+      act(() => void editor().chain().focus().setTextSelection(at).run())
+      // jsdom does not focus a contenteditable; the browser does, and tells the editor so.
+      act(() => void fireEvent.focus(editor().view.dom))
+    })
+
+    fireEvent.click(option('Insert into the page')!)
+
+    await waitFor(() => expect(field()).toBeNull())
+    const texts: string[] = []
+    editor().state.doc.forEach((node) => void texts.push(node.textContent))
+    expect(texts).toEqual(['Launch plan', 'Launch date: to be confirmed.', 'The FAQ ships with the launch.', 'The launch date is not confirmed.'])
+  })
+
+  it('Draft a comment keeps the words of a comment you had already started, and puts the answer after them', async () => {
+    await ask('who asked about the FAQ', 'Ravi asked who writes it [4].', () => {
+      const box = screen.getByRole('textbox', { name: /comment/i }) as EditorBox
+      act(() => void box.editor.chain().focus().insertContent('My own start.').run())
+    })
+
+    fireEvent.click(option('Draft a comment')!)
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /comment/i }).textContent).toContain('Ravi asked who writes it.'))
+    expect(screen.getByRole('textbox', { name: /comment/i }).textContent).toContain('My own start.')
   })
 
   it('Draft a comment puts the answer in a new comment on the block it cites, unsent', async () => {

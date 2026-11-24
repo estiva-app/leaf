@@ -1060,7 +1060,10 @@ export interface CommentsColumnProps {
 
 /** Words for the page's new comment, held as its box's draft: ⌘K's Draft a comment (KIN-5). The box shows them once drawn again. */
 export function holdCommentDraft(address: string, text: string): void {
-  draftStore().write(draftKeys.object(address), text)
+  // A comment already started keeps its words: the answer goes after them (KIN-5 review).
+  const key = draftKeys.object(address)
+  const started = draftStore().read(key)?.trim()
+  draftStore().write(key, started ? `${started}\n\n${text}` : text)
 }
 
 /** The comments column of a Leaf document, or a topic's conversation. */

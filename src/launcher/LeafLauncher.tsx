@@ -24,7 +24,7 @@ import { openerOf } from '../pages/OwnerRow'
 import { useFileByAddress } from '../pages/useFileByAddress'
 import { documentPath, dOf, filePath, navigate, usePathname } from '../route'
 import { topicPath } from '../topics/topicLinks'
-import { blocksOfPart, openPageActions, showPart } from './openPage'
+import { blocksOfPart, cursorBlockAtOpen, openPageActions, showPart } from './openPage'
 
 /*
   KIN-5 — Leaf's ⌘K: the box Peek ships (@estiva-app/launcher), handed what only Leaf knows. A name finds files from
@@ -54,11 +54,18 @@ function useLeafFileSearch(query: string): ReturnType<LauncherHost['useFileSearc
   useEffect(() => subscribeFileHits(answered), [])
   const typed = query.trim()
   if (typed.length < 2) return IDLE
-  const hits = fileHits(typed).map(({ id, title, summary, caption }) => ({ id, title, ...(summary ? { summary } : {}), ...(caption ? { caption } : {}) }))
+  // A Ship file opens in Ship: its row says so, as the story drew it, before the person leaves Leaf.
+  const hits = fileHits(typed).map(({ id, title, summary, caption }) => {
+    const away = SHIP_KINDS.has(kindOf(id)) ? 'Opens in Ship' : undefined
+    const where = [caption, away].filter(Boolean).join(' · ')
+    return { id, title, ...(summary ? { summary } : {}), ...(where ? { caption: where } : {}) }
+  })
   return { state: { kind: 'done', count: hits.length }, hits }
 }
 
 const kindOf = (address: string) => Number(address.split(':')[0])
+/** Ship's project and issue: what opens in Ship, not here. */
+const SHIP_KINDS = new Set([30850, 30851])
 
 /**
  * Where a file opens: a page here, a topic on Leaf's own topic page, anything else in its own app (a Ship issue in
@@ -100,22 +107,33 @@ function answerActions(answer: LauncherAnswer): LauncherAnswerAction[] {
   const first = answer.cited[0]
   const blocks = first ? blocksOfPart(first) : null
   const passage = answer.cited.find((part) => part.where === 'In the page')
-  const after = passage ? passage.id : (blocks?.[0] ?? null)
+  // Where you were writing, as the approved story says; else under the passage it cites first; else at the end.
+  const cursor = cursorBlockAtOpen()
+  const after = cursor ?? (passage ? passage.id : (blocks?.[0] ?? null))
+  // A row that cannot succeed is not offered: an archived or read-only page takes neither (KIN-5 review).
   return [
-    {
-      id: 'comment',
-      label: 'Draft a comment',
-      description: blocks ? 'On the passage it cites first. It will not send: edit it first.' : 'On the whole page. It will not send: edit it first.',
-      icon: <IconMessagePlus size={16} stroke={1.5} />,
-      run: () => page.draftComment(answer.text, blocks),
-    },
-    {
-      id: 'insert',
-      label: 'Insert into the page',
-      description: after ? 'As a block under the passage it cites first.' : 'As a block at the end of the page.',
-      icon: <IconCornerDownLeft size={16} stroke={1.5} />,
-      run: () => page.insert(answer.text, after),
-    },
+    ...(page.canComment
+      ? [
+          {
+            id: 'comment',
+            label: 'Draft a comment',
+            description: blocks ? 'It will not send. Edit it first.' : 'On the whole document. It will not send. Edit it first.',
+            icon: <IconMessagePlus size={16} stroke={1.5} />,
+            run: () => page.draftComment(answer.text, blocks),
+          },
+        ]
+      : []),
+    ...(page.canEdit
+      ? [
+          {
+            id: 'insert',
+            label: 'Insert into the page',
+            description: cursor ? 'Where your cursor was.' : after ? 'Under the passage it cites first.' : 'At the end of the document.',
+            icon: <IconCornerDownLeft size={16} stroke={1.5} />,
+            run: () => page.insert(answer.text, after),
+          },
+        ]
+      : []),
   ]
 }
 
@@ -128,7 +146,7 @@ const NO_FORM: LauncherHost['form'] = {
 }
 
 /** Leaf's ⌘K box, held by the frame (`useKeptLauncher`), with Leaf's New document when a team takes one. */
-export function LeafLauncher({ onNewDocument, ...box }: KeptLauncherBox<LauncherContext> & { onNewDocument?: () => void }) {
+export function LeafLauncher({ onNewDocument, newDocumentIn, ...box }: KeptLauncherBox<LauncherContext> & { onNewDocument?: () => void; newDocumentIn?: string }) {
   const pathname = usePathname()
   const directory = useDirectory()
   const people = Object.entries(directory).map(([id, person]) => ({ id, name: person.displayName, ...(person.picture ? { avatarSrc: person.picture } : {}) }))
@@ -154,7 +172,7 @@ export function LeafLauncher({ onNewDocument, ...box }: KeptLauncherBox<Launcher
     form: NO_FORM,
     // Leaf signs documents, comments and their changes (Estiva ID's allowed kinds for Leaf), never another app's file.
     maySign: (kind) => kind === KIND.DOCUMENT,
-    ...(onNewDocument ? { ownActions: [{ id: 'new-document', label: 'New document', icon: <IconFilePlus size={16} stroke={1.5} />, run: onNewDocument }] } : {}),
+    ...(onNewDocument ? { ownActions: [{ id: 'new-document', label: 'New document', ...(newDocumentIn ? { description: `In ${newDocumentIn}` } : {}), icon: <IconFilePlus size={16} stroke={1.5} />, run: onNewDocument }] } : {}),
     answerActions,
     useReportFailure,
   }
