@@ -10,6 +10,7 @@ import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
 import { blockIds, descriptionTextToBlockDocument, serializeBlockDocument, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { AppShell, ToastProvider } from '@estiva-app/ui'
 import { useKeptLauncher } from '@estiva-app/launcher'
+import { drawOnce } from '../test/drawOnce'
 
 const ME = 'a'.repeat(64)
 const publish = vi.hoisted(() => vi.fn<(event: UnsignedEvent) => Promise<{ ok: boolean }>>(async () => ({ ok: true })))
@@ -95,6 +96,14 @@ function Frame() {
   )
 }
 
+// Drawn once before any test's clock starts: `drawOnce` says why.
+relay.events = [ON_FAQ]
+await drawOnce(async () => {
+  const fresh = await import('../pages/FilePage')
+  return <ToastProvider><fresh.FilePage file={page} loading={false} /></ToastProvider>
+}, () => screen.getByText('Who writes the FAQ?'))
+relay.events = []
+
 type EditorBox = HTMLElement & { editor: Editor }
 const editor = () => (screen.getByRole('textbox', { name: 'Document' }) as EditorBox).editor
 const field = () => document.querySelector<HTMLTextAreaElement | HTMLInputElement>('[data-command-palette-field]')
@@ -125,11 +134,15 @@ describe("Leaf's ⌘K about the open page (KIN-5)", () => {
 
     expect(model.told).toHaveLength(1)
     const told = model.told[0]
-    expect(told).toContain('page called "Launch plan"')
-    expect(told).toContain('Launch date: to be confirmed.')
-    expect(told).toContain('The FAQ ships with the launch.')
-    expect(told).toContain('Comment by Ravi Mehta: Who writes the FAQ?')
-    expect(told).toContain('Comment by Katerina Novak (resolved): The launch date moved to Friday.')
+    // What Leaf hands over, line by line; the words around them are the package's (its own tests hold them).
+    const line = (words: string) => told.split('\n').find((l) => l.includes(words)) ?? ''
+    expect(told).toContain('Launch plan')
+    expect(line('Launch date: to be confirmed.')).not.toContain('Comment')
+    expect(line('The FAQ ships with the launch.')).not.toContain('Comment')
+    expect(line('Who writes the FAQ?')).toContain('Ravi Mehta')
+    expect(line('Who writes the FAQ?')).not.toContain('resolved')
+    expect(line('The launch date moved to Friday.')).toContain('Katerina Novak')
+    expect(line('The launch date moved to Friday.')).toContain('resolved')
   })
 
   it('Insert into the page puts the answer under the passage it cites first, as a block the page saves', async () => {
@@ -142,6 +155,11 @@ describe("Leaf's ⌘K about the open page (KIN-5)", () => {
     editor().state.doc.forEach((node) => void texts.push(node.textContent))
     expect(texts).toEqual(['Launch plan', 'Launch date: to be confirmed.', 'The launch date is not confirmed.', 'The FAQ ships with the launch.'])
     expect(texts.indexOf('The launch date is not confirmed.')).toBe(blockIds(BODY).indexOf(DATE) + 1)
+    // Saved at once, as typing is when the editor is left: the page's text change (kind 1851) carries the answer.
+    await waitFor(() => {
+      const change = publish.mock.calls.map(([event]) => event).find((event) => event.kind === 1851 && event.tags.some((t) => t[0] === 'field' && t[1] === 'description'))
+      expect(JSON.stringify(change?.tags)).toContain('The launch date is not confirmed.')
+    })
   })
 
   it('Insert into the page puts the answer where you were writing when you pressed ⌘K, not by the passage it cites', async () => {
@@ -174,6 +192,8 @@ describe("Leaf's ⌘K about the open page (KIN-5)", () => {
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: /comment/i }).textContent).toContain('Ravi asked who writes it.'))
     expect(screen.getByRole('textbox', { name: /comment/i }).textContent).toContain('My own start.')
+    // It stays where it was started (the whole document): no block is marked as the draft's.
+    expect(editor().view.dom.querySelector('[data-comment-id="draft"]')).toBeNull()
   })
 
   it('Draft a comment puts the answer in a new comment on the block it cites, unsent', async () => {

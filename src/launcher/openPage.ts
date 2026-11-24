@@ -60,13 +60,27 @@ export function useOpenThreads(address: string | undefined, list: readonly Threa
   }, [address, list, show])
 }
 
-/** The blocks of the page as the editor holds them: id and words, in order; an empty block is no passage. */
+/**
+ * The blocks of the page as the editor holds them: id and words, in order; an empty block is no passage. A list's
+ * items and a table's cells are blocks of their own (each has its id, and a comment can be on one), so each is a
+ * passage, not their list glued into one line (KIN-5 review).
+ */
 function passagesOf(editor: Editor | null): { id: string; text: string }[] {
   if (!editor) return []
   const out: { id: string; text: string }[] = []
-  editor.state.doc.forEach((node, _offset, index) => {
+  editor.state.doc.descendants((node) => {
+    const id = node.attrs.blockId
+    if (!id) return true
+    // A block holding blocks (a list, a table, a row) is read through them.
+    let inner = false
+    node.descendants((child) => {
+      if (child.attrs.blockId) inner = true
+      return !inner
+    })
+    if (inner) return true
     const text = node.textContent.trim()
-    if (text) out.push({ id: String(node.attrs.blockId ?? `block-${index}`), text })
+    if (text) out.push({ id: String(id), text })
+    return false
   })
   return out
 }
@@ -118,18 +132,30 @@ export function blocksOfPart(part: LauncherMessage): string[] | null {
  */
 export function insertBlock(editor: Editor | null, locked: boolean, text: string, after: string | null): boolean {
   if (!editor || locked || !editor.isEditable) return false
+  // One paragraph per paragraph of the answer; nothing for an answer with no words.
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)
+  if (paragraphs.length === 0) return false
   let at = editor.state.doc.content.size
   if (after) {
-    editor.state.doc.forEach((node, offset) => {
-      if (node.attrs.blockId === after) at = offset + node.nodeSize
+    // A block inside a list or a table: the answer goes under the whole list, as a block of the page.
+    editor.state.doc.descendants((node, pos) => {
+      if (node.attrs.blockId !== after) return true
+      const top = editor.state.doc.resolve(pos)
+      at = top.depth === 0 ? pos + node.nodeSize : top.after(1)
+      return false
     })
   }
-  return editor
-    .chain()
-    .insertContentAt(at, { type: 'paragraph', content: [{ type: 'text', text }] })
-    .setTextSelection(at + 1 + text.length)
-    .scrollIntoView()
-    .run()
+  const content = paragraphs.map((words) => ({ type: 'paragraph', content: [{ type: 'text', text: words }] }))
+  const done = editor.chain().insertContentAt(at, content).scrollIntoView().run()
+  if (!done) return false
+  /*
+    The page saves its text when the editor is left (DocumentEditor's blur), and a newer save arriving while it is not
+    being written in replaces what it holds. So the answer is saved now, the way your typing is when you leave the
+    editor: its own "left" event, which runs the page's save (KIN-5 review: an answer inserted while reading was
+    otherwise never saved). The box holds the focus, so the editor is not being written in.
+  */
+  editor.emit('blur', { editor, event: new FocusEvent('blur'), transaction: editor.state.tr })
+  return true
 }
 
 /** The open page's actions, while a page is open. */

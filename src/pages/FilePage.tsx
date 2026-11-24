@@ -282,7 +282,8 @@ function DocumentView({
     the approved story). An archived or read-only page is offered neither.
   */
   const [draftNonce, setDraftNonce] = useState(0)
-  const commentable = addressable && !locked
+  // A page whose blocks have no ids still takes a comment on the whole document.
+  const commentable = !locked
   const address = opened.address
   useOpenPage(
     address
@@ -297,9 +298,11 @@ function DocumentView({
           },
           draftComment: (text: string, blocks: string[] | null) => {
             if (!commentable) return false
-            holdCommentDraft(address, text)
+            // A comment already started keeps its place too: only an empty box moves to the cited block.
+            const held = holdCommentDraft(address, text)
+            if (!held) return false
             setDraftNonce((n) => n + 1)
-            setDraft(blocks ? { blocks } : null)
+            if (held === 'new') setDraft(blocks && addressable ? { blocks } : null)
             if (!comments.open) comments.onOpenChange(true)
             return true
           },

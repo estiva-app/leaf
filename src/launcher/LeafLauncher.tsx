@@ -23,7 +23,8 @@ import { naddrOf } from '../fileAddress'
 import { openerOf } from '../pages/OwnerRow'
 import { useFileByAddress } from '../pages/useFileByAddress'
 import { documentPath, dOf, filePath, navigate, usePathname } from '../route'
-import { topicPath } from '../topics/topicLinks'
+import { topicOpener } from '../topics/topicLinks'
+import type { ForeignObject } from '@estiva-app/interop'
 import { blocksOfPart, cursorBlockAtOpen, openPageActions, showPart } from './openPage'
 
 /*
@@ -72,18 +73,34 @@ const SHIP_KINDS = new Set([30850, 30851])
  * Ship), from its manifest's address; one that gives none opens here.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-opens-in-the-app-you-are-in-when-it-has-a-page-made-for-that-kind.md
  */
-function openFile(address: string, title: string): void {
+export function openFile(address: string, title: string): void {
   const kind = kindOf(address)
   if (kind === KIND.DOCUMENT) return navigate(documentPath(dOf(address), title))
-  if (thingKindOf(kind) === 'topic') return navigate(topicPath(address, title))
+  // A topic on Leaf's topic page, as a link to it opens; a space is Peek's, and opens there below.
+  const here = thingKindOf(kind) === 'topic' ? topicOpener({ address, slots: { title: { value: title } } as ForeignObject['slots'] }) : undefined
+  if (here) return navigate(here)
   const naddr = naddrOf(address)
   void readDocument(naddr)
     .catch(() => null)
     .then((file) => {
       const away = file ? openerOf(file) : undefined
-      if (away) window.location.assign(away)
+      // Only to Estiva's own Ship or Peek, beside Leaf: any key can publish a manifest until WOR-2, so a planted
+      // address never takes the tab elsewhere (KIN-5 security review). Anything else opens here.
+      if (away && isSibling(away)) window.location.assign(away)
       else navigate(filePath(naddr))
     })
+}
+
+/** Whether an address is on Ship's or Peek's host beside Leaf's (ship.estiva.app beside leaf.estiva.app). */
+function isSibling(address: string): boolean {
+  const here = window.location.origin
+  if (!/\/\/leaf\./.test(here)) return false
+  try {
+    const origin = new URL(address).origin
+    return origin === here.replace(/\/\/leaf\./, '//ship.') || origin === here.replace(/\/\/leaf\./, '//peek.')
+  } catch {
+    return false
+  }
 }
 
 /** The card a link to the file draws, beside the box while its row is lit. */
@@ -128,7 +145,13 @@ function answerActions(answer: LauncherAnswer): LauncherAnswerAction[] {
           {
             id: 'insert',
             label: 'Insert into the page',
-            description: cursor ? 'Where your cursor was.' : after ? 'Under the passage it cites first.' : 'At the end of the document.',
+            description: cursor
+              ? 'Where your cursor was.'
+              : passage
+                ? 'Under the passage it cites first.'
+                : after
+                  ? 'Under the passage its first comment is on.'
+                  : 'At the end of the document.',
             icon: <IconCornerDownLeft size={16} stroke={1.5} />,
             run: () => page.insert(answer.text, after),
           },
@@ -156,7 +179,8 @@ export function LeafLauncher({ onNewDocument, newDocumentIn, ...box }: KeptLaunc
     words: WORDS,
     path: { pathname, search: window.location.search },
     navigate,
-    people,
+    // A person opens in Peek beside Leaf; where there is none to find (a preview, localhost), no person is offered.
+    people: /\/\/leaf\./.test(window.location.origin) ? people : [],
     openPerson,
     file: {
       glyph: (id) => thingKindOf(kindOf(id)),

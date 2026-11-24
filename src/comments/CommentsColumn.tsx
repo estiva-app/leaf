@@ -7,6 +7,7 @@ import {
   composerDraft,
   composerText,
   createDraftStore,
+  DRAFT_MAX_CHARS,
   draftKeys,
   embedsToEdit,
   embedsToSend,
@@ -1059,11 +1060,21 @@ export interface CommentsColumnProps {
 }
 
 /** Words for the page's new comment, held as its box's draft: ⌘K's Draft a comment (KIN-5). The box shows them once drawn again. */
-export function holdCommentDraft(address: string, text: string): void {
-  // A comment already started keeps its words: the answer goes after them (KIN-5 review).
+export function holdCommentDraft(address: string, text: string): 'started' | 'new' | null {
+  /*
+    A comment already started keeps its words, and its urgent mentions: the answer goes after them (KIN-5 review).
+    Says whether one was, or null when the words could not be held (storage refused, or too long for a draft, which
+    would drop what was started): then nothing changes, and the box says it did not work.
+  */
   const key = draftKeys.object(address)
-  const started = draftStore().read(key)?.trim()
-  draftStore().write(key, started ? `${started}\n\n${text}` : text)
+  const store = draftStore()
+  const held = store.readDraft(key)
+  const started = held?.text.trim()
+  const next = started ? `${started}\n\n${text}` : text
+  if (next.length > DRAFT_MAX_CHARS) return null
+  store.write(key, next, held?.urgent ?? [])
+  if (store.read(key) !== next) return null
+  return started ? 'started' : 'new'
 }
 
 /** The comments column of a Leaf document, or a topic's conversation. */
