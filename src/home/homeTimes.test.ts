@@ -8,15 +8,13 @@ import { describe, expect, it, vi } from 'vitest'
 */
 const asked: Record<string, unknown>[][] = []
 let answers: FileTimes[] = []
-vi.mock('../relay/bridge', () => ({ query: async () => [], viewerPubkey: () => null, queryTimes: vi.fn() }))
-vi.mock('../relay/projectFields', async (original) => ({
-  ...(await original<typeof import('../relay/projectFields')>()),
-  timesRead: async () => ({
-    times: async (filters: Record<string, unknown>[]) => {
-      asked.push(filters)
-      return answers
-    },
-  }),
+vi.mock('../relay/bridge', () => ({
+  query: async () => [],
+  viewerPubkey: () => null,
+  queryTimes: async (filters: Record<string, unknown>[]) => {
+    asked.push(filters)
+    return answers
+  },
 }))
 
 import * as recent from './useRecent'
@@ -44,7 +42,7 @@ describe("Home's rows for a Leaf page the tree read by the list read (ALL-4)", (
     expect(recentFilters(rows)[0]).toEqual({ ids: ['root', 'title-now', 'summary-now', 'text-new'] })
   })
 
-  it('reads every save of a page read whole, on a relay with no list read (control)', () => {
+  it('reads every save of a file not read as its row only (control)', () => {
     const filters = recentFilters(recent.pagesOf(page(false))!)
     expect(filters).toContainEqual({ kinds: [1851], '#a': [PAGE] })
   })

@@ -5,7 +5,7 @@ import { summaryText } from '../document/summary'
 import { isDocument, isListed, titleOf, typeOf } from '../folders/tree'
 import type { WorkspaceFolder } from '../folders/useWorkspace'
 import { query, viewerPubkey } from '../relay/bridge'
-import { isIssue, isProject, isSwitchedKind, issueFields, projectFields, timesRead } from '../relay/projectFields'
+import { isFileKind, times } from '../relay/fileReads'
 import { isRowOnly } from '../relay/rowOnly'
 import { ownSavesFilter, rankRecent, recentFilters, textTargets, type Page, type RecentRow } from './recent'
 
@@ -66,13 +66,14 @@ export async function withEdits(rows: Page[]): Promise<Page[]> {
  * that lists it, an issue's by the Folder that lists its project. A Folder the tree has not read leaves the place
  * blank, never a Folder's id.
  */
-export function otherRowOf(file: ForeignObject | null, folders: WorkspaceFolder[], byFields = false): Page | null {
+export function otherRowOf(file: ForeignObject | null, folders: WorkspaceFolder[]): Page | null {
   // A deleted project is gone from Home as from every list (SPEC §6.5, ALO-6).
   if (!file || !isListed(file) || isArchived(file) || file.deleted || !file.address || !file.naddr || !file.folder) return null
   const lister = (address: string | undefined) => folders.find(({ contents }) => contents?.files.some((f) => f.address === address))?.folder
   const where = lister(file.address) ?? lister(file.parentRef)
   const row = rowOf(file, where?.name ?? '', file.folder)
-  if (!byFields || !isSwitchedKind(file.address) || !file.prevs) return row
+  // A file of the relay's file kinds names its current changes (ISS-6).
+  if (!isFileKind(file.address) || !file.prevs) return row
   const changes = EDITS.map((field) => file.prevs![field]).filter((id): id is string => !!id)
   return { ...row, changes }
 }
@@ -88,10 +89,8 @@ async function othersOf(folders: WorkspaceFolder[], me: string | null): Promise<
   if (!me) return []
   const targets = textTargets(await query([ownSavesFilter(me)]))
   if (targets.length === 0) return []
-  const [read, projects, issues] = await Promise.all([readFileRows(targets), projectFields(), issueFields()])
-  // A project or an issue read by its fields names its current changes, each by its own switch (ISS-6).
-  const switched = (address: string) => (isProject(address) ? !!projects : isIssue(address) ? !!issues : false)
-  const rows = targets.map((t) => otherRowOf(read[t] ?? null, folders, switched(t))).filter((row): row is Page => row !== null)
+  const read = await readFileRows(targets)
+  const rows = targets.map((t) => otherRowOf(read[t] ?? null, folders)).filter((row): row is Page => row !== null)
   // A row read by the list read names no text change (§6.13): its newest edits come from the times read.
   const edits = await editsOf(rows.filter((row) => row.changes && read[row.address] && isRowOnly(read[row.address]!)))
   return rows.map((row) => (edits.has(row.address) ? { ...row, changes: [...new Set([...(row.changes ?? []), ...edits.get(row.address)!])] } : row))
@@ -99,14 +98,13 @@ async function othersOf(folders: WorkspaceFolder[], me: string | null): Promise<
 
 /**
  * The newest title, summary and text change of each of `rows`, by id, from the relay's times read (SPEC §6.13): when
- * each changed, without the changes. Home reads those changes by id, as it reads a whole-read file's. Empty where
- * the relay has no times read, or when it fails: the row then ranks by the changes it names.
+ * each changed, without the changes. Home reads those changes by id, as it reads a whole-read file's. Empty when it
+ * fails: the row then ranks by the changes it names.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
  */
 export async function editsOf(rows: Pick<Page, 'address'>[]): Promise<Map<string, string[]>> {
-  const { times } = await timesRead()
-  if (!times || rows.length === 0) return new Map()
+  if (rows.length === 0) return new Map()
   const byKind = new Map<number, string[]>()
   for (const { address } of rows) {
     const [kind, , d] = address.split(':')

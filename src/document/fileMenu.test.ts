@@ -15,15 +15,10 @@ let viewer = ME
 /* A state that `lists` addresses is answered only to a read asking for one of them by `#a`, as the relay does. */
 let states: { d: string; pubkey: string; lists?: string[] }[] = []
 
-/* Where the relay keeps pages in order (ALL-4): the types this tab writes in order. */
-let inOrder: string[] = []
-vi.mock('../relay/projectFields', async (original) => ({
-  ...(await original<typeof import('../relay/projectFields')>()),
-  inOrderTypes: async () => inOrder,
-  fieldsFor: async () => (inOrder.length ? {} : undefined),
-}))
 /* A page's first record, as the open read answers it: what its first delete follows. */
 const ROOT_ID = 'e'.repeat(64)
+/* Changes the relay holds at a page, answered with its first record by the open read. */
+let held: { id: string; created_at: number; tags: string[][] }[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => viewer,
@@ -38,7 +33,10 @@ vi.mock('../relay/bridge', () => ({
   query: async (filters: { kinds?: number[]; '#d'?: string[]; '#a'?: string[]; fields?: string }[]) => {
     const [filter] = filters
     if (filter.fields === 'newest')
-      return (filter['#d'] ?? []).map((d) => ({ kind: 30842, pubkey: ME, tags: [['d', d], ['title', d], ['h', FOLDER]], content: '', created_at: 1, id: ROOT_ID, sig: '' }))
+      return (filter['#d'] ?? []).flatMap((d) => [
+        { kind: 30842, pubkey: ME, tags: [['d', d], ['title', d], ['h', FOLDER]], content: '', created_at: 1, id: ROOT_ID, sig: '' },
+        ...held.filter((change) => change.tags.some((t) => t[0] === 'a' && t[1] === `30842:${ME}:${d}`)).map((change) => ({ kind: 1851, pubkey: ME, content: '', sig: '', ...change })),
+      ])
     if (filter.kinds?.[0] === 30890)
       return states
         .filter(({ lists }) => !lists || lists.some((a) => filter['#a']?.includes(a)))
@@ -75,17 +73,16 @@ afterEach(() => {
   answers = []
   viewer = ME
   states = []
-  inOrder = []
+  held = []
 })
 
-describe('deleting a Leaf page where pages are kept in order (ALL-4)', () => {
+describe('deleting a Leaf page (ALL-4, ALL-8)', () => {
   it('is one change marking it deleted after its first record, by someone who did not write it: no kind:5, no unlisting, no page under it moved', async () => {
-    inOrder = ['osnova.document']
     viewer = KAT
     states = [{ d: FOLDER, pubkey: RELAY }]
     const listing = [page('a'), page('b', 'a'), page('c', 'a')]
-    const result = await deleteDocument(listing[0], planDelete(listing[0], listing, 'Leaf feedback', true))
-    expect(result).toEqual({ ok: true, stillListed: false, unmoved: 0 })
+    const result = await deleteDocument(listing[0])
+    expect(result).toEqual({ ok: true })
     expect(published).toHaveLength(1)
     const [change] = published
     expect(change.kind).toBe(1851)
@@ -93,98 +90,28 @@ describe('deleting a Leaf page where pages are kept in order (ALL-4)', () => {
     expect([tag(change, 'a'), tag(change, 'field'), tag(change, 'value'), tag(change, 'h'), tag(change, 'prev')]).toEqual([`30842:${ME}:a`, 'deleted', 'true', FOLDER, ROOT_ID])
   })
 
+  it('deleted and restored before, is deleted again after its restore, not its first record', async () => {
+    const restore = { id: 'd'.repeat(64), created_at: 2, tags: [['a', `30842:${ME}:a`], ['field', 'deleted'], ['value', ''], ['h', FOLDER], ['prev', 'c'.repeat(64)]] }
+    held = [{ id: 'c'.repeat(64), created_at: 1, tags: [['a', `30842:${ME}:a`], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER], ['prev', ROOT_ID]] }, restore]
+    expect(await deleteDocument(page('a'))).toEqual({ ok: true })
+    expect([tag(published[0], 'field'), tag(published[0], 'value'), tag(published[0], 'prev')]).toEqual(['deleted', 'true', restore.id])
+  })
+
   it('says the pages under it show at the team’s top until it is restored, never that they move', async () => {
     const listing = [page('a'), page('b', 'a'), page('c', 'a')]
-    expect(deleteWords(listing[0], planDelete(listing[0], listing, 'Leaf feedback', true))).toBe('The 2 pages under it show at the team’s top until it is restored.')
+    expect(deleteWords(planDelete(listing[0], listing, 'Leaf feedback'))).toBe('The 2 pages under it show at the team’s top until it is restored.')
   })
 
   it('writes nothing more and says nothing was deleted when the relay refuses the change', async () => {
-    inOrder = ['osnova.document']
     answers = [{ ok: false, reason: 'blocked: not a member' }]
-    const listing = [page('a'), page('b', 'a')]
-    const result = await deleteDocument(listing[0], planDelete(listing[0], listing, 'Leaf feedback', true))
+    const result = await deleteDocument(page('a'))
     expect(result).toEqual({ ok: false, reason: 'Nothing was deleted. Try again.' })
     expect(published.map((e) => e.kind)).toEqual([1851])
   })
-})
-
-describe('deleting a Leaf page', () => {
-  it('sends the kind:5, then the 1852 remove from its Folder, then moves each page under it up to the Folder top, in that order', async () => {
-    states = [{ d: FOLDER, pubkey: RELAY }]
-    const listing = [page('a'), page('b', 'a'), page('c', 'a', { folder: OTHER_FOLDER }), page('d', 'b')]
-    const plan = planDelete(listing[0], listing, 'Leaf feedback')
-    const result = await deleteDocument(listing[0], plan)
-    expect(result).toEqual({ ok: true, stillListed: false, unmoved: 0 })
-    expect(published.map((e) => e.kind)).toEqual([5, 1852, 1851, 1851])
-    expect(published[0].tags).toContainEqual(['a', `30842:${ME}:a`])
-    expect([tag(published[1], 'h'), tag(published[1], 'op'), tag(published[1], 'a')]).toEqual([FOLDER, 'remove', `30842:${ME}:a`])
-    // Only the direct children move; each in its own Folder, to the top ('').
-    const moves = published.slice(2)
-    expect(moves.map((e) => [tag(e, 'a'), tag(e, 'field'), tag(e, 'value'), tag(e, 'h')])).toEqual([
-      [`30842:${ME}:b`, 'parent', '', FOLDER],
-      [`30842:${ME}:c`, 'parent', '', OTHER_FOLDER],
-    ])
-  })
-
-  it("moves the pages under a page that sits under another page up one level, under that page", async () => {
-    const listing = [page('top'), page('b', 'top'), page('c', 'b')]
-    const plan = planDelete(listing[1], listing)
-    await deleteDocument(listing[1], plan)
-    const move = published.find((e) => e.kind === 1851)!
-    expect([tag(move, 'a'), tag(move, 'value')]).toEqual([`30842:${ME}:c`, `30842:${ME}:top`])
-  })
-
-  it('writes nothing more when the relay refuses the kind:5, and says only the writer may delete', async () => {
-    viewer = KAT
-    states = [{ d: FOLDER, pubkey: RELAY }]
-    answers = [{ ok: false, reason: 'blocked: only the author may delete' }]
-    const listing = [page('a'), page('b', 'a')]
-    const result = await deleteDocument(listing[0], planDelete(listing[0], listing))
-    expect(result).toEqual({ ok: false, reason: 'Delete rejected — only the person who wrote it can delete it.' })
-    expect(published.map((e) => e.kind)).toEqual([5])
-  })
-
-  it('never unlists from a Folder state someone other than its Folder’s signer wrote', async () => {
-    states = [{ d: FOLDER, pubkey: KAT }]
-    const listing = [page('a')]
-    await deleteDocument(listing[0], planDelete(listing[0], listing))
-    expect(published.map((e) => e.kind)).toEqual([5])
-  })
-
-  it('counts a page under it the relay refused to move, which stays at the Folder top', async () => {
-    answers = [{ ok: true }, { ok: false, reason: 'blocked' }]
-    const listing = [page('a'), page('b', 'a'), page('c', 'a')]
-    const result = await deleteDocument(listing[0], planDelete(listing[0], listing))
-    expect(result).toEqual({ ok: true, stillListed: false, unmoved: 1 })
-  })
-})
-
-describe('the Delete dialog’s words for the pages under it', () => {
-  it('says how many pages move up, and into which Folder', () => {
-    const listing = [page('a'), page('b', 'a')]
-    expect(deleteWords(listing[0], planDelete(listing[0], listing, 'Leaf feedback'))).toBe('The 1 page under it moves up into Leaf feedback.')
-  })
-
-  it('names the page above as where they move, for a page under a page', () => {
-    const listing = [page('Plans'), page('b', 'Plans'), page('c', 'b'), page('d', 'b')]
-    expect(deleteWords(listing[1], planDelete(listing[1], listing, 'Leaf feedback'))).toBe('The 2 pages under it move up into Plans.')
-  })
-
-  it('on a page archived itself, says the pages archived with it come back, and never that anything is erased', () => {
-    const listing = [page('a'), page('b', 'a'), page('c', 'a')]
-    const words = deleteWords({ archived: { by: ME, at: 1 } }, planDelete(listing[0], listing, 'Leaf feedback'))
-    expect(words).toBe('The 2 pages under it come back into Leaf feedback.')
-    expect(words).not.toMatch(/erase/i)
-  })
-
-  it('on a page archived itself, does not count a page under it that was archived on its own, which stays archived', () => {
-    const listing = [page('a'), page('b', 'a', { archived: { by: ME, at: 1, with: `30842:${ME}:a` } }), page('c', 'a', { archived: { by: ME, at: 1 } })]
-    expect(deleteWords({ archived: { by: ME, at: 1 } }, planDelete(listing[0], listing, 'Leaf feedback'))).toBe('The 1 page under it comes back into Leaf feedback.')
-  })
 
   it('says nothing about pages when none is under it', () => {
-    const listing = [page('a')]
-    expect(deleteWords(listing[0], planDelete(listing[0], listing, 'Leaf feedback'))).toBe('')
+    const listing = [page('a'), page('b')]
+    expect(deleteWords(planDelete(listing[0], listing, 'Leaf feedback'))).toBe('')
   })
 })
 

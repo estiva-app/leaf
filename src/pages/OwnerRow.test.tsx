@@ -11,6 +11,14 @@ const signedIn = vi.hoisted(() => ({ pubkey: 'a'.repeat(64) as string | null }))
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => signedIn.pubkey,
   query: async () => [],
+  // A change written in order (ALL-8): what reaches the relay, signed.
+  changeWriter: {
+    sign: async (event: UnsignedEvent) => ({ ...event, id: 'f'.repeat(64), sig: '' }),
+    publish: async (event: UnsignedEvent) => {
+      published.push(event)
+      return { ok: true, eventId: 'f'.repeat(64) }
+    },
+  },
   publish: async (event: UnsignedEvent): Promise<PublishResult> => {
     published.push(event)
     return { ok: true } as PublishResult

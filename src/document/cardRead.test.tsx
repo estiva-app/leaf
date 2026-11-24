@@ -6,14 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 /*
   ALO-24: a card under a comment reads its file as it is now, once for every card asking in the same moment. The relay
   is the seam: `query` answers from the events below, each filter on its own as the relay does, and every filter that
-  reaches it is counted. The relay offers the list read, as production has since 2 Nov.
+  reaches it is counted. Every file is read by the list read (ALL-8).
 */
 const query = vi.hoisted(() => vi.fn())
 vi.mock('../relay/bridge', () => ({ query: (filters: unknown[]) => query(filters), publish: vi.fn(), viewerPubkey: () => 'c4'.repeat(32) }))
-vi.mock('../relay/projectFields', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../relay/projectFields')>()),
-  archivedWithOptions: async () => ({ archivedWith: true, listRead: true }),
-}))
 
 import { CommentCard } from '../comments/CommentCard'
 import { ReferencesProvider, useReferences } from './references'

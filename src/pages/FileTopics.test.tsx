@@ -21,8 +21,19 @@ let answers: PublishResult[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
-  query: async () => [],
+  // The open read of a topic (ALL-8): its first record, with no entry yet, which the entry's change follows.
+  query: async (filters: { fields?: string; '#d'?: string[] }[]) =>
+    filters.flatMap((f) =>
+      f.fields === 'newest' ? (f['#d'] ?? []).map((d) => ({ kind: 30840, pubkey: MIKY, tags: [['d', d], ['h', 'hq-folder']], content: '', created_at: 1, id: 'e'.repeat(64), sig: '' })) : [],
+    ),
   queryAll: async () => [],
+  changeWriter: {
+    sign: async (unsigned: UnsignedEvent) => ({ ...unsigned, id: 'f'.repeat(64), sig: '' }),
+    publish: async (signed: UnsignedEvent) => {
+      published.push(signed)
+      return { eventId: 'f'.repeat(64), ...(answers.shift() ?? { ok: true }) }
+    },
+  },
   publish: async (unsigned: UnsignedEvent) => {
     published.push(unsigned)
     return answers.shift() ?? { ok: true }

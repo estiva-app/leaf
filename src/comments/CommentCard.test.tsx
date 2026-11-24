@@ -28,6 +28,14 @@ vi.mock('../relay/bridge', () => ({
     return { ok: true }
   }),
   viewerPubkey: () => ME,
+  // A change written in order (ALL-8): what reaches the relay, signed.
+  changeWriter: {
+    sign: async (event: UnsignedEvent) => ({ ...event, id: 'f'.repeat(64), sig: '' }),
+    publish: async (event: UnsignedEvent) => {
+      published.push(event)
+      return { ok: true, eventId: 'f'.repeat(64) }
+    },
+  },
 }))
 
 import { CommentCard } from './CommentCard'

@@ -28,24 +28,6 @@ vi.mock('../relay/bridge', () => ({
     },
   },
 }))
-// Each type's switch is protocol's `fileFieldsOf`, tested there; here a kind in `switched` is on, as `?fields=on` or
-// `?issueFields=on` on a fenced team makes it, and the others are off.
-const switched = vi.hoisted(() => new Set(['30850', '30851']))
-vi.mock('../relay/projectFields', () => {
-  const on = (address?: string) => !!address && switched.has(address.split(':')[0]!)
-  return {
-    projectFields: async () => (switched.has('30850') ? { text: true } : undefined),
-    isProject: (address?: string) => !!address && address.startsWith('30850:'),
-    isIssue: (address?: string) => !!address && address.startsWith('30851:'),
-    isSwitchedKind: (address?: string) => !!address && /^3085[01]:/.test(address),
-    byFields: async (address?: string) => on(address),
-    fieldsFor: async (address?: string) => (on(address) ? { text: true } : undefined),
-    openReadOption: async () => ({ openRead: [...switched].map(Number) }),
-    readRelayAgain: () => {},
-    switchedSinceLoad: () => false,
-  }
-})
-
 import { saveCardChoice, saveField, saveText, setDeleted, noteRead, onMerged } from './save'
 
 const OWNER = 'b'.repeat(64)
@@ -83,11 +65,9 @@ const opened = (text: string, prevs: Record<string, string> = {}) => {
 beforeEach(() => {
   relay.events = [ROOT]
   relay.sent = []
-  switched.clear()
-  switched.add('30850').add('30851')
 })
 
-// A project since ALO-6, an issue since ISS-6: the same saves, each kind by its own switch.
+// A project and an issue (ALO-6, ISS-6): the same saves.
 describe.each([
   ['project', 30850],
   ['issue', 30851],
@@ -186,25 +166,5 @@ describe.each([
     expect(tag(sent, 'field')).toBe('deleted')
     expect(tag(sent, 'value')).toBe('')
     expect(tag(sent, 'prev')).toBe(del.id)
-  })
-})
-
-describe('an issue while only projects are switched (ISS-6)', () => {
-  beforeEach(() => {
-    ADDRESS = `30851:${OWNER}:p1`
-    ROOT.kind = 30851
-    switched.delete('30851')
-  })
-
-  it('writes its title as before, naming no change it follows', async () => {
-    const publish = vi.mocked((await import('../relay/bridge')).publish)
-    publish.mockClear()
-    const file = opened('')
-    expect(await saveField(file, 'title', 'Renamed')).toEqual({ ok: true })
-    expect(relay.sent).toEqual([])
-    const [event] = publish.mock.calls.at(-1)! as unknown as [UnsignedEvent]
-    expect(tag(event, 'a')).toBe(ADDRESS)
-    expect(tag(event, 'value')).toBe('Renamed')
-    expect(tag(event, 'prev')).toBeUndefined()
   })
 })

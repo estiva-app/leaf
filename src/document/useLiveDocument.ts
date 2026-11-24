@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ARCHIVED_FIELD, type ForeignObject } from '@estiva-app/interop'
 import { relayClient } from '../relay/client'
 import { viewerPubkey } from '../relay/bridge'
-import { byFields } from '../relay/projectFields'
+import { isFileKind } from '../relay/fileReads'
 import { CHANGE, archiveFolderOf, nameOf, onMerged, readDocument } from './save'
 
 /** Who saved the document's text last, when it was not you: the name in "<name> saved a newer version". */
@@ -19,17 +19,8 @@ export function useLiveDocument(opened: ForeignObject): { file: ForeignObject; c
   const [changedBy, setChangedBy] = useState<ChangedBy | null>(null)
   const seen = useRef(new Set<string>())
   const { address, folder, naddr } = opened
-  // A project read by its fields merges a save onto a newer one and asks for a block both changed (ALO-6).
-  const [merges, setMerges] = useState(false)
-  useEffect(() => {
-    let live = true
-    void byFields(address).then((on) => {
-      if (live) setMerges(on)
-    })
-    return () => {
-      live = false
-    }
-  }, [address])
+  // A file of the relay's file kinds merges a save onto a newer one and asks for a block both changed (ALO-6).
+  const merges = isFileKind(address)
 
   useEffect(() => {
     const client = relayClient()

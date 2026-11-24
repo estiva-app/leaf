@@ -92,7 +92,7 @@ describe('New document inside a page (LFB-8)', () => {
     const doc = published.find((e) => e.kind === 30842)!
     const add = published.find((e) => e.kind === 1852)!
     expect([tag(doc, 'title'), tag(doc, 'h'), tag(doc, 'a')]).toEqual(['Risks', HQ, PAGE])
-    expect([tag(add, 'op'), tag(add, 'h'), tag(add, 'a')]).toEqual(['add', QA, `30842:${ME}:${tag(doc, 'd')}`])
+    expect([tag(add, 'op'), tag(add, 'h'), tag(add, 'o')]).toEqual(['add', QA, tag(doc, 'd')])
     await waitFor(() => expect(window.location.pathname).toBe(`/document/risks-${tag(doc, 'd')}`))
   })
 })

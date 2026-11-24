@@ -24,7 +24,7 @@ import { projections as manifests } from '../relay/manifests'
 import { links } from '../comments/links'
 import { linkedKindOf } from './linked'
 import { query, queryWithMatches } from '../relay/bridge'
-import { ISSUE_KIND, PAGE_KIND, PROJECT_KIND, issueFields, projectFields, searchesPages } from '../relay/projectFields'
+import { searchedKinds } from '../relay/fileReads'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
 
@@ -49,15 +49,12 @@ let openFile: string | null = null
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((listener) => listener())
 
-// Projects and issues, each once switched, are found by a word in their current fields, as Ship's `[` finds them
-// (ALO-6, ISS-6); a deleted one is in no search, and the relay answers only a reader of the file's team.
+// Projects, issues and pages are found by a word in their current fields, as Ship's `[` finds them (ALO-6, ISS-6,
+// ALL-4); a deleted one is in no search, and the relay answers only a reader of the file's team.
 const search = referenceSearch({
   search: async (text) => {
-    const [projects, issues, pages] = await Promise.all([projectFields(), issueFields(), searchesPages()])
-    // Pages as soon as the relay searches them, switched or not: by their current words, never an old save's (ALL-4).
-    const kinds = [...(projects?.search ? [PROJECT_KIND] : []), ...(issues?.search ? [ISSUE_KIND] : []), ...(pages ? [PAGE_KIND] : [])]
-    const byFields = kinds.length ? { kinds, query: queryWithMatches } : undefined
-    return searchFileReferences(text, query, { cache: manifests, ...(projects || issues ? { listRead: true } : {}), ...(byFields ? { byFields } : {}) })
+    const kinds = await searchedKinds()
+    return searchFileReferences(text, query, { cache: manifests, ...(kinds.length ? { byFields: { kinds, query: queryWithMatches } } : {}) })
   },
 })
 

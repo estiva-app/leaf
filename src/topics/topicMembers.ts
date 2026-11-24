@@ -13,6 +13,27 @@ const KIND_APP_DATA = 30078
 
 type Filter = Record<string, unknown>
 
+/** How long the people directory is kept, as Peek's pickers keep theirs. */
+const DIRECTORY_MS = 60_000
+let directory: { at: number; keys: string[] } | undefined
+
+/**
+ * Everyone with a published profile, kept for a minute: what an initiative's members are read by (ALO-19, ALL-8), only
+ * the changes naming one of them. A failed read rejects, never answers "nobody": the count would hold only the viewer.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-membership-change-names-the-person-it-is-about.md
+ */
+async function peopleKeys(): Promise<string[]> {
+  if (directory && Date.now() - directory.at < DIRECTORY_MS) return directory.keys
+  const keys = [...new Set((await queryAll([{ kinds: [0] }])).map((event) => event.pubkey))]
+  directory = { at: Date.now(), keys }
+  return keys
+}
+
+/** Test seam: forget the people directory, as a new page would. */
+export function resetPeopleForTests(): void {
+  directory = undefined
+}
+
 /**
  * Filters asking the same kinds by the same tags, as one: each tag's values together. It asks for more than each alone
  * (an author with another's `d`), so every topic takes back only what its own filters answer.
@@ -58,10 +79,11 @@ export async function readTopicMembers(topics: readonly ReadTopic[]): Promise<Ma
   if (topics.length === 0) return new Map()
   const me = viewerPubkey()
   if (!me) throw new Error('Sign in to read who is in an initiative.')
+  const people = await peopleKeys()
   const asked = topics.map((topic) => {
     const place = { address: topic.address, team: topic.folder }
     try {
-      const filters = (placeFilters(place, me) as Filter[]).filter((filter) => !(filter.kinds as number[]).includes(KIND_APP_DATA))
+      const filters = (placeFilters(place, me, people) as Filter[]).filter((filter) => !(filter.kinds as number[]).includes(KIND_APP_DATA))
       return { topic, place, filters }
     } catch {
       // A topic whose team is no team id cannot be read for its people: it draws no count, and the others still do.
@@ -90,7 +112,7 @@ export async function readTopicPlace(topic: { address: string; folder: string })
   const me = viewerPubkey()
   if (!me) throw new Error('Sign in to read who is in an initiative.')
   const place = { address: topic.address, team: topic.folder }
-  const filters = (placeFilters(place, me) as Filter[]).filter((filter) => !(filter.kinds as number[]).includes(KIND_APP_DATA))
+  const filters = (placeFilters(place, me, await peopleKeys()) as Filter[]).filter((filter) => !(filter.kinds as number[]).includes(KIND_APP_DATA))
   const events = await queryAll(filters)
   const roster = events.filter((event) => event.kind === KIND_ROSTER || ROSTER_COMMANDS.includes(event.kind))
   const listing = events.filter((event) => event.kind === KIND_FOLDER_STATE || event.kind === KIND_FOLDER_COMMAND)

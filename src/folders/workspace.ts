@@ -16,7 +16,7 @@ import { buildDocument, encodeNaddr, KIND, type PublishResult } from '@estiva-ap
 import { summaryText } from '../document/summary'
 import { publish, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
-import { isListedKind, treeListRead } from '../relay/projectFields'
+import { isFileKind } from '../relay/fileReads'
 import { markRowOnly } from '../relay/rowOnly'
 
 /*
@@ -40,7 +40,7 @@ export function loadQuery(): QueryFn {
  * Folders view does (Miky, LEAF-2's kickoff) — not only the ones they joined.
  */
 export async function readFolders(read: QueryFn = query): Promise<FolderSummary[]> {
-  return topLevelFolders(await listFolders(read, await treeListRead()))
+  return topLevelFolders(await listFolders(read))
 }
 
 /**
@@ -48,23 +48,22 @@ export async function readFolders(read: QueryFn = query): Promise<FolderSummary[
  * archived files, each marked, which the read finds archived anyway.
  */
 export async function readFolder(id: string, read: QueryFn = query, options: { includeArchived?: boolean } = {}): Promise<FolderContents> {
-  // Once projects are switched, each project and issue costs its current values, not every change (ISS-6), as in
-  // Peek's tree; Leaf's own pages are read whole, since a page opens from this copy.
-  const listing = await treeListRead()
-  const contents = await resolveFolderContents(id, read, people.viaRelay(read), manifests, { ...options, ...listing })
-  if (listing.listRead) markRowOnly(contents.files.filter((file) => isListedKind(file.address, listing.listReadKinds)))
+  // Each file costs its current values, not every change (ISS-6, ALL-4), as in Peek's tree: a page opens by its
+  // address, with its current text.
+  const contents = await resolveFolderContents(id, read, people.viaRelay(read), manifests, options)
+  markRowOnly(contents.files.filter((file) => isFileKind(file.address)))
   return contents
 }
 
 /**
  * What another app's file lists under it — a project's issues — read when its
- * row opens, as Peek reads them. Empty when its app declares no list. Once
- * projects are switched, by the list read: each issue's first record and its
- * fields' current changes, never every change ever made to it (ISS-6).
+ * row opens, as Peek reads them. Empty when its app declares no list. By the
+ * list read: each issue's first record and its fields' current changes, never
+ * every change ever made to it (ISS-6).
  */
 export async function readChildren(naddr: string, address?: string): Promise<ForeignObject[]> {
-  if (address && (await treeListRead()).listRead) {
-    const [file] = await resolveForeignRoots([address], query, manifests, { listRead: true, children: true })
+  if (address) {
+    const [file] = await resolveForeignRoots([address], query, manifests, { children: true })
     const children = file?.children ?? []
     markRowOnly(children)
     return children

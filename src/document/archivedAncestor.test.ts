@@ -7,6 +7,7 @@
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { relayAnswer } from '../test/listRead'
 import { buildDocument, encodeNaddr, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 
 const relay = vi.hoisted(() => ({ events: [] as SignedEvent[] }))
@@ -22,7 +23,7 @@ const matches = (event: SignedEvent, filter: Record<string, unknown>) =>
     return true
   })
 vi.mock('../relay/bridge', () => ({
-  query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((event) => filters.some((filter) => matches(event, filter)))),
+  query: vi.fn(async (filters: Record<string, unknown>[]) => relayAnswer(relay.events, filters, matches)),
   publish: vi.fn(async () => ({ ok: true })),
   viewerPubkey: () => 'a'.repeat(64),
 }))
@@ -34,11 +35,13 @@ const LEAF = 'b'.repeat(64)
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 let next = 0
 const signed = (event: UnsignedEvent): SignedEvent => ({ ...event, id: String(++next).padStart(64, '0'), sig: '' }) as SignedEvent
-const page = (id: string, parent?: string) => signed(buildDocument(LEAF, 1_760_000_000_000, { fileId: id, title: id, channelUuid: FOLDER, ...(parent ? { parent } : {}) }))
-const addr = (id: string) => `${KIND.DOCUMENT}:${LEAF}:${id}`
+const page = (id: string, parent?: string) => signed(buildDocument(LEAF, 1_760_000_000_000, { fileId: uuidOf(id), title: id, channelUuid: FOLDER, ...(parent ? { parent } : {}) }))
+/** A page's id from its letter: a file's id is a v4 UUID, which the relay's list read checks. */
+const uuidOf = (letter: string) => `00000000-0000-4000-8000-${letter.charCodeAt(0).toString(16).padStart(12, '0')}`
+const addr = (id: string) => `${KIND.DOCUMENT}:${LEAF}:${uuidOf(id)}`
 const archive = (id: string, value: 'true' | '', at: number) =>
   signed({ kind: 1851, pubkey: LEAF, created_at: at, tags: [['a', addr(id)], ['field', 'archived'], ['value', value], ['h', FOLDER]], content: '' })
-const naddrOf = (id: string) => encodeNaddr({ kind: KIND.DOCUMENT, pubkey: LEAF, identifier: id, relays: [] })
+const naddrOf = (id: string) => encodeNaddr({ kind: KIND.DOCUMENT, pubkey: LEAF, identifier: uuidOf(id), relays: [] })
 
 // A ⟵ B ⟵ C: C sits under B, which sits under A.
 const pages = () => [page('A'), page('B', addr('A')), page('C', addr('B'))]
