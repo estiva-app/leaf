@@ -17,6 +17,8 @@ let states: { d: string; pubkey: string; lists?: string[] }[] = []
 
 /* A page's first record, as the open read answers it: what its first delete follows. */
 const ROOT_ID = 'e'.repeat(64)
+/* Changes the relay holds at a page, answered with its first record by the open read. */
+let held: { id: string; created_at: number; tags: string[][] }[] = []
 
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => viewer,
@@ -31,7 +33,10 @@ vi.mock('../relay/bridge', () => ({
   query: async (filters: { kinds?: number[]; '#d'?: string[]; '#a'?: string[]; fields?: string }[]) => {
     const [filter] = filters
     if (filter.fields === 'newest')
-      return (filter['#d'] ?? []).map((d) => ({ kind: 30842, pubkey: ME, tags: [['d', d], ['title', d], ['h', FOLDER]], content: '', created_at: 1, id: ROOT_ID, sig: '' }))
+      return (filter['#d'] ?? []).flatMap((d) => [
+        { kind: 30842, pubkey: ME, tags: [['d', d], ['title', d], ['h', FOLDER]], content: '', created_at: 1, id: ROOT_ID, sig: '' },
+        ...held.filter((change) => change.tags.some((t) => t[0] === 'a' && t[1] === `30842:${ME}:${d}`)).map((change) => ({ kind: 1851, pubkey: ME, content: '', sig: '', ...change })),
+      ])
     if (filter.kinds?.[0] === 30890)
       return states
         .filter(({ lists }) => !lists || lists.some((a) => filter['#a']?.includes(a)))
@@ -68,6 +73,7 @@ afterEach(() => {
   answers = []
   viewer = ME
   states = []
+  held = []
 })
 
 describe('deleting a Leaf page (ALL-4, ALL-8)', () => {
@@ -82,6 +88,13 @@ describe('deleting a Leaf page (ALL-4, ALL-8)', () => {
     expect(change.kind).toBe(1851)
     expect(change.pubkey).toBe(KAT)
     expect([tag(change, 'a'), tag(change, 'field'), tag(change, 'value'), tag(change, 'h'), tag(change, 'prev')]).toEqual([`30842:${ME}:a`, 'deleted', 'true', FOLDER, ROOT_ID])
+  })
+
+  it('deleted and restored before, is deleted again after its restore, not its first record', async () => {
+    const restore = { id: 'd'.repeat(64), created_at: 2, tags: [['a', `30842:${ME}:a`], ['field', 'deleted'], ['value', ''], ['h', FOLDER], ['prev', 'c'.repeat(64)]] }
+    held = [{ id: 'c'.repeat(64), created_at: 1, tags: [['a', `30842:${ME}:a`], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER], ['prev', ROOT_ID]] }, restore]
+    expect(await deleteDocument(page('a'))).toEqual({ ok: true })
+    expect([tag(published[0], 'field'), tag(published[0], 'value'), tag(published[0], 'prev')]).toEqual(['deleted', 'true', restore.id])
   })
 
   it('says the pages under it show at the team’s top until it is restored, never that they move', async () => {
