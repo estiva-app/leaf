@@ -12,12 +12,13 @@ import {
   type LauncherHost,
   type LauncherWords,
 } from '@estiva-app/launcher'
-import { KIND } from '@estiva-app/protocol'
+import { encodeNpub, KIND } from '@estiva-app/protocol'
 import { LinkCard, thingKindOf } from '@estiva-app/ui'
 import { useReportFailure } from '@/lib/failureReports'
-import { useDirectory } from '../comments/people'
+import { useDirectory, useMentionPeople } from '../comments/people'
 import { linkStateOf } from '../document/linked'
-import { fileHits, subscribeFileHits } from '../document/referencePicker'
+import { PageLink } from '../document/PageLink'
+import { fileHits, REFERENCE_COPY, referenceSections, subscribeFileHits, subscribeReferences } from '../document/referencePicker'
 import { readDocument } from '../document/save'
 import { naddrOf } from '../fileAddress'
 import { openerOf } from '../pages/OwnerRow'
@@ -25,12 +26,14 @@ import { useFileByAddress } from '../pages/useFileByAddress'
 import { documentPath, dOf, filePath, navigate, usePathname } from '../route'
 import { topicOpener } from '../topics/topicLinks'
 import type { ForeignObject } from '@estiva-app/interop'
+import { applyAction, creatableUnder, leafMaySign } from './creations'
 import { blocksOfPart, cursorBlockAtOpen, openPageActions, showPart } from './openPage'
 
 /*
   KIN-5 — Leaf's ⌘K: the box Peek ships (@estiva-app/launcher), handed what only Leaf knows. A name finds files from
   every app; a sentence asks about the open page (its text and its comments); an answer becomes a comment or a block.
-  Leaf lists no other app: none declares an action Leaf may sign today, and an app with nothing to offer is noise.
+  Of the other apps Leaf lists Ship, whose Create issue and Create project it makes in Leaf by following Ship's manifest,
+  as Peek's ⌘K does (KIN-11); an app with nothing Leaf may make is noise.
 */
 
 const WORDS: LauncherWords = {
@@ -46,7 +49,9 @@ const WORDS: LauncherWords = {
   part: { one: 'passage', many: 'passages' },
 }
 
-const APPS = launcherApps('leaf').filter((app) => app.isHost)
+// Leaf, and each app that declares something Leaf may make: Ship's Create issue and Create project (KIN-11). Peek's
+// actions are a topic and a message, which Leaf does not write, so it is not listed: an app with nothing to offer is noise.
+const APPS = launcherApps('leaf').filter((app) => app.isHost || app.actions.some((action) => typeof action.emits?.kind === 'number' && leafMaySign(action.emits.kind)))
 const IDLE = { state: { kind: 'idle' } as const, hits: [] as LauncherFileHit[] }
 
 /** What `[` finds, as the box's file search: files from every app by the words of their fields. */
@@ -160,12 +165,22 @@ function answerActions(answer: LauncherAnswer): LauncherAnswerAction[] {
   ]
 }
 
-const NO_FORM: LauncherHost['form'] = {
-  // Leaf opens no form: it lists no app whose action it may sign, and New document opens Leaf's own dialog.
-  references: {} as LauncherHost['form']['references'],
-  mentions: {} as LauncherHost['form']['mentions'],
-  referenceView: () => null,
-  personField: () => null,
+/** `[` in a form's description: what the page editor's `[` offers. */
+const FORM_REFERENCES: LauncherHost['form']['references'] = { sections: referenceSections, subscribe: subscribeReferences, ariaLabel: REFERENCE_COPY.ariaLabel, sectionLabel: REFERENCE_COPY.files }
+
+/**
+ * What the box's form needs of Leaf, for Ship's Create issue and Create project (KIN-11): `[` and `@` in a
+ * description as the page editor has them, and a reference drawn as a page link. Neither form asks for a person, so
+ * there is no picker.
+ */
+function useLeafForm(): LauncherHost['form'] {
+  const people = useMentionPeople()
+  return {
+    references: FORM_REFERENCES,
+    mentions: { people: () => people.people, uriOf: (person) => (person.pubkey ? `nostr:${encodeNpub(person.pubkey)}` : null) },
+    referenceView: PageLink,
+    personField: () => null,
+  }
 }
 
 /** Leaf's ⌘K box, held by the frame (`useKeptLauncher`), with Leaf's New document when a team takes one. */
@@ -173,6 +188,7 @@ export function LeafLauncher({ onNewDocument, newDocumentIn, ...box }: KeptLaunc
   const pathname = usePathname()
   const directory = useDirectory()
   const people = Object.entries(directory).map(([id, person]) => ({ id, name: person.displayName, ...(person.picture ? { avatarSrc: person.picture } : {}) }))
+  const form = useLeafForm()
   const host: LauncherHost = {
     apps: APPS,
     mark: () => null,
@@ -190,12 +206,13 @@ export function LeafLauncher({ onNewDocument, newDocumentIn, ...box }: KeptLaunc
     },
     useFileSearch: useLeafFileSearch,
     plain: (body) => body,
-    manifests: { creatableUnder: async () => null, applyAction: async () => ({ ok: false, reason: 'Leaf does not do this.' }), resolveObject: async () => null },
+    // A creation another app declares, made here by following its manifest (KIN-11); nothing else is applied from Leaf's ⌘K.
+    manifests: { creatableUnder, applyAction, resolveObject: async () => null },
     model: onDeviceModel,
     showSource: showPart,
-    form: NO_FORM,
-    // Leaf signs documents, comments and their changes (Estiva ID's allowed kinds for Leaf), never another app's file.
-    maySign: (kind) => kind === KIND.DOCUMENT,
+    form,
+    // Leaf signs its documents and the Ship files its ⌘K makes (Estiva ID's allowed kinds for Leaf), never a topic or a message.
+    maySign: leafMaySign,
     ...(onNewDocument ? { ownActions: [{ id: 'new-document', label: 'New document', ...(newDocumentIn ? { description: `In ${newDocumentIn}` } : {}), icon: <IconFilePlus size={16} stroke={1.5} />, run: onNewDocument }] } : {}),
     answerActions,
     useReportFailure,
