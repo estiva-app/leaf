@@ -267,7 +267,7 @@ describe('what a link in a comment tags', () => {
     const root = comment([], 'Too long?')
     const thread: Thread = { id: root.id, root: itemOf(root), replies: [], resolved: false }
     await postReply(DOC, thread, { text: `nostr:${encodeNpub(QA2)} see ${urlOf('fix-it', D3)}#block-b7` })
-    expect(sent().tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE3], ['part', ISSUE3, 'b7']]))
+    expect(sent().tags).toEqual(expect.arrayContaining([['p', QA2], ['a', ISSUE3], ['part', D3, 'b7']]))
   })
 
   it('an edit carries the a and q its new words earn, and no p, urgent or part', async () => {
@@ -293,7 +293,7 @@ describe('what a link in a comment tags', () => {
   it('✕ on a card keeps the a the words still earn', async () => {
     const root = comment([], `see ${urlOf('fix-it', D1)}`)
     expect(await removeCard({ ...itemOf(root), cards: [{ value: ISSUE1, layout: 'detailed' }] }, ISSUE1)).toEqual({ ok: true })
-    expect(named('embed')).toEqual([['embed', ISSUE1, 'none']])
+    expect(named('embed')).toEqual([['embed', D1, 'none']])
     expect(named('a')).toEqual([['a', ISSUE1]])
   })
 
@@ -301,7 +301,7 @@ describe('what a link in a comment tags', () => {
     const root = comment([['embed', ISSUE2, 'detailed']], `see ${fileReference(ISSUE2)}`)
     const cards = [{ value: ISSUE2, layout: 'detailed' as const }, { value: ISSUE1, layout: 'detailed' as const }]
     expect(await editComment({ ...itemOf(root), cards: [cards[0]] }, { text: `see ${urlOf('fix-it', D1)}`, cards })).toEqual({ ok: true })
-    expect(named('embed')).toEqual([['embed', ISSUE2, 'detailed'], ['embed', ISSUE1, 'detailed']])
+    expect(named('embed')).toEqual([['embed', D2, 'detailed'], ['embed', D1, 'detailed']])
   })
 })
 

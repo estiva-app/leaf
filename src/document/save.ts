@@ -3,10 +3,8 @@ import {
   KIND_CHANNEL_METADATA,
   createPeopleCache,
   fieldsSetBy,
-  isSwitchRefusal,
   openFile,
   prevOf,
-  prevsAfterSwitch,
   resolveForeignObject,
   resolveForeignObjects,
   resolveForeignRoots,
@@ -21,7 +19,7 @@ import { KIND, addrToNaddr, addressToPointer, attachmentsInDocument, changeTypeT
 import { MAX_MENTIONED_PEOPLE, buildMembershipChange, byOrder, newlyNamedPeople, peopleNamedInText, type FileText } from '@estiva-app/conversation'
 import type { DocumentAsks } from '@estiva-app/ui/editor'
 import { changeWriter, publish, viewerPubkey } from '../relay/bridge'
-import { archivedWithOptions, byFields, fieldsFor, isListedKind, isSwitchedKind, listReadOffered, openReadOption, readRelayAgain, switchedSinceLoad } from '../relay/projectFields'
+import { isFileKind } from '../relay/fileReads'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
 import { markRowOnly } from '../relay/rowOnly'
 import { documentPath } from '../route'
@@ -40,31 +38,30 @@ const people = createPeopleCache()
  * is read-only as every app draws it.
  */
 export async function readDocument(naddr: string): Promise<ForeignObject | null> {
-  const file = await resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { ...(await archivedWithOptions()), ...(await openReadOption()) })
+  const file = await resolveForeignObject(naddr, query, people.viaRelay(query), 0, manifests, { archivedWith: true })
   if (file) noteRead(file)
   return file
 }
 
 /** Several files read as {@link readDocument} reads one, in one request: keyed by the `naddr` given. */
 export async function readDocuments(naddrs: readonly string[]): Promise<Record<string, ForeignObject | null>> {
-  const read = await resolveForeignObjects(naddrs, query, people.viaRelay(query), manifests, { ...(await archivedWithOptions()), ...(await openReadOption()) })
+  const read = await resolveForeignObjects(naddrs, query, people.viaRelay(query), manifests, { archivedWith: true })
   for (const file of Object.values(read)) if (file) noteRead(file)
   return read
 }
 
 /**
  * Other apps' files as Home lists them, keyed by address: what each is now, without its comments, its children or its
- * people, and by the list read where the relay offers it. A project costs its current values, never every change of
- * every issue under it, which {@link readDocuments} reads: 4.3 MB of Miky's cold Home on 19 Nov (ISS-6). A file the
- * reader cannot read, or one deleted, is absent.
+ * people, by the list read. A project costs its current values, never every change of every issue under it, which
+ * {@link readDocuments} reads: 4.3 MB of Miky's cold Home on 19 Nov (ISS-6). A file the reader cannot read, or one
+ * deleted, is absent.
  *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/the-old-way-goes-once-miky-has-looked.md
  */
 export async function readFileRows(addresses: readonly string[]): Promise<Record<string, ForeignObject>> {
-  const listRead = await listReadOffered()
-  const read = await resolveForeignRoots(addresses, query, manifests, { archivedWith: true, ...(listRead ? { listRead: true } : {}) })
-  // Only the kinds Leaf writes another app's text of: any other keeps its own body-slot rule, text unread or not.
-  if (listRead) markRowOnly(read.filter((file) => isListedKind(file.address)))
+  const read = await resolveForeignRoots(addresses, query, manifests, { archivedWith: true })
+  // The relay's file kinds come by the list read, their text unread: any other kind keeps its own body-slot rule.
+  markRowOnly(read.filter((file) => isFileKind(file.address)))
   return Object.fromEntries(read.flatMap((file) => (file.address ? [[file.address, file] as const] : [])))
 }
 
@@ -82,9 +79,9 @@ function heldOf(address: string) {
   return one
 }
 
-/** Hold what a read of a project or an issue says each field's next change follows, and the text it shows. */
+/** Hold what a read of a file says each field's next change follows, and the text it shows. */
 export function noteRead(file: Pick<ForeignObject, 'address' | 'prevs' | 'eventId' | 'slots'>): void {
-  if (!isSwitchedKind(file.address)) return
+  if (!isFileKind(file.address)) return
   const one = heldOf(file.address!)
   for (const [field, id] of Object.entries(file.prevs ?? {})) if (id && field !== TEXT_FIELD) one.prevs[field] = id
   // A file nobody has changed since it was made names no change at all: its empty text follows its first record (ISS-6).
@@ -112,7 +109,7 @@ export async function archivedAbove(address: string, opens = false): Promise<{ n
     return {}
   }
   if (pointer.kind === KIND_CHANNEL_METADATA) return { noun: 'team', app: 'Peek' }
-  const read = async () => (opens ? resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests, await openReadOption()).catch(() => null) : null)
+  const read = async () => (opens ? resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null) : null)
   const titled = (file: ForeignObject | null) => file?.slots.title?.value?.trim() || undefined
   // Leaf calls its own documents pages, as the LED-1 prototype's lines do, and opens them here.
   if (pointer.kind === KIND.DOCUMENT) return { noun: 'page', href: documentPath(pointer.identifier), title: titled(await read()) }
@@ -135,7 +132,7 @@ export async function archiveFolderOf(address: string): Promise<string | undefin
     return undefined
   }
   if (pointer.kind === KIND_CHANNEL_METADATA) return pointer.identifier
-  const found = await resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests, await openReadOption()).catch(() => null)
+  const found = await resolveForeignObject(addrToNaddr(address), query, people.viaRelay(query), 0, manifests).catch(() => null)
   return found?.folder
 }
 
@@ -150,9 +147,9 @@ export async function readSummary(file: Pick<ForeignObject, 'address' | 'folder'
   if (!file.address || !file.folder) return null
   try {
     const value = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
-    // A project read by its fields names its summary's current change, which the relay kept in order: that one change
-    // is read, not every change (ALO-6).
-    if ((await byFields(file.address)) && file.prevs) {
+    // A file names its summary's current change, which the relay kept in order: that one change is read, not every
+    // change (ALO-6).
+    if (isFileKind(file.address) && file.prevs) {
       // As this tab last read or wrote it: the file a page hands in is the one it opened.
       const current = held.get(file.address)?.prevs.summary ?? file.prevs.summary
       const [event] = await query([{ ids: [current ?? file.eventId] }])
@@ -300,7 +297,6 @@ async function writeInOrder(
   stage?: StageTag,
 ): Promise<WriteChangeResult> {
   const pointer = pointerOf(file.address)
-  const fields = await fieldsFor(file.address)
   try {
     const result = await writeChange({
       field,
@@ -312,8 +308,7 @@ async function writeInOrder(
       sign: changeWriter.sign,
       publish: changeWriter.publish,
       query,
-      current: async (asked) =>
-        (await openFile(query, pointer, { text: asked === TEXT_FIELD && !!fields?.text }))?.fields[asked]?.event,
+      current: async (asked) => (await openFile(query, pointer, { text: asked === TEXT_FIELD }))?.fields[asked]?.event,
     })
     if (result.ok && field !== TEXT_FIELD) heldOf(file.address).prevs[field] = result.id
     return result
@@ -322,7 +317,7 @@ async function writeInOrder(
   }
 }
 
-/** A project's or an issue's address as `openFile` and `prevsAfterSwitch` name it: its kind, author and `d`. */
+/** A file's address as `openFile` names it: its kind, author and `d`. */
 function pointerOf(address: string): { kind: number; pubkey: string; d: string } {
   const [kind, pubkey, ...d] = address.split(':')
   return { kind: Number(kind), pubkey: pubkey!, d: d.join(':') }
@@ -335,52 +330,28 @@ function prevFor(file: Writable, field: string): string | undefined {
 }
 
 /**
- * A project change written the old way, with no `prev`, that the relay refused because it has made the switch since
- * this tab read its NIP-11 (ALO-8): read NIP-11 again, so every later read and write in this tab is switched too, and
- * answer the change `field`'s next change follows — its current one, or the first record's. The caller writes the
- * change again, once, through its switched path; the person sees nothing. Undefined for any other refusal, or when
- * projects are still not switched: the refusal is shown as any is.
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
- */
-async function prevAfterSwitch(address: string, field: string, refused: PublishResult): Promise<string | undefined> {
-  if (refused.ok || !isSwitchedKind(address) || !isSwitchRefusal(refused.reason)) return undefined
-  readRelayAgain()
-  if (!(await byFields(address))) return undefined
-  return currentChange(address, field)
-}
-
-/** The change `field`'s next change follows on the relay now: its current one, or the first record's (ALO-8). */
-async function currentChange(address: string, field: string): Promise<string | undefined> {
-  const prevs = await prevsAfterSwitch(query, pointerOf(address), [field]).catch(() => undefined)
-  return prevs?.[field]
-}
-
-/**
  * Save a document's title, summary or text. `ok: false` carries what to tell the person. `editedFrom` is the text the
- * person edited, for the text: a project's text refused at the switch is written again only onto it (ALO-8), so words
- * saved since it loaded are merged, never written over.
+ * person edited, for the text: it is saved after the change holding it, and words saved since are merged.
  */
 export async function saveField(file: Writable, field: DocumentField, value: string, contentFormat?: string, editedFrom?: FileText): Promise<SaveResult> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to save.' }
   const { address, folder } = file
   if (!address || !folder) return { ok: false, reason: 'This cannot be saved from here.' }
-  if (field !== TEXT_FIELD && (await byFields(address))) {
+  if (isFileKind(address)) {
+    const at = { ...file, address, folder }
+    if (field === TEXT_FIELD) {
+      if (!editedFrom) return { ok: false, reason: 'Could not save. Reload the page and try again.' }
+      return saveTextInOrder(pubkey, at, { content: value, format: contentFormat }, editedFrom)
+    }
     const prev = prevFor(file, field)
     if (!prev) return { ok: false, reason: 'Could not save. Reload the page and try again.' }
-    const result = await writeInOrder(pubkey, { ...file, address, folder }, field, value, prev)
-    return answered(result)
+    return answered(await writeInOrder(pubkey, at, field, value, prev))
   }
   const result: PublishResult = await publish(buildChange(pubkey, Date.now(), { target: address, field, value, folder, contentFormat }))
   if (result.ok) {
     for (const listener of saved) listener()
     return { ok: true }
-  }
-  const text = field === TEXT_FIELD
-  const prev = !text || typeof editedFrom?.content === 'string' ? await prevAfterSwitch(address, field, result) : undefined
-  if (prev) {
-    const at = { ...file, address, folder }
-    return text ? saveTextInOrder(pubkey, at, { content: value, format: contentFormat }, editedFrom!, prev) : answered(await writeInOrder(pubkey, at, field, value, prev))
   }
   // The relay's reason names kinds and rules: the console keeps it.
   console.warn('[relay] save refused', result)
@@ -398,29 +369,22 @@ function answered(result: WriteChangeResult): SaveResult {
 }
 
 /**
- * The text of a project read by its fields, saved after the change holding the text it was edited from (ALO-6). A
- * text that someone changed since is merged onto theirs; a block both changed asks with the kit's ask, nothing saved
- * (protocol's `textAsksOf`, Ship's). A text edited from one this tab never held is not saved: merging it would start
- * from the wrong base. `switched` is the text's current change when it is written again after the switch (ALO-8): this
- * tab holds no change for the text it loaded, so it follows the current one with the text it was edited from as the
- * merge's base, and words saved since are kept.
+ * A file's text, saved after the change holding the text it was edited from (ALO-6). A text that someone changed
+ * since is merged onto theirs; a block both changed asks with the kit's ask, nothing saved (protocol's `textAsksOf`,
+ * Ship's). A text edited from one this tab never held is not saved: merging it would start from the wrong base.
  */
 async function saveTextInOrder(
   pubkey: string,
   file: Writable & { address: string; folder: string },
   text: FileText & { content: string },
   editedFrom: FileText,
-  switched?: string,
 ): Promise<SaveResult> {
   const one = heldOf(file.address)
   const from = typeof editedFrom.content === 'string' ? editedFrom.content : undefined
-  const heldPrev = from === undefined ? undefined : one.texts.get(from)
-  // A tab switched while open read its text the old way: it follows the current text, merged from the loaded one (ALO-8).
-  switched ??= heldPrev === undefined && from !== undefined && switchedSinceLoad() ? await currentChange(file.address, TEXT_FIELD) : undefined
-  const prev = switched ?? heldPrev
+  const prev = from === undefined ? undefined : one.texts.get(from)
   if (!prev) return { ok: false, reason: 'Someone changed it while you were editing. Copy your text, then reload.' }
   const base = { value: from ?? '', ...(editedFrom.format ? { format: editedFrom.format } : {}) }
-  const result = await writeInOrder(pubkey, file, TEXT_FIELD, text.content, prev, text.format, switched ? base : undefined)
+  const result = await writeInOrder(pubkey, file, TEXT_FIELD, text.content, prev, text.format)
   if (result.ok) {
     // What the relay now holds: mine, or mine merged onto theirs — the text the editor is handed back next.
     const kept = 'event' in result ? textOf(result.event)?.value : textOf(result.mergedOnto)?.value
@@ -435,9 +399,9 @@ async function saveTextInOrder(
 }
 
 /**
- * Delete a project, or restore it, where projects are kept in order (SPEC §6.5): a change setting `deleted` to `true`,
- * or to the empty value, after the one it follows — the change Ship's Delete and Restore declare. It keeps its id,
- * record and changes, so Restore brings it back whole.
+ * Delete a file, or restore it (SPEC §6.5): a change setting `deleted` to `true`, or to the empty value, after the one
+ * it follows — the change Ship's Delete and Restore declare. It keeps its id, record and changes, so Restore brings it
+ * back whole.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
  */
 export async function setDeleted(file: Writable, deleted: boolean): Promise<SaveResult> {
@@ -445,7 +409,7 @@ export async function setDeleted(file: Writable, deleted: boolean): Promise<Save
   if (!pubkey) return { ok: false, reason: 'Sign in to restore it.' }
   const { address, folder } = file
   const prev = prevFor(file, 'deleted')
-  if (!address || !folder || !prev || !(await byFields(address))) return { ok: false, reason: 'This can’t be restored from here.' }
+  if (!address || !folder || !prev || !isFileKind(address)) return { ok: false, reason: 'This can’t be restored from here.' }
   return answered(await writeInOrder(pubkey, { ...file, address, folder }, 'deleted', deleted ? 'true' : '', prev))
 }
 
@@ -480,8 +444,8 @@ export async function saveCardChoice(
   // What the chosen status means, as its owner's app declares it, so every app counts it the same (SPEC §7.3, EAC-5).
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-companys-statuses-are-its-own-layer-of-a-types-properties.md
   const stage = action.control === 'select' ? stageTagFor(action.field!, value, action.options) : undefined
-  // A project read by its fields: after the change the choice's field follows; a crossing one is set again on top (ALO-6).
-  if (await byFields(file.address)) {
+  // A file: after the change the choice's field follows; a crossing one is set again on top (ALO-6).
+  if (isFileKind(file.address)) {
     const prev = prevFor(file, action.field!)
     const result = prev ? await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev, undefined, undefined, stage) : { ok: false as const, refused: 'no change to follow' }
     if (result.ok) return { ok: true }
@@ -490,9 +454,6 @@ export async function saveCardChoice(
   }
   const result = await publish(buildChange(pubkey, Date.now(), { target: file.address, field: action.field!, value, folder: file.folder, stage }))
   if (result.ok) return { ok: true }
-  // Refused because the relay switched since this tab read it: once more, in order (ALO-8).
-  const prev = await prevAfterSwitch(file.address, action.field!, result)
-  if (prev && (await writeInOrder(pubkey, { ...file, address: file.address, folder: file.folder }, action.field!, value, prev, undefined, undefined, stage)).ok) return { ok: true }
   console.warn('[relay] change refused', result)
   return { ok: false, reason: 'Could not change it.' }
 }
@@ -514,7 +475,7 @@ export async function saveText(
 ): Promise<{ ok: true; refused: string[] } | { ok: false; reason: string; asks?: DocumentAsks }> {
   const pubkey = viewerPubkey()
   const { address, folder } = file
-  const result = pubkey && address && folder && (await byFields(address)) ? await saveTextInOrder(pubkey, { ...file, address, folder }, saved, editedFrom) : await saveField(file, 'description', saved.content, saved.format, editedFrom)
+  const result = pubkey && address && folder && isFileKind(address) ? await saveTextInOrder(pubkey, { ...file, address, folder }, saved, editedFrom) : await saveField(file, 'description', saved.content, saved.format, editedFrom)
   if (!result.ok || !pubkey || !address || !folder) return result.ok ? { ok: true, refused: [] } : result
   const named = peopleNamedInText(saved)
   const people = [...new Set([...newlyNamedPeople(saved, editedFrom), ...unadded.filter((person) => named.has(person))])]

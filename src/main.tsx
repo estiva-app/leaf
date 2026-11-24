@@ -5,7 +5,6 @@ import { AuthShell } from './auth/AuthShell'
 import { bootAuth, enterFromShell } from './auth/boot'
 import { followOtherTabs } from './auth/estivaId'
 import { SessionGate } from './auth/SessionGate'
-import { documentFieldsOptIn, fieldsOptIn, issueFieldsOptIn, topicFieldsOptIn } from './relay/fieldsOptIn'
 import { ErrorBoundary } from '@estiva-app/ui'
 import { startErrorReports } from './lib/errorReports'
 import { startPageTimings } from './lib/pageTimings'
@@ -18,13 +17,6 @@ startPageTimings()
 // Settle who this load belongs to first, then render: the app itself is imported
 // only once sign-in is settled, so nothing in it evaluates as the wrong person.
 void (async () => {
-  // Before sign-in can move the address: `?fields=on` opts this tab in to reading projects by their fields (ALO-6).
-  fieldsOptIn(window.location.search)
-  // `?issueFields=on`, the same for issues, apart from projects (ISS-6).
-  issueFieldsOptIn(window.location.search)
-  // `?documentFields=on` and `?topicFields=on`, the same for pages and a topic's file list (ALL-4).
-  documentFieldsOptIn(window.location.search)
-  topicFieldsOptIn(window.location.search)
   const root = createRoot(document.getElementById('root')!)
   const boot = await bootAuth()
   if (boot.kind === 'leaving') return

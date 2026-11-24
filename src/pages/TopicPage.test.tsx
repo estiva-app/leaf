@@ -7,6 +7,7 @@ import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { drawOnce } from '../test/drawOnce'
+import { relayAnswer } from '../test/listRead'
 
 /* LTN-3: a topic's own page in Leaf, as Miky opens it from the sidebar or any topic link inside Leaf. */
 
@@ -20,12 +21,8 @@ const PEEK = 'c'.repeat(64)
 let held: SignedEvent[] = []
 type Filter = { ids?: string[]; kinds?: number[]; authors?: string[]; [tag: `#${string}`]: string[] | undefined }
 function relay(filters: Filter[]): SignedEvent[] {
-  const matches = (e: SignedEvent, f: Filter) =>
-    (!f.ids || f.ids.includes(e.id)) &&
-    (!f.kinds || f.kinds.includes(e.kind)) &&
-    (!f.authors || f.authors.includes(e.pubkey)) &&
-    Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1])))
-  return held.filter((e) => filters.some((f) => matches(e, f)))
+  // The list read (`"fields": "newest"`, SPEC §6.13) as the relay answers it; every other filter as it matches.
+  return relayAnswer(held, filters as Record<string, unknown>[])
 }
 /* When set, the relay refuses every read: a busy relay or a dropped socket. */
 let down = false

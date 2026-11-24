@@ -3,6 +3,7 @@
  * whether the unarchive is written in the page's own Folder or in another one, as a Ship project's is.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { relayAnswer } from '../test/listRead'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { buildDocument, encodeNaddr, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
@@ -19,7 +20,7 @@ const matches = (event: SignedEvent, filter: Record<string, unknown>) =>
     return true
   })
 vi.mock('../relay/bridge', () => ({
-  query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((event) => filters.some((filter) => matches(event, filter)))),
+  query: vi.fn(async (filters: Record<string, unknown>[]) => relayAnswer(relay.events, filters, matches)),
   publish: vi.fn(async () => ({ ok: true })),
   viewerPubkey: () => 'a'.repeat(64),
 }))
@@ -54,11 +55,13 @@ const HERE = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const THERE = '7c1f1a52-3b0e-4d8e-9a55-0f3f6b0c2d11'
 let next = 0
 const signed = (event: UnsignedEvent): SignedEvent => ({ ...event, id: String(++next).padStart(64, '0'), sig: '' }) as SignedEvent
-const addr = (id: string) => `${KIND.DOCUMENT}:${LEAF}:${id}`
-const page = (id: string, folder: string, parent?: string) => signed(buildDocument(LEAF, 1_760_000_000_000, { fileId: id, title: id, channelUuid: folder, ...(parent ? { parent } : {}) }))
+/** A page's id from its letter: a file's id is a v4 UUID, which the relay's list read checks. */
+const uuidOf = (letter: string) => `00000000-0000-4000-8000-${letter.charCodeAt(0).toString(16).padStart(12, '0')}`
+const addr = (id: string) => `${KIND.DOCUMENT}:${LEAF}:${uuidOf(id)}`
+const page = (id: string, folder: string, parent?: string) => signed(buildDocument(LEAF, 1_760_000_000_000, { fileId: uuidOf(id), title: id, channelUuid: folder, ...(parent ? { parent } : {}) }))
 const archive = (id: string, value: 'true' | '', folder: string, at: number) =>
   signed({ kind: 1851, pubkey: LEAF, created_at: at, tags: [['a', addr(id)], ['field', 'archived'], ['value', value], ['h', folder]], content: '' })
-const naddrOf = (id: string) => encodeNaddr({ kind: KIND.DOCUMENT, pubkey: LEAF, identifier: id, relays: [] })
+const naddrOf = (id: string) => encodeNaddr({ kind: KIND.DOCUMENT, pubkey: LEAF, identifier: uuidOf(id), relays: [] })
 
 /** The hook opened on `opened`, once its own first read is in: what it finds after is from what arrives live. */
 async function opens(opened: ForeignObject) {

@@ -111,18 +111,14 @@ export function DocumentMenu({
   async function remove(shown: DeletePlan): Promise<boolean> {
     // Read again on confirm: a page moved under it while the dialog was open moves up too.
     const plan = await readDeletePlan(file).catch(() => shown)
-    const result = await deleteDocument(file, plan)
+    const result = await deleteDocument(file)
     if (!result.ok) {
       refuse(result.reason, 'not-deleted')
       return false
     }
     navigate(plan.to ? pagePath({ ...plan.to, title: titleOf(plan.to) }) : '/')
     changed()
-    const after = [
-      result.unmoved > 0 && `${result.unmoved === 1 ? '1 page' : `${result.unmoved} pages`} under it could not be moved and ${result.unmoved === 1 ? 'is' : 'are'} at the team’s top.`,
-      result.stillListed && 'It is still listed in a team; reload and try again.',
-    ].filter(Boolean)
-    showToast({ label: after.length ? [`Deleted “${title}”.`, ...after].join(' ') : `Deleted “${title}”`, type: after.length ? 'warning' : 'success', ...(after.length ? { failure: result.unmoved > 0 ? 'not-moved' : 'not-deleted' } : {}) })
+    showToast({ label: `Deleted “${title}”`, type: 'success' })
     return true
   }
 
@@ -230,7 +226,7 @@ export function DocumentMenu({
         <MenuItem
           label="Delete"
           destructive
-          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan, words: deleteWords(file, plan) }), 'The team could not be read, so nothing was deleted. Try again.')}
+          onClick={() => read(readDeletePlan(file), (plan) => setDialog({ kind: 'delete', plan, words: deleteWords(plan) }), 'The team could not be read, so nothing was deleted. Try again.')}
         />
       </Menu>
       {dialog?.kind === 'move' && (
@@ -272,12 +268,8 @@ export function DocumentMenu({
               : undefined
           }
         >
-          {dialog.plan.marks ? (
-            // A delete that only marks the page (ALL-4), in Ship's words for its restorable delete, and where it comes back.
-            <p>It leaves every list and search. Its link still opens it, with Restore, and so does Peek’s Archive → Deleted.</p>
-          ) : (
-            <p>It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.</p>
-          )}
+          {/* A delete only marks the page (ALL-4), in Ship's words for its restorable delete, and where it comes back. */}
+          <p>It leaves every list and search. Its link still opens it, with Restore, and so does Peek’s Archive → Deleted.</p>
           {dialog.words && <p>{dialog.words}</p>}
         </ConfirmDialog>
       )}
@@ -286,28 +278,14 @@ export function DocumentMenu({
 }
 
 /**
- * Where the pages under a deleted page go, in words: "The 1 page under it moves up into Leaf feedback." On a page
- * archived itself, the pages archived with it come back, live, and are not archived on the way (Miky, LED-4 kickoff).
- * Never "erased". Empty when nothing is under it.
+ * What happens to the pages under a deleted page, in words: a delete only marks the page and moves nothing (ALL-4), so
+ * what is under it shows at the team's top until a restore. Empty when nothing is under it.
  */
-export function deleteWords(file: Pick<ForeignObject, 'archived'>, plan: DeletePlan): string {
-  // A delete that only marks the page moves nothing (ALL-4): what is under it shows at the team's top until a restore.
-  if (plan.marks) {
-    if (plan.children.length === 0) return ''
-    const kinds = new Set(plan.children.map((child) => child.kind))
-    const what = kinds.size === 1 ? countOf(plan.children[0].kind, plan.children.length) : `${plan.children.length} files`
-    return `The ${what} under it ${plan.children.length === 1 ? 'shows' : 'show'} at the team’s top until it is restored.`
-  }
-  const back = !!file.archived && !file.archived.with
-  // On an archived page, only the pages archived with it come back; one archived itself moves up and stays archived.
-  const children = back ? plan.children.filter((child) => !child.archived || child.archived.with) : plan.children
-  if (children.length === 0) return ''
-  const place = plan.to ? titleOf(plan.to) : (plan.folderName ?? 'its team')
-  const kinds = new Set(children.map((child) => child.kind))
-  const what = kinds.size === 1 ? countOf(children[0].kind, children.length) : `${children.length} files`
-  const one = children.length === 1
-  if (back) return `The ${what} under it ${one ? 'comes' : 'come'} back into ${place}.`
-  return `The ${what} under it ${one ? 'moves' : 'move'} up into ${place}.`
+export function deleteWords(plan: DeletePlan): string {
+  if (plan.children.length === 0) return ''
+  const kinds = new Set(plan.children.map((child) => child.kind))
+  const what = kinds.size === 1 ? countOf(plan.children[0].kind, plan.children.length) : `${plan.children.length} files`
+  return `The ${what} under it ${plan.children.length === 1 ? 'shows' : 'show'} at the team’s top until it is restored.`
 }
 
 /**

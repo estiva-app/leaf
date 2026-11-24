@@ -35,7 +35,8 @@ describe('New document', () => {
     expect(add.kind).toBe(1852)
     expect(tag(add, 'h')).toBe(FOLDER)
     expect(tag(add, 'op')).toBe('add')
-    expect(tag(add, 'a')).toBe(`30842:${'a'.repeat(64)}:${tag(doc, 'd')}`)
+    // The add names the page by its id (conversation 0.47): a page's id is its address's last part.
+    expect(tag(add, 'o')).toBe(tag(doc, 'd'))
     expect(published).toHaveLength(2)
   })
 
@@ -47,7 +48,7 @@ describe('New document', () => {
     expect(doc.kind).toBe(30842)
     expect(tag(doc, 'h')).toBe(OWN)
     expect(tag(doc, 'a')).toBe(PAGE)
-    expect([add.kind, tag(add, 'h'), tag(add, 'op'), tag(add, 'a')]).toEqual([1852, FOLDER, 'add', `30842:${'a'.repeat(64)}:${tag(doc, 'd')}`])
+    expect([add.kind, tag(add, 'h'), tag(add, 'op'), tag(add, 'o')]).toEqual([1852, FOLDER, 'add', tag(doc, 'd')])
   })
 
   it("seeds the page's summary as its root's last tag, on one line (SPEC §6.12)", async () => {
@@ -78,6 +79,6 @@ describe('New document', () => {
     expect(result).toMatchObject({ ok: false, made: true, reason: 'The team did not take it. Try again.' })
     if (result.ok || !result.made) throw new Error('unreachable')
     expect(await listDocument({ folder: FOLDER, address: result.address })).toEqual({ ok: true })
-    expect(tag(published[2], 'a')).toBe(result.address)
+    expect(tag(published[2], 'o')).toBe(result.address.split(':')[2])
   })
 })

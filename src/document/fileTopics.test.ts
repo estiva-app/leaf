@@ -2,6 +2,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { planListInTopic, planRemoveFromTopic } from '@estiva-app/interop'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { relayAnswer } from '../test/listRead'
 
 /* TOP-6: which topics a Leaf file's Topics row names, and what Add to topic offers, read from the relay. */
 
@@ -24,7 +25,7 @@ function relay(filters: Filter[]): SignedEvent[] {
     (!f.kinds || f.kinds.includes(e.kind)) &&
     (!f.authors || f.authors.includes(e.pubkey)) &&
     Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1])))
-  return held.filter((e) => filters.some((f) => matches(e, f)))
+  return relayAnswer(held, filters as Record<string, unknown>[], (e, f) => matches(e, f as Filter))
 }
 
 vi.mock('../relay/bridge', () => ({

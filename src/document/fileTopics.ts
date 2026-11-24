@@ -7,7 +7,6 @@ import {
   openFile,
   planListInTopic,
   planRemoveFromTopic,
-  prevsAfterSwitch,
   readTopics,
   writeChange,
   readYourTopics,
@@ -21,9 +20,9 @@ import {
 import { createRetryingRead } from '@estiva-app/platform'
 import type { PublishResult } from '@estiva-app/protocol'
 import { nip44 } from '../auth/nip44'
-import { changeWriter, publish, query as relayQuery, queryAll, viewerPubkey } from '../relay/bridge'
+import { changeWriter, query as relayQuery, queryAll, viewerPubkey } from '../relay/bridge'
 import { projections as manifests, resolveQuery as query } from '../relay/manifests'
-import { archivedRootsOptions, listReadOffered, timesRead, topicFields } from '../relay/projectFields'
+import { currentPrev, times } from '../relay/fileReads'
 
 /** A topic that lists a file, as the file's Topics row draws it. */
 export interface TopicOfFile {
@@ -62,7 +61,7 @@ export async function readFileTopics(file: string): Promise<TopicOfFile[]> {
   const listing = await topicsOfFile(query, file)
   if (listing.length === 0) return []
   const roots = new Map(listing.map((topic) => [topic.address, topic.root]))
-  const objects = await resolveForeignRoots([...roots.keys()], query, manifests, await archivedRootsOptions())
+  const objects = await resolveForeignRoots([...roots.keys()], query, manifests, { archivedWith: true })
   return objects
     .flatMap((object) => {
       const root = object.address ? roots.get(object.address) : undefined
@@ -129,8 +128,7 @@ async function decryptOnce(ciphertext: string): Promise<string | undefined> {
 export async function loadYourTopics(): Promise<YourTopicsRead> {
   const me = viewerPubkey()
   if (!me) throw new Error('Sign in to read your initiatives.')
-  const [listRead, times] = await Promise.all([listReadOffered(), timesRead()])
-  return readYourTopics(relayQuery, me, { cache: manifests, decrypt: decryptOnce, spaces: true, ...(listRead ? { listRead } : {}), ...times })
+  return readYourTopics(relayQuery, me, { cache: manifests, decrypt: decryptOnce, spaces: true, times })
 }
 
 /** Test seam: forget the held topics, yours and every one. */
@@ -143,15 +141,13 @@ export function resetTopicChoicesForTests(): void {
 }
 
 /**
- * Every topic the reader can read, read once more; throws, saying why, when nobody is signed in. Where the relay
- * offers the list read, the project each topic sits under costs its current values, not every change (ALO-15).
- *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ * Every topic the reader can read, read once more; throws, saying why, when nobody is signed in. The project each
+ * topic sits under costs its current values, not every change (ALO-15).
  */
 export async function loadTopics(): Promise<TopicsRead> {
   const me = viewerPubkey()
   if (!me) throw new Error('Sign in to read your initiatives.')
-  return readTopics(queryAll, me, { cache: manifests, parentsListRead: await listReadOffered() })
+  return readTopics(queryAll, me, { cache: manifests })
 }
 
 function choicesOf(read: TopicsRead, folders: ReadonlySet<string>): TopicChoices {
@@ -200,7 +196,7 @@ async function listInOrder(pubkey: string, topic: { address: string; folder: str
   const [kind, author, ...d] = topic.address.split(':')
   const pointer = { kind: Number(kind), pubkey: author!, d: d.join(':') }
   const field = listsField(file)
-  const prev = (await prevsAfterSwitch(relayQuery, pointer, [field]).catch(() => undefined))?.[field]
+  const prev = await currentPrev(relayQuery, topic.address, field)
   if (!prev) return { ok: false, reason: 'The initiative could not be read. Try again.' }
   const plan = listed ? planListInTopic : planRemoveFromTopic
   const result = await writeChange({
@@ -220,9 +216,7 @@ async function listInOrder(pubkey: string, topic: { address: string; folder: str
 export async function setListedInTopic(topic: Pick<TopicOfFile, 'address' | 'folder'>, file: string, listed: boolean): Promise<PublishResult> {
   const pubkey = viewerPubkey()
   if (!pubkey) return { ok: false, reason: 'Sign in to change its initiatives.' }
-  const plan = listed ? planListInTopic : planRemoveFromTopic
-  const holder = { address: topic.address, folder: topic.folder }
-  const result = (await topicFields()) ? await listInOrder(pubkey, holder, file, listed) : await publish(plan(pubkey, Date.now(), { topic: holder, file })[0]!)
+  const result = await listInOrder(pubkey, { address: topic.address, folder: topic.folder }, file, listed)
   if (result.ok) {
     listedHere = new Map(listedHere).set(topic.address, new Map(listedHere.get(topic.address)).set(file, listed))
     for (const listener of listedListeners) listener()

@@ -1,6 +1,7 @@
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, planListInTopic, type ForeignObject } from '@estiva-app/interop'
 import { MUTED_D_TAG, serializeMutedBlob } from '@estiva-app/conversation'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { timesAnswer } from '../../test/listRead'
 
 /*
   A relay for the topics tests (TOPI-4): what it holds, answered filter by filter as it matches, every read it was
@@ -69,6 +70,23 @@ export const bridge = {
     relay.reads.push(filters)
     relay.pagedReads.push(filters)
     return answer(filters)
+  },
+  /** A change written in order (ALL-8): signed here, then taken as `publish` takes one. */
+  changeWriter: {
+    sign: async (event: UnsignedEvent) => sign(event),
+    publish: async (event: SignedEvent) => {
+      relay.attempted.push(event)
+      if (relay.refuse) return { ok: false, reason: relay.refuse }
+      if (relay.refuseKinds.includes(event.kind)) return { ok: false, reason: 'blocked: refused here' }
+      relay.sent.push(event)
+      relay.held.push(event)
+      return { ok: true, eventId: event.id }
+    },
+  },
+  /** The times read (SPEC §6.13): when each file and its changes were written, never the changes. */
+  queryTimes: async (filters: Filter[]) => {
+    relay.reads.push(filters)
+    return timesAnswer(relay.held, filters as Record<string, unknown>[])
   },
   publish: async (event: UnsignedEvent) => {
     relay.attempted.push(event)

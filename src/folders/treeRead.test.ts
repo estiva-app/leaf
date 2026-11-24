@@ -1,17 +1,15 @@
 import { BLOCK_DOCUMENT_FORMAT, filesOf } from '@estiva-app/interop'
 import { FILE_KINDS, type SignedEvent as NostrEvent } from '@estiva-app/protocol'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /*
-  The tree's read of a team once projects are switched (ISS-6): another app's project or issue costs its current
-  values, by the relay's list read, while Leaf's own page keeps its current text — a page clicked in the tree opens
-  from this copy, and the list read leaves a text unread.
+  The tree's read of a team (ISS-6, ALL-8): every file, another app's project and Leaf's own page alike, costs its
+  current values by the relay's list read, its text left unread — a page clicked in the tree reads it again by its
+  address.
 */
-vi.mock('../config', () => ({ RELAY_URL: 'https://relay.test' }))
 vi.mock('../relay/bridge', () => ({ viewerPubkey: () => 'a'.repeat(64), query: async () => [], publish: async () => ({ ok: true }), queryTimes: vi.fn() }))
 
 import * as workspace from './workspace'
-import { resetRelayReadsForTests } from '../relay/projectFields'
 import { isListed } from './tree'
 
 // Read by a path the bundler leaves alone, so the test loads on code with no row-only mark and fails on what it reads.
@@ -56,8 +54,8 @@ const manifest = event({
   }),
 })
 const team = event({ kind: 39000, pubkey: RELAY, tags: [['d', TEAM], ['name', 'Team']] })
-const page = event({ kind: 30842, tags: [['d', 'notes'], ['title', 'Notes'], ['description', 'First words'], ['h', TEAM]] })
-const project = event({ kind: 30850, tags: [['d', 'season'], ['title', 'Season plan'], ['description', 'First words'], ['h', TEAM]] })
+const page = event({ kind: 30842, tags: [['d', '22222222-0000-4000-8000-000000000001'], ['title', 'Notes'], ['description', 'First words'], ['h', TEAM]] })
+const project = event({ kind: 30850, tags: [['d', '22222222-0000-4000-8000-000000000002'], ['title', 'Season plan'], ['description', 'First words'], ['h', TEAM]] })
 const changed = (file: NostrEvent) =>
   event({ kind: 1851, tags: [['a', addressOf(file)], ['field', 'description'], ['value', 'Newer words'], ['h', TEAM]] })
 const events = [manifest, team, page, project, changed(page), changed(project)]
@@ -85,25 +83,12 @@ async function relay(filters: Filter[]): Promise<NostrEvent[]> {
   return [...roots, ...filesOf(events).filter((file) => roots.includes(file.root)).flatMap((file) => file.events.slice(1))]
 }
 
-function relayKeeps(inOrder: string[], lists = true, reads = { newest: true, text: true, times: true }) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ files: { requires_prev: inOrder }, ...(lists ? { file_list: reads } : {}) }),
-    })),
-  )
-}
-
 beforeEach(() => {
-  resetRelayReadsForTests()
   asked.length = 0
 })
-afterEach(() => vi.unstubAllGlobals())
 
-describe("the tree's read of a team, once projects are switched (ISS-6)", () => {
+describe("the tree's read of a team (ISS-6, ALL-8)", () => {
   it('reads a project and a Leaf page by the list read, each for its row only, so no old save of a page is read', async () => {
-    relayKeeps(['osnova.project'])
     const contents = await workspace.readFolder(TEAM, relay)
     const file = (title: string) => contents.files.find((f) => f.slots.title?.value === title)!
     // Each row costs its current values; its page reads it again by its address, with its current text (ALL-4).
@@ -115,32 +100,5 @@ describe("the tree's read of a team, once projects are switched (ISS-6)", () => 
     // Its text unread, the tree still lists each.
     expect(isListed(file('Season plan'))).toBe(true)
     expect(isListed(file('Notes'))).toBe(true)
-  })
-
-  it('reads a page by the list read before the relay keeps pages in order (record: the read does not wait for the switch)', async () => {
-    relayKeeps([])
-    const contents = await workspace.readFolder(TEAM, relay)
-    expect(asked.some((f) => 'fields' in f && f.kinds?.includes(30842))).toBe(true)
-    expect(rows.isRowOnly?.(contents.files.find((f) => f.slots.title?.value === 'Notes')!)).toBe(true)
-  })
-
-  it('reads a page whole, its text included, beside switched projects on a relay with no times read', async () => {
-    relayKeeps(['osnova.project'], true, { newest: true, text: true, times: false })
-    const contents = await workspace.readFolder(TEAM, relay)
-    const notes = contents.files.find((f) => f.slots.title?.value === 'Notes')!
-    expect(asked.some((f) => 'fields' in f && f.kinds?.includes(30842))).toBe(false)
-    expect(notes.slots.body?.value).toBe('Newer words')
-    expect(rows.isRowOnly?.(notes)).toBe(false)
-    expect(rows.isRowOnly?.(contents.files.find((f) => f.slots.title?.value === 'Season plan')!)).toBe(true)
-  })
-
-  it('reads every file whole on a relay that offers no list read (control)', async () => {
-    relayKeeps([], false)
-    const contents = await workspace.readFolder(TEAM, relay)
-    expect(asked.some((f) => 'fields' in f)).toBe(false)
-    const notes = contents.files.find((f) => f.slots.title?.value === 'Notes')!
-    expect(notes.slots.body?.value).toBe('Newer words')
-    expect(rows.isRowOnly?.(notes)).toBe(false)
-    expect(isListed(notes)).toBe(true)
   })
 })

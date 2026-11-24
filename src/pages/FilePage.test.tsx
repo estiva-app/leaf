@@ -24,8 +24,11 @@ let profiles: SignedEvent[] = []
 vi.mock('../relay/bridge', () => ({
   viewerPubkey: () => ME,
   // The page's changes, only to a read that asks for them by its address.
-  query: async (filters: { kinds?: number[]; '#a'?: string[]; '#k'?: string[]; authors?: string[] }[]) =>
-    // An app's manifest the relay never answers for: its author is HANGS.
+  query: async (filters: { kinds?: number[]; fields?: string; '#a'?: string[]; '#d'?: string[]; '#k'?: string[]; authors?: string[] }[]) =>
+    // The page's open read (ALL-8): its first record, no field changed yet — what its Delete follows.
+    filters[0]?.fields === 'newest' && filters[0]['#d']?.join() === 'page-1'
+      ? [{ kind: 30842, pubkey: ME, created_at: 1, id: 'e'.repeat(64), sig: '', content: '', tags: [['d', 'page-1'], ['title', 'Friday notes'], ['h', FOLDER]] }]
+      : // An app's manifest the relay never answers for: its author is HANGS.
     filters[0]?.authors?.includes('e'.repeat(64))
       ? new Promise<never>(() => {})
       : filters[0]?.kinds?.[0] === 0
@@ -39,6 +42,14 @@ vi.mock('../relay/bridge', () => ({
       : filters[0]?.kinds?.[0] === 1851 && filters[0]['#a']?.includes(`30842:${'a'.repeat(64)}:page-1`)
         ? changes
         : [],
+  // A change written in order (ALL-8): what reaches the relay, signed.
+  changeWriter: {
+    sign: async (event: UnsignedEvent) => ({ ...event, id: 'f'.repeat(64), sig: '' }),
+    publish: async (event: UnsignedEvent) => {
+      published.push(event)
+      return { eventId: 'f'.repeat(64), ...(answers.shift() ?? { ok: true }) }
+    },
+  },
   publish: async (event: UnsignedEvent) => {
     published.push(event)
     return answers.shift() ?? { ok: true }
@@ -67,6 +78,8 @@ function doc(summary?: string): ForeignObject {
     address: ADDRESS,
     folder: FOLDER,
     naddr: 'naddr1page',
+    // Its first record, which a first change to a field follows (ALL-8).
+    eventId: 'e'.repeat(64),
     slots: { title: { value: 'Friday notes' }, ...(summary ? { subtitle: { value: summary } } : {}) },
   } as unknown as ForeignObject
 }
@@ -165,6 +178,8 @@ describe('a Ship issue opened in Leaf (LEAF-13)', () => {
 
   it('saves its text when you leave it: one block-document change on `description`, at the issue, in its own Folder', async () => {
     const issue = shipIssue()
+    // As an issue opened by its address is held (`readDocument`): its save follows the change holding the text it shows.
+    ;(await import('../document/save')).noteRead(issue)
     render(<ToastProvider><FilePage file={issue} loading={false} /></ToastProvider>)
     const box = await documentBox()
     write(box, 'Rewritten in Leaf.')
@@ -601,15 +616,23 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     render(<ToastProvider><FilePage file={doc()} loading={false} /></ToastProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
-    expect(await screen.findByText('It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.')).toBeTruthy()
+    expect(await screen.findByText('It leaves every list and search. Its link still opens it, with Restore, and so does Peek’s Archive → Deleted.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Delete page' }))
   }
 
-  it('sends the kind:5 naming the page, then opens Home and says it was deleted', async () => {
+  it('writes the page’s deleted change after its first record, then opens Home and says it was deleted', async () => {
     await confirmDelete()
     expect(await screen.findByText('Deleted “Friday notes”')).toBeTruthy()
-    expect(published[0].kind).toBe(5)
-    expect(published[0].tags).toContainEqual(['a', ADDRESS])
+    expect(published).toHaveLength(1)
+    const [change] = published
+    expect([change.kind, tag(change, 'a'), tag(change, 'field'), tag(change, 'value'), tag(change, 'h'), tag(change, 'prev')]).toEqual([
+      1851,
+      ADDRESS,
+      'deleted',
+      'true',
+      FOLDER,
+      'e'.repeat(64),
+    ])
     expect(window.location.pathname).toBe('/')
   })
 
@@ -630,7 +653,7 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     render(<ToastProvider><FilePage file={archived(doc())} loading={false} /></ToastProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
-    expect(await screen.findByText('It leaves every list, in Leaf, Peek and Ship. Copies someone already has are not erased.')).toBeTruthy()
+    expect(await screen.findByText('It leaves every list and search. Its link still opens it, with Restore, and so does Peek’s Archive → Deleted.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Archive instead' })).toBeNull()
   })
 
@@ -638,7 +661,7 @@ describe('Delete from a page’s ⋯ menu (LED-4)', () => {
     answers = [{ ok: false, reason: 'blocked' }]
     await confirmDelete()
     expect((await screen.findAllByText('Nothing was deleted. Try again.')).length).toBeGreaterThan(0)
-    expect(published.map((e) => e.kind)).toEqual([5])
+    expect(published.map((e) => [e.kind, tag(e, 'field')])).toEqual([[1851, 'deleted']])
     expect(screen.getByRole('button', { name: 'Delete page' })).toBeTruthy()
     expect(window.location.pathname).toBe('/document/friday-notes-page-1')
   })

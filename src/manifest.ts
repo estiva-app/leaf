@@ -23,7 +23,6 @@ export const DEFAULT_APP_URL = 'http://localhost:5173/'
 const DOCUMENT = String(KIND.DOCUMENT)
 const CHANGE = 1851
 const COMMENT = 1111
-const DELETION = 5
 /** NIP-29's group metadata — a Folder, as interop reads one. */
 const FOLDER = '39000'
 
@@ -152,16 +151,27 @@ export function manifestContent() {
       {
         id: 'delete',
         label: 'Delete',
-        description: 'Ask the relay to delete this document. Only its author may; its comments stay as separate events.',
+        // A `deleted` change, as Ship's Delete (SPEC §6.5, ALL-8): the relay keeps every file in order and refuses a
+        // `kind:5` of one, so the action is the field. A consumer asks before writing it, as for any destructive action.
+        // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/the-old-way-goes-once-miky-has-looked.md
+        description:
+          'Delete this document, or bring a deleted one back: `true` deletes, an empty value restores. Anyone in its ' +
+          'team may. A deleted document leaves every list and search but keeps its id and its history, and the pages ' +
+          'under it stay where they are; its comments stay as separate events.',
         effect: 'destructive',
         appliesTo: [DOCUMENT],
-        emits: { kind: DELETION, listed: true },
+        emits: { kind: CHANGE, field: 'deleted' },
+        input: { type: 'string', enum: 'deleted' },
       },
     ],
     vocabularies: {
       archived: [
         { value: '', label: 'Active', colour: 'neutral' },
         { value: 'true', label: 'Archived', colour: 'muted' },
+      ],
+      deleted: [
+        { value: '', label: 'Restored', colour: 'neutral' },
+        { value: 'true', label: 'Deleted', colour: 'muted' },
       ],
     },
   }

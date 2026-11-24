@@ -4,6 +4,7 @@
  * or a block in the page (Miky, KIN-5 kickoff). The box's own behaviour is `@estiva-app/launcher`'s and tested there.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { relayAnswer } from '../test/listRead'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
@@ -20,13 +21,19 @@ const matches = (e: SignedEvent, f: Record<string, unknown>) =>
   Object.entries(f).every(([k, v]) => !k.startsWith('#') || e.tags.some((t) => t[0] === k.slice(1) && (v as string[]).includes(t[1])))
 vi.mock('../relay/client', () => ({ relayClient: () => ({ watchFolders: () => ({ stop: () => {} }) }) }))
 vi.mock('../relay/bridge', () => ({
-  query: vi.fn(async (filters: Record<string, unknown>[]) => relay.events.filter((e) => filters.some((f) => matches(e, f)))),
+  query: vi.fn(async (filters: Record<string, unknown>[]) => relayAnswer(relay.events, filters, matches)),
   queryWithMatches: vi.fn(async () => ({ events: [], matches: {} })),
   publish,
+  // A page's save is written in order (ALL-8): signed, then sent as `publish` sends one.
+  changeWriter: {
+    sign: async (event: UnsignedEvent) => ({ ...event, id: String(relay.events.length + 1).padStart(64, '0'), sig: '' }),
+    publish: async (event: SignedEvent) => ({ ...(await publish(event)), eventId: event.id }),
+  },
   viewerPubkey: () => ME,
 }))
 
 import { FilePage } from '../pages/FilePage'
+import { noteRead } from '../document/save'
 import { LeafLauncher } from './LeafLauncher'
 import { captureOpenPage } from './openPage'
 
@@ -116,6 +123,8 @@ const option = (title: string) => screen.queryAllByRole('option').find((o) => o.
 async function ask(sentence: string, answer: string, before?: () => void | Promise<void>) {
   relay.events = [profile(RAVI, 'Ravi Mehta'), profile(KATERINA, 'Katerina Novak'), ON_FAQ, MOVED, resolution(MOVED)]
   model.answer = answer
+  // As a page opened by its address is held (`readDocument`): its save follows the change holding the text it shows.
+  noteRead(page)
   render(<Frame />)
   await waitFor(() => expect(editor()?.isInitialized).toBe(true))
   await screen.findByText('Who writes the FAQ?')

@@ -1605,7 +1605,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
     const e = await sent()
     expect(e.content).toBe(`see ${ISSUE_URL}`)
-    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE_D, 'detailed']])
   })
 
   it('an issue’s path on Leaf’s host draws as the issue, as its Ship address does, and the comment carries its card (LTX-6)', async () => {
@@ -1616,7 +1616,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(within(box(BOX)).getByText('Fix it')).toBeTruthy())
     const e = await sent()
     expect(e.content).toBe(`see ${leafUrl}`)
-    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE_D, 'detailed']])
   })
 
   it('✕ takes the card off, and the comment goes out with no card', async () => {
@@ -1653,7 +1653,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(within(under()!).getByText('Fix it')).toBeTruthy())
     expect(within(under()!).queryByText('Shared id')).toBeNull()
     const e = await sent()
-    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+    expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE_D, 'detailed']])
   })
 
   it('a link to a block of another page shows that block live under the box and no card, and the comment carries its part', async () => {
@@ -1662,7 +1662,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(within(under()!).getByText('The block that stays live.')).toBeTruthy())
     expect(within(under()!).queryByText('Fix it')).toBeNull()
     const e = await sent()
-    expect(named(e.tags, 'part')).toEqual([['part', TWO_ADDRESS, TWO_BLOCK]])
+    expect(named(e.tags, 'part')).toEqual([['part', TWO_D, TWO_BLOCK]])
     expect(named(e.tags, 'embed')).toEqual([])
   })
 
@@ -1674,7 +1674,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
     await waitFor(() => expect(under()?.querySelectorAll('[data-part-address]')).toHaveLength(1))
     expect(under()!.querySelector('[data-part-address]')?.getAttribute('data-part-address')).toBe(TWO_ADDRESS)
     const e = await sent()
-    expect(named(e.tags, 'part')).toEqual([['part', TWO_ADDRESS, TWO_BLOCK]])
+    expect(named(e.tags, 'part')).toEqual([['part', TWO_D, TWO_BLOCK]])
     expect(named(e.tags, 'embed')).toEqual([])
   })
 
@@ -1853,7 +1853,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       await waitFor(() => expect(under()?.textContent).toContain('Fix it'))
       const e = await saved()
       expect([e.kind, e.content]).toEqual([40003, `see ${ISSUE_URL}`])
-      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'detailed']])
+      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE_D, 'detailed']])
       expect(named(e.tags, 'a')).toEqual([['a', ISSUE]])
       expect(named(e.tags, 'part')).toEqual([])
     })
@@ -1885,7 +1885,7 @@ describe('the card and the live parts under the box (COMM-8)', () => {
       act(() => void fireEvent.click(within(under()!).getByRole('button', { name: 'Remove' })))
       expect(under()).toBeNull()
       const e = await saved()
-      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE, 'none']])
+      expect(named(e.tags, 'embed')).toEqual([['embed', ISSUE_D, 'none']])
     })
 
     it('never shows again a card taken off before: the edit box has none, and the save leaves it off', async () => {

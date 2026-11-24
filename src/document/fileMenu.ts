@@ -10,7 +10,6 @@ import {
   nestingOf,
   openFile,
   planMoveFromFolders,
-  prevsAfterSwitch,
   readMoveRefusal,
   resolveFolderContents,
   writeChange,
@@ -25,8 +24,7 @@ import { ownFailure } from '../folders/workspace'
 import { manifestContent } from '../manifest'
 import { changeWriter, publish, query, viewerPubkey } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
-import { fieldsFor, inOrderTypes } from '../relay/projectFields'
-import { buildChange } from './save'
+import { currentPrev } from '../relay/fileReads'
 
 /*
   A document's ⋯ menu (LED-4): its archive and its delete, written as Leaf's own
@@ -98,152 +96,69 @@ export interface DeletePlan {
   children: ForeignObject[]
   /** The deleted page's own parent, which its pages move under; absent for the Folder's top. */
   to?: ForeignObject
-  /** The Folder's name, for "move up into <Folder>". */
+  /** The Folder's name. */
   folderName?: string
-  /**
-   * Where pages are kept in order (ALL-4): the delete only marks the page, its sub-pages stay under it and show at the
-   * team's top while it is deleted, and a restore brings everything back as it was.
-   */
-  marks?: true
 }
 
 /** The plan for deleting `file`, from one listing of its Folder. Pure: the listing is the only read. */
-export function planDelete(file: Pick<ForeignObject, 'address'>, listing: readonly ForeignObject[], folderName?: string, marks = false): DeletePlan {
+export function planDelete(file: Pick<ForeignObject, 'address'>, listing: readonly ForeignObject[], folderName?: string): DeletePlan {
   const nesting = nestingOf(listing)
   const here = listing.find((one) => one.address === file.address)
-  const extra = marks ? { marks: true as const } : {}
-  if (!here) return { children: [], folderName, ...extra }
-  return { children: nesting.childrenOf(here), to: nesting.parentOf(here), folderName, ...extra }
+  if (!here) return { children: [], folderName }
+  return { children: nesting.childrenOf(here), to: nesting.parentOf(here), folderName }
 }
 
 /** Read the document's Folder, archived files included, and plan its delete. Throws when it cannot be read. */
 export async function readDeletePlan(file: Pick<ForeignObject, 'address' | 'folder'>): Promise<DeletePlan> {
-  const marks = !!(await fieldsFor(file.address))
-  if (!file.folder) return marks ? { children: [], marks } : { children: [] }
+  if (!file.folder) return { children: [] }
   const contents = await resolveFolderContents(file.folder, query, people.viaRelay(query), manifests, { includeArchived: true })
-  return planDelete(file, contents.files, contents.name, marks)
+  return planDelete(file, contents.files, contents.name)
 }
 
+/** How a delete ended: refused before anything changed, with what to tell the person, or done. */
+export type DeleteOutcome = { ok: false; reason: string } | { ok: true }
+
 /**
- * Delete a page where pages are kept in order (SPEC §6.5, ALL-4): Leaf's own `delete`, built with `inOrder`, is the
- * page's `deleted` change after the one it follows — interop writes it so where the relay keeps documents in order,
- * and refuses a `kind:5` there. Anyone who may edit the page may write it. Nothing else: no team unlists it and no
- * page under it moves, so a restore brings back exactly what was there.
+ * Delete a page (SPEC §6.5, ALL-4, ALL-8): Leaf's own `delete` is the page's `deleted` change after the one it
+ * follows; the relay keeps every file in order and refuses a `kind:5` of one. Anyone who may edit the page may write
+ * it. Nothing else: no team unlists it and no page under it moves, so a restore brings back exactly what was there.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
  */
-async function markDeleted(file: Document & { address: string; folder: string }, pubkey: string): Promise<DeleteOutcome> {
-  const pointer = addressToPointer(file.address)
+export async function deleteDocument(file: Document): Promise<DeleteOutcome> {
+  const pubkey = viewerPubkey()
+  if (!pubkey) return { ok: false, reason: 'Sign in to delete it.' }
+  const { address, folder } = file
+  if (!address || !folder) return { ok: false, reason: 'This cannot be deleted from here.' }
+  const pointer = addressToPointer(address)
   const at = { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }
-  const inOrder = await inOrderTypes()
-  const prev = (await prevsAfterSwitch(query, at, ['deleted']).catch(() => undefined))?.deleted
+  const prev = await currentPrev(query, address, 'deleted')
   if (!prev) return { ok: false, reason: 'The page could not be read, so nothing was deleted. Try again.' }
   const result = await writeChange({
     field: 'deleted',
     value: 'true',
     prev,
-    build: (input) => {
-      const built = buildActionEvents({
+    build: (input) =>
+      buildActionEvent({
         manifest: OWN_MANIFEST,
         kind: file.kind,
-        address: file.address,
+        address,
         objectAuthor: pointer.pubkey,
-        folder: file.folder,
+        folder,
         actionId: 'delete',
-        value: '',
+        value: 'true',
         pubkey,
         createdAtMs: input.createdAtMs,
-        inOrder,
         prev: input.prev,
-      })
-      return typeof built === 'string' ? built : built[0]!
-    },
+      }),
     sign: changeWriter.sign,
     publish: changeWriter.publish,
     query,
     current: async (field) => (await openFile(query, at, { text: false }))?.fields[field]?.event,
   }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
-  if (result.ok) return { ok: true, stillListed: false, unmoved: 0 }
+  if (result.ok) return { ok: true }
   console.warn('[relay] delete refused', result)
   return { ok: false, reason: 'Nothing was deleted. Try again.' }
-}
-
-/** How a delete ended: refused before anything changed, or done, with what did not follow it. */
-export type DeleteOutcome =
-  | { ok: false; reason: string }
-  | { ok: true; stillListed: boolean; unmoved: number }
-
-/**
- * Delete a document (SPEC §6.5): the manifest's `delete` — the `kind:5`, then a
- * `1852 remove` from each Folder whose relay-signed state names it, read now —
- * published in order, stopping at the first refusal. Then each file directly
- * under it takes a `1851` on its own parent field naming the deleted page's
- * parent, or `''` for the Folder's top (any member may sign a change, §6.2),
- * in that file's own Folder. A refused one stays at the Folder's top, where
- * every reader draws a file whose parent is gone (§6.7); `unmoved` counts them.
- */
-export async function deleteDocument(file: Document, plan: DeletePlan): Promise<DeleteOutcome> {
-  const pubkey = viewerPubkey()
-  if (!pubkey) return { ok: false, reason: 'Sign in to delete it.' }
-  if (!file.address || !file.folder) return { ok: false, reason: 'This cannot be deleted from here.' }
-  if (plan.marks) return markDeleted({ ...file, address: file.address, folder: file.folder }, pubkey)
-  const author = addressToPointer(file.address).pubkey
-  let listedIn
-  try {
-    const states = await relayStates({ kinds: [KIND_FOLDER_STATE], '#a': [file.address], limit: 500 })
-    listedIn = states.map((state) => ({ id: dOf(state)!, hasState: true }))
-  } catch {
-    return { ok: false, reason: 'The team could not be read, so nothing was deleted. Try again.' }
-  }
-  const now = Date.now()
-  const built = buildActionEvents({
-    manifest: OWN_MANIFEST,
-    kind: file.kind,
-    address: file.address,
-    objectAuthor: author,
-    folder: file.folder,
-    actionId: 'delete',
-    value: '',
-    pubkey,
-    createdAtMs: now,
-    listedIn,
-  })
-  if (typeof built === 'string') return { ok: false, reason: 'This cannot be deleted from here.' }
-  const [deletion, ...removes] = built as UnsignedEvent[]
-  const deleted = await publish(deletion)
-  if (!deleted.ok) {
-    console.warn('[relay] delete refused', deleted)
-    // The relay takes a delete only from whoever wrote the file (Ship's words, IssuePage).
-    return { ok: false, reason: pubkey === author ? 'Nothing was deleted. Try again.' : 'Delete rejected — only the person who wrote it can delete it.' }
-  }
-  let stillListed = false
-  for (const remove of removes) {
-    const result = await publish(remove)
-    if (!result.ok) {
-      console.warn('[relay] unlist refused', result)
-      stillListed = true
-      break
-    }
-  }
-  let unmoved = 0
-  for (const child of plan.children) {
-    if (!child.address || !child.folder) {
-      unmoved++
-      continue
-    }
-    // A page or a topic nests by `parent` (§6.7), as Leaf's own manifest says; never a field named by a manifest read
-    // off the relay, which anyone may publish. Any other kind under it stays at the top, where readers draw it.
-    if (child.kind !== KIND.DOCUMENT && child.kind !== KIND_BARE_FILE) {
-      unmoved++
-      continue
-    }
-    const moved = await publish(buildChange(pubkey, now, { target: child.address, field: 'parent', value: plan.to?.address ?? '', folder: child.folder }))
-    if (!moved.ok) {
-      console.warn('[relay] move up refused', moved)
-      unmoved++
-    }
-  }
-  return { ok: true, stillListed, unmoved }
 }
 
 /** A Folder a document's Move reads or writes: the summary's own fields, with its name for the dialog's words. */

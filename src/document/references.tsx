@@ -4,7 +4,6 @@ import { createPeopleCache, resolveForeignObjects, resolveForeignRoots, type For
 import { FILE_KINDS, KIND, readAbsence, referenceToPointer } from '@estiva-app/protocol'
 import { query } from '../relay/bridge'
 import { projections as manifests } from '../relay/manifests'
-import { archivedWithOptions } from '../relay/projectFields'
 import { unavailableLinks } from './linkMemory'
 
 /** What each reference names: the file, `null` when it cannot be read, absent while it is being read. */
@@ -69,7 +68,7 @@ function keyOf(uri: string): string {
   return key
 }
 
-/** The kinds a card draws by their current fields alone, read by the list read once switched: a topic's card draws its messages. */
+/** The kinds a card draws by their current fields alone, read by the list read: a topic's card draws its messages. */
 const LISTED_KINDS = FILE_KINDS.filter((kind) => kind !== KIND.FILE)
 
 /** A file's events once each: the relay answers every filter on its own, so an issue asked by its own card and as its project's comes back twice. */
@@ -98,7 +97,7 @@ function pubkeysOf(object: ForeignObject): string[] {
  */
 async function readListed(uris: readonly string[]): Promise<Resolved> {
   const addresses = uris.map(keyOf)
-  const objects = await resolveForeignRoots(addresses, query, manifests, { archivedWith: true, listRead: true, children: true })
+  const objects = await resolveForeignRoots(addresses, query, manifests, { archivedWith: true, children: true })
   const named = [...new Set(objects.flatMap((object) => [object, ...(object.children ?? [])].flatMap(pubkeysOf)))]
   const found = named.length ? await people.viaRelay(query)(named).catch(() => ({})) : {}
   const byAddress = new Map(
@@ -116,17 +115,15 @@ async function readListed(uris: readonly string[]): Promise<Resolved> {
 
 /** The files `uris` name, each with its every change and comments: interop's full read, as every card read before ALO-24. */
 async function readFull(uris: readonly string[]): Promise<Resolved> {
-  return resolveForeignObjects(uris, query, people.viaRelay(query), manifests, await archivedWithOptions())
+  return resolveForeignObjects(uris, query, people.viaRelay(query), manifests, { archivedWith: true })
 }
 
 /**
- * The files `uris` name: a project, issue or document by the list read once the relay offers it ({@link readListed});
- * anything else (a topic, an event, a relay without it) by its full read, as before.
+ * The files `uris` name: a project, issue or document by the list read ({@link readListed}); anything else (a topic,
+ * an event) by its full read. A card draws no text, and one the list read leaves out is read in full.
  */
 async function readNow(uris: readonly string[]): Promise<Resolved> {
-  // As soon as the relay offers the list read, switched or not: a card draws no text, and one it leaves out is read in full.
-  const { listRead } = await archivedWithOptions()
-  const listed = listRead ? uris.filter((uri) => LISTED_KINDS.some((kind) => keyOf(uri).startsWith(`${kind}:`))) : []
+  const listed = uris.filter((uri) => LISTED_KINDS.some((kind) => keyOf(uri).startsWith(`${kind}:`)))
   const rest = uris.filter((uri) => !listed.includes(uri))
   const [full, current] = await Promise.all([rest.length ? readFull(rest) : {}, listed.length ? readListed(listed) : {}])
   return { ...full, ...current }

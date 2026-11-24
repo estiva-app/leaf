@@ -2,14 +2,28 @@ import { describe, expect, it, vi } from 'vitest'
 
 type Sent = { tags: string[][] }
 const publish = vi.hoisted(() => vi.fn<(event: { tags: string[][] }) => Promise<{ ok: boolean }>>(async () => ({ ok: true })))
-vi.mock('../relay/bridge', () => ({ query: vi.fn(async () => []), publish, viewerPubkey: () => 'a'.repeat(64) }))
+// Every file is written in order (ALL-8): a change is signed, then sent, after the change it follows. Both kinds of send
+// land in `publish`, so a test reads one list in the order the relay got them.
+const signed = vi.hoisted(() => ({ next: 0 }))
+vi.mock('../relay/bridge', () => ({
+  query: vi.fn(async () => []),
+  publish,
+  viewerPubkey: () => 'a'.repeat(64),
+  changeWriter: {
+    sign: async (event: { tags: string[][] }) => ({ ...event, id: (++signed.next).toString(16).padStart(64, '0'), sig: '' }),
+    publish: async (event: { id: string; tags: string[][] }) => ({ ...(await publish(event)), eventId: event.id }),
+  },
+}))
 
 import { encodeNpub } from '@estiva-app/protocol'
-import type { ForeignObject } from '@estiva-app/interop'
-import { buildChange, saveCardChoice, saveField, saveText } from './save'
+import { BODY_SLOT, type ForeignObject } from '@estiva-app/interop'
+import { buildChange, noteRead, saveCardChoice, saveField, saveText } from './save'
 
 const FOLDER = '05ed05b2-0687-4be9-a096-7ab21d79fad4'
 const ADDRESS = `30842:${'b'.repeat(64)}:d1`
+/** The page's first record: what its first change of each field follows. */
+const ROOT = 'e'.repeat(64)
+const PAGE = { address: ADDRESS, folder: FOLDER, eventId: ROOT }
 
 describe("a document's save", () => {
   it("is a 1851 change on the document, carrying the document's own Folder as h, with ts agreeing with created_at", () => {
@@ -35,10 +49,12 @@ describe("a document's save", () => {
     }
   })
 
-  it('signs with the h of the document it saves, never another', async () => {
-    await saveField({ address: ADDRESS, folder: FOLDER }, 'title', 'New name')
+  it('signs with the h of the document it saves, never another, after the change it follows', async () => {
+    await saveField(PAGE, 'title', 'New name')
     const sent: Sent = publish.mock.calls.at(-1)![0]
     expect(sent.tags).toContainEqual(['h', FOLDER])
+    // Every file is kept in order (ALL-8): a page's first title change follows its first record.
+    expect(sent.tags).toContainEqual(['prev', ROOT])
     expect(sent.tags).toContainEqual(['field', 'title'])
     expect(sent.tags.some((t) => t[0] === 'content-format')).toBe(false)
   })
@@ -59,11 +75,16 @@ const textNaming = (words: string, ...people: string[]) =>
     content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: words }, ...people.map((p) => ({ type: 'text', text: '@someone', marks: [{ type: 'reference', attrs: { uri: npub(p) } }] }))] }],
   })
 const blocks = (content: string) => ({ content, format: 'estiva-blocks-1' })
+/** The text the person edited from, as the page showed it when it was read: a text save follows the change holding it. */
+const shown = <T extends { content: string }>(text: T): T => {
+  noteRead({ address: ADDRESS, eventId: ROOT, prevs: {}, slots: { [BODY_SLOT]: { value: text.content } } as unknown as ForeignObject['slots'] })
+  return text
+}
 
 describe('a mention in a page (SPEC §11.8)', () => {
   it('saves the text with no p, then adds the person it names anew, as the Add button does', async () => {
     publish.mockClear()
-    const result = await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask ', QA2)), blocks(textNaming('Ask')))
+    const result = await saveText(PAGE, blocks(textNaming('Ask ', QA2)), shown(blocks(textNaming('Ask'))))
     expect(result).toEqual({ ok: true, refused: [] })
     expect(publish).toHaveBeenCalledTimes(2)
     const [text, add] = publish.mock.calls.map((call) => call[0] as Sent)
@@ -76,24 +97,24 @@ describe('a mention in a page (SPEC §11.8)', () => {
 
   it('adds nobody on a typo fix that still names them, so someone who left stays out', async () => {
     publish.mockClear()
-    await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask, ', QA2)), blocks(textNaming('Aks ', QA2)))
+    await saveText(PAGE, blocks(textNaming('Ask, ', QA2)), shown(blocks(textNaming('Aks ', QA2))))
     expect(publish).toHaveBeenCalledTimes(1)
   })
 
   it('says who could not be added when the relay refuses the Add, after the text went through', async () => {
     publish.mockClear()
     publish.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
-    expect(await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask ', QA2)), { content: 'Ask' })).toEqual({ ok: true, refused: [QA2] })
+    expect(await saveText(PAGE, blocks(textNaming('Ask ', QA2)), shown({ content: 'Ask' }))).toEqual({ ok: true, refused: [QA2] })
   })
 
   it('tries a refused Add again on the next save that still names them, and not once the mention is gone', async () => {
     publish.mockClear()
-    const result = await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask, ', QA2)), blocks(textNaming('Ask ', QA2)), [QA2])
+    const result = await saveText(PAGE, blocks(textNaming('Ask, ', QA2)), shown(blocks(textNaming('Ask ', QA2))), [QA2])
     expect(result).toEqual({ ok: true, refused: [] })
     expect(publish).toHaveBeenCalledTimes(2)
     expect(publish.mock.calls[1][0].tags).toContainEqual(['field', `member:${QA2}`])
     publish.mockClear()
-    await saveText({ address: ADDRESS, folder: FOLDER }, blocks(textNaming('Ask')), blocks(textNaming('Ask ', QA2)), [QA2])
+    await saveText(PAGE, blocks(textNaming('Ask')), shown(blocks(textNaming('Ask ', QA2))), [QA2])
     expect(publish).toHaveBeenCalledTimes(1)
   })
 })
@@ -103,6 +124,7 @@ describe('a change from a card', () => {
     ({
       address: '30851:f3:i',
       folder: 'folder-1',
+      eventId: ROOT,
       parentField: 'project',
       actions: [
         { id: 'set-status', label: 'Status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo' }, { value: 'done', label: 'Done' }] },
@@ -110,7 +132,7 @@ describe('a change from a card', () => {
         { id: 'rename', label: 'Status', control: 'select', field: 'title', current: '', options: [{ value: 'Taken over', label: 'Done' }] },
       ],
       ...over,
-    }) as Pick<ForeignObject, 'address' | 'folder' | 'actions' | 'archived' | 'parentField'>
+    }) as Pick<ForeignObject, 'address' | 'folder' | 'eventId' | 'actions' | 'archived' | 'parentField'>
 
   it('writes the status as one change of that field, in the file’s Folder', async () => {
     publish.mockClear()
