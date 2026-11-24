@@ -151,10 +151,9 @@ function DocumentView({
       onOpenParent={aboveHref ? () => openAbove(aboveHref) : undefined}
     />
   )
-  // Restore for anyone its own app lets delete it: Ship's declared Delete and Restore write the `deleted` field. A Leaf
-  // page where pages are kept in order too (ALL-4), whose published Delete stays a `kind:5` until every team switches:
-  // `merges` is that page's switch, and its delete there only marked it.
-  const restorable = !!file.deleted && ((own && merges) || file.actions.some((action) => !action.declaredBy && action.field === 'deleted'))
+  // Restore for anyone its own app lets delete it: Leaf's own Delete, and another app's declared Delete, write the
+  // `deleted` field, so its Restore sets it back to empty (ALL-8).
+  const restorable = !!file.deleted && (own || file.actions.some((action) => !action.declaredBy && action.field === 'deleted'))
   const deletedNotice = file.deleted && (
     <DeletedNotice
       {...deletedNoticeOf(file.deleted, (pubkey) => directory[pubkey]?.displayName, me)}
