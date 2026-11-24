@@ -50,10 +50,24 @@ const SHIP_MANIFEST = {
   ],
 }
 
+/* What resolving a project, or a team, offers: Ship's add-issue on a project, and Ship's add-project borrowed on a team beside the team's own New file. */
+const offered = (address: string) =>
+  address.startsWith('30850:')
+    ? { actions: [{ id: 'add-issue', label: 'Add issue', control: 'form' }, { id: 'rename-project', label: 'Rename', control: 'text' }], slots: { title: { value: 'Website' } }, noun: 'project' }
+    : { actions: [{ id: 'create-file', label: 'New file', control: 'form' }, { id: 'add-project', label: 'New project', control: 'form', declaredBy: { address: `31990:${SHIP}:estiva-ship` } }], slots: { title: { value: 'Ops' } } }
+
 vi.mock('@estiva-app/interop', async (original) => ({
   ...(await original<typeof import('@estiva-app/interop')>()),
   resolveActingManifest: async () => ({ address: `31990:${SHIP}:estiva-ship`, manifest: SHIP_MANIFEST }),
+  resolveManifest: async () => ({ address: `31990:${SHIP}:estiva-ship`, manifest: SHIP_MANIFEST }),
+  resolveForeignObject: async (reference: string) => {
+    const { naddrToAddr } = await import('@estiva-app/protocol')
+    return offered(/^\d+:/.test(reference) ? reference : naddrToAddr(reference))
+  },
 }))
+
+/* The teams a person navigates by, as Leaf's sidebar lists them. */
+vi.mock('../folders/workspace', () => ({ readFolders: async () => [{ id: TEAM, name: 'Ops', channel: `39000:${RELAY}:${TEAM}` }] }))
 
 vi.mock('../relay/projectFields', async (original) => ({
   ...(await original<typeof import('../relay/projectFields')>()),
@@ -64,6 +78,9 @@ const published: UnsignedEvent[] = []
 /* Kinds the relay refuses, as Estiva ID refuses a kind the app may not sign. */
 let refused: number[] = []
 let teamHasState = false
+let impostor = false
+const IMPOSTOR = 'e'.repeat(64)
+const OTHER_TEAM = '22222222-2222-4222-8222-222222222222'
 
 vi.mock('../relay/bridge', () => {
   const answer = (event: UnsignedEvent) => {
@@ -81,7 +98,15 @@ vi.mock('../relay/bridge', () => {
     query: async (filters: { kinds?: number[]; '#d'?: string[] }[]) => {
       const [filter] = filters
       const kind = filter.kinds?.[0]
-      if (kind === 30850) return [{ kind: 30850, pubkey: SHIP, tags: [['d', PROJECT_D], ['title', 'Website'], ['h', TEAM]], content: '', created_at: 1, id: '1'.repeat(64), sig: '' }]
+      if (kind === 30850) {
+        // Another key's record reusing the project's id, in another team, answered first: only `authors` tells them apart.
+        const roots = [
+          ...(impostor ? [{ kind: 30850, pubkey: IMPOSTOR, tags: [['d', PROJECT_D], ['title', 'Website'], ['h', OTHER_TEAM]], content: '', created_at: 2, id: '2'.repeat(64), sig: '' }] : []),
+          { kind: 30850, pubkey: SHIP, tags: [['d', PROJECT_D], ['title', 'Website'], ['h', TEAM]], content: '', created_at: 1, id: '1'.repeat(64), sig: '' },
+        ]
+        const authors = (filter as { authors?: string[] }).authors
+        return authors ? roots.filter((root) => authors.includes(root.pubkey)) : roots
+      }
       if (kind === 39000) return (filter['#d'] ?? [TEAM]).map((d) => ({ kind: 39000, pubkey: RELAY, tags: [['d', d]], content: '', created_at: 1, id: `c-${d}`, sig: '' }))
       if (kind === 30890 && teamHasState) return [{ kind: 30890, pubkey: RELAY, tags: [['d', TEAM]], content: '', created_at: 1, id: '3'.repeat(64), sig: '' }]
       return []
@@ -89,7 +114,7 @@ vi.mock('../relay/bridge', () => {
   }
 })
 
-const { applyAction } = await import('./creations')
+const { applyAction, creatableUnder } = await import('./creations')
 
 const tag = (event: UnsignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
 
@@ -97,6 +122,23 @@ afterEach(() => {
   published.length = 0
   refused = []
   teamHasState = false
+  impostor = false
+})
+
+describe("Leaf's ⌘K offers Ship's Create issue and Create project, with where each can go (KIN-11)", () => {
+  it('offers Add issue under the projects, by their names, and no field change as a creation', async () => {
+    const read = await creatableUnder(30850)
+
+    expect(read?.actions.map((a) => a.id)).toEqual(['add-issue'])
+    expect(read?.parents).toEqual([{ address: PROJECT, title: 'Website' }])
+  })
+
+  it("offers Ship's New project on a team, into the teams the sidebar lists", async () => {
+    const read = await creatableUnder(39000)
+
+    expect(read?.actions.map((a) => a.id)).toEqual(['create-file', 'add-project'])
+    expect(read?.parentsFor?.['add-project']).toEqual([{ address: `39000:${RELAY}:${TEAM}`, title: 'Ops' }])
+  })
 })
 
 describe("Leaf's ⌘K makes Ship's files by Ship's declared actions (KIN-11)", () => {
@@ -121,6 +163,15 @@ describe("Leaf's ⌘K makes Ship's files by Ship's declared actions (KIN-11)", (
     expect(tag(text, 'field')).toBe('description')
     expect(tag(text, 'a')).toBe(result.created)
     expect(`${text.content} ${tag(text, 'value') ?? ''}`).toContain('Typed in Leaf.')
+  })
+
+  it("puts the issue in the chosen project's team, never in another key's record that reuses its id", async () => {
+    impostor = true
+    const result = await applyAction({ naddr: addrToNaddr(PROJECT, []), actionId: 'add-issue', value: { title: 'Mine' } })
+
+    expect(result.ok).toBe(true)
+    expect(tag(published[0], 'h')).toBe(TEAM)
+    expect(tag(published[0], 'a')).toBe(PROJECT)
   })
 
   it('creates a project in the chosen team and lists it there', async () => {
@@ -148,6 +199,18 @@ describe("Leaf's ⌘K makes Ship's files by Ship's declared actions (KIN-11)", (
 
     expect(result.ok).toBe(false)
     expect(published).toEqual([])
+  })
+
+  it("makes nothing when a listing names another kind for the issue's text, so Leaf signs only a file change as it", async () => {
+    const describe = SHIP_MANIFEST.actions.find((a) => a.id === 'describe-issue')!
+    describe.emits.kind = 1111
+    try {
+      const result = await applyAction({ naddr: addrToNaddr(PROJECT, []), actionId: 'add-issue', value: { title: 'Planted', description: 'Words' } })
+      expect(result.ok).toBe(false)
+      expect(published).toEqual([])
+    } finally {
+      describe.emits.kind = 1851
+    }
   })
 
   it('changes nothing for an action that is not a creation', async () => {

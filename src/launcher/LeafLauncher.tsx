@@ -51,7 +51,7 @@ const WORDS: LauncherWords = {
 
 // Leaf, and each app that declares something Leaf may make: Ship's Create issue and Create project (KIN-11). Peek's
 // actions are a topic and a message, which Leaf does not write, so it is not listed: an app with nothing to offer is noise.
-const APPS = launcherApps('leaf').filter((app) => app.isHost || app.actions.some((action) => typeof action.emits?.kind === 'number' && leafMaySign(action.emits.kind)))
+export const APPS = launcherApps('leaf').filter((app) => app.isHost || app.actions.some((action) => typeof action.emits?.kind === 'number' && leafMaySign(action.emits.kind)))
 const IDLE = { state: { kind: 'idle' } as const, hits: [] as LauncherFileHit[] }
 
 /** What `[` finds, as the box's file search: files from every app by the words of their fields. */

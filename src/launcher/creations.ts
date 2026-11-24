@@ -36,6 +36,9 @@ const people = createPeopleCache()
 export const SHIP_PROJECT = 30850
 export const SHIP_ISSUE = 30851
 
+/** A change to a file's field (SPEC §6.2): the only kind a new file's text goes out as. */
+const FILE_CHANGE = 1851
+
 /** The kinds Leaf signs as a file: its documents, and the Ship files its ⌘K makes. */
 const FILE_KINDS_LEAF_MAKES = new Set<number>([KIND.DOCUMENT, SHIP_PROJECT, SHIP_ISSUE])
 
@@ -107,14 +110,14 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
   try {
     pointer = referenceToPointer(args.naddr) as AddressPointer
   } catch {
-    return fail('That reference could not be decoded.')
+    return fail('That project or team could not be found. Pick it again.')
   }
   const address = pointerToAddress(pointer)
 
   // The declaring manifest: the parent's own, or another app's that offers the action on it (MAN-8). interop answers
   // with a borrowed one only where resolving the parent would have offered the action from it.
   const resolved = await resolveActingManifest(pointer, args.declaredBy, query, manifests).catch(() => null)
-  if (!resolved) return fail(args.declaredBy ? 'That app no longer offers this action here.' : 'No app claims this kind, so there is nothing to make.')
+  if (!resolved) return fail(args.declaredBy ? 'That app no longer offers this action here.' : 'The app that makes this is not set up in this workspace, so nothing was made.')
   const declared = resolved.manifest.actions?.find((action) => action.id === args.actionId)
   if (!declared || declared.input?.type !== 'object' || !declared.input.properties) return fail('Leaf does not do this.')
   if (!leafMaySign(declared.emits.kind)) return fail('Leaf cannot make this.')
@@ -157,7 +160,8 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
   const kind = declared.emits.kind
   const { [TEXT_FIELD]: text = '', ...rest } = value
   const textAction = resolved.manifest.actions?.find(
-    (candidate) => candidate.emits.field === TEXT_FIELD && candidate.emits.kind !== KIND.DELETION && [candidate.appliesTo].flat().includes(String(kind)),
+    // Only a file change (`kind:1851`): a listing may name any kind for it, and Leaf signs nothing else as a file's text.
+    (candidate) => candidate.emits.field === TEXT_FIELD && candidate.emits.kind === FILE_CHANGE && [candidate.appliesTo].flat().includes(String(kind)),
   )
   if (text && !textAction) return fail('Its app does not take this text from Leaf yet, so nothing was made.')
   const built = buildActionEvents({ ...common, value: rest, createdAtMs: Date.now() })

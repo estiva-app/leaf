@@ -218,3 +218,11 @@ describe("Leaf's ⌘K about the open page (KIN-5)", () => {
     expect(publish.mock.calls.filter(([event]) => event.kind === 1111)).toHaveLength(0)
   })
 })
+
+describe("the apps Leaf's ⌘K lists (KIN-11)", () => {
+  it('lists Ship, whose Create issue and Create project Leaf makes, and not Peek, which offers nothing Leaf can make', async () => {
+    const { APPS } = await import('./LeafLauncher')
+
+    expect(APPS.map((app) => app.id).sort()).toEqual(['leaf', 'ship'])
+  })
+})
