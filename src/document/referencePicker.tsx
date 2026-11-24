@@ -61,6 +61,16 @@ const search = referenceSearch({
   },
 })
 
+/** Files from every app for what was typed, ranked as `[` ranks them: ⌘K's file search (KIN-5). Asks the relay once typing pauses. */
+export function fileHits(typed: string): readonly ReferenceCandidate[] {
+  return rankReferences({ messages: [], files: search.hits(typed), query: typed, ownKinds: [KIND.DOCUMENT] }).files
+}
+
+/** Told when a search answer lands. */
+export function subscribeFileHits(listener: () => void): () => void {
+  return search.subscribe(listener)
+}
+
 /**
  * Called while `[`'s list is open; told when the Folder's files or a search answer changes, or what an app link
  * names comes back, so a comment's caption reads that link as what it names.

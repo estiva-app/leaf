@@ -6,7 +6,8 @@ import { IconLayoutSidebarRight, IconMessage, IconMessageOff } from '@tabler/ico
 import { ArchivedNotice, Banner, DeletedNotice, Divider, EmptyState, FieldLine, KindIcon, NoAccessNotice, PageHeader, Panel, TeamChip, thingKindOf, Toolbar, ToolbarButton, useToast } from '@estiva-app/ui'
 import { blockLinkOf, copyLink, useLinkedBlock } from '../document/blockLink'
 import { InlineText, type InlineTextHandle } from '@estiva-app/ui/editor'
-import { CommentsColumn, heldComments } from '../comments/CommentsColumn'
+import { CommentsColumn, heldComments, holdCommentDraft } from '../comments/CommentsColumn'
+import { insertBlock, useOpenPage } from '../launcher/openPage'
 import type { Anchor } from '../comments/comments'
 import { LiveDocument } from '../document/LiveDocument'
 import { PageSummary } from '../document/PageSummary'
@@ -275,6 +276,40 @@ function DocumentView({
     setDraft(anchor)
     if (anchor && !comments.open) comments.onOpenChange(true)
   }
+  /*
+    ⌘K about this page (KIN-5): it reads the editor's blocks, and turns an answer into a new comment (the box holding
+    the words, unsent) or a block where the cursor was, else under the passage it cites first (Miky, KIN-5 kickoff and
+    the approved story). An archived or read-only page is offered neither.
+  */
+  const [draftNonce, setDraftNonce] = useState(0)
+  // A page whose blocks have no ids still takes a comment on the whole document.
+  const commentable = !locked
+  const address = opened.address
+  useOpenPage(
+    address
+      ? {
+          address,
+          title,
+          editor,
+          canComment: commentable,
+          canEdit: !locked && !!editor?.isEditable,
+          showComments: () => {
+            if (!comments.open) comments.onOpenChange(true)
+          },
+          draftComment: (text: string, blocks: string[] | null) => {
+            if (!commentable) return false
+            // A comment already started keeps its place too: only an empty box moves to the cited block.
+            const held = holdCommentDraft(address, text)
+            if (!held) return false
+            setDraftNonce((n) => n + 1)
+            if (held === 'new') setDraft(blocks && addressable ? { blocks } : null)
+            if (!comments.open) comments.onOpenChange(true)
+            return true
+          },
+          insert: (text: string, after: string | null) => insertBlock(editor, locked, text, after),
+        }
+      : null,
+  )
   // Who is in it and its last edit (LED-6), in Leaf's words, the exact time in its tooltip. In a narrow window the last
   // edit heads the ⋯ menu; a file with no menu keeps it in the bar.
   const edited = facts.lastEdit === undefined ? undefined : lastEditLine(facts.lastEdit, me, (pubkey) => directory[pubkey]?.displayName, now)
@@ -417,6 +452,7 @@ function DocumentView({
             onDraft={setDraft}
             closed={locked ? (commentLine ?? '') : undefined}
             hidden={!comments.open}
+            draftNonce={draftNonce}
           />
         </div>
       </div>

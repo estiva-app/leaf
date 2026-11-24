@@ -40,6 +40,9 @@ import { viewerPubkey } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
 import { useRelayState } from './relay/useRelayState'
 import { documentPath, dOf, navigate, newDocumentFolderOf, pagePath, replace, routeOf, usePathname, type Route } from './route'
+import { useKeptLauncher } from '@estiva-app/launcher'
+import { LeafLauncher } from './launcher/LeafLauncher'
+import { captureOpenPage } from './launcher/openPage'
 import { useTabTitle } from './tabTitle'
 import { TopicsSection } from './topics/TopicsSection'
 import { useInitiativeLitUnder } from './topics/openedFrom'
@@ -188,6 +191,11 @@ function Frame() {
   useTabTitle(route.page === 'home' ? 'Home' : route.page === 'topics' ? 'Explore initiatives' : route.page === 'topic' ? null : onPage && !onPage.unreachable ? titleOf(onPage) : undefined)
   const summaries = (workspace.folders ?? []).map((f) => f.folder)
   const takers = summaries.filter(takesNewDocuments)
+  // ⌘K (KIN-5): one box for the whole app, about the page open when it was opened, hidden rather than thrown away while
+  // it holds a sentence or an answer; the top bar's search opens it and carries its dot. New document, where a team takes one.
+  // The story's "In Launch team": said when there is one team it can go in; with more, the dialog asks which.
+  const newDocument = takers.length ? { onNewDocument: () => setMaking(true), ...(takers.length === 1 ? { newDocumentIn: takers[0].name } : {}) } : {}
+  const kept = useKeptLauncher(captureOpenPage, (box) => <LeafLauncher {...box} {...newDocument} />)
   // New document open with text in it when the sign-in ended: open again after the tap, once its Folders are read.
   // Under the page it was opened under, when it was, as the dialog held it.
   useReopenHeld(takers.length ? NEW_DOCUMENT_HOLD : undefined, () => setMaking(heldUnder(NEW_DOCUMENT_HOLD) ?? true))
@@ -294,6 +302,10 @@ function Frame() {
       <AppShell
         variant="inset"
         logo={APP_TITLE}
+        onSearch={signedIn ? kept.toggle : undefined}
+        searchPlaceholder="Search Leaf..."
+        searchStatus={kept.searchStatus}
+        searchStatusLabel={kept.searchStatusLabel}
         navOpen={sidebarOpen}
         onNavOpenChange={setSidebarOpen}
         identity={<IdentityMenu me={me} signedIn={signedIn} idBase={ID_CONFIG?.base} onSignOut={signedIn ? beginSignOut : undefined} />}
@@ -331,6 +343,7 @@ function Frame() {
           {main}
         </ErrorBoundary>
       </AppShell>
+      {kept.launcher}
       {(making || handoffFolder) && (
         <NewDocumentDialog
           folders={takers}
