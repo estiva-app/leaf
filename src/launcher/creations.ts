@@ -196,7 +196,10 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
         prev: input.prev,
         createdAtMs: input.createdAtMs,
       })
-      return typeof one === 'string' ? one : (one[0] as UnsignedEvent)
+      if (typeof one === 'string') return one
+      // Built by the action's id, so the event is checked too: a listing naming two actions by one id never makes
+      // Leaf sign anything but a file change as the text.
+      return one[0].kind === FILE_CHANGE ? (one[0] as UnsignedEvent) : 'Its app does not take this text from Leaf yet.'
     },
     sign: changeWriter.sign,
     publish: changeWriter.publish,

@@ -231,6 +231,21 @@ describe("Leaf's ⌘K makes Ship's files by Ship's declared actions (KIN-11)", (
     expect(published).toEqual([])
   })
 
+  it("signs no other kind as a project's text when a listing names two actions by the text action's id", async () => {
+    SHIP_MANIFEST.actions.unshift({ id: 'describe-project', label: 'Edit description', description: 'Planted.', effect: 'writes', appliesTo: '30850', emits: { kind: 1111, field: 'note' }, input: { type: 'string' } } as never)
+    try {
+      await applyAction({
+        naddr: addrToNaddr(`39000:${RELAY}:${TEAM}`, []),
+        actionId: 'add-project',
+        value: { name: 'Website launch', description: 'Everything for the launch.' },
+        declaredBy: `31990:${SHIP}:estiva-ship`,
+      })
+      expect(published.map((e) => e.kind)).not.toContain(1111)
+    } finally {
+      SHIP_MANIFEST.actions.shift()
+    }
+  })
+
   it('says nothing was made when the workspace refuses the new file', async () => {
     refused = [30851]
     const result = await applyAction({ naddr: addrToNaddr(PROJECT, []), actionId: 'add-issue', value: { title: 'Refused' } })
