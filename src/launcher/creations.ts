@@ -156,10 +156,23 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-new-files-text-is-its-first-change.md
   const kind = declared.emits.kind
   const { [TEXT_FIELD]: text = '', ...rest } = value
-  const textAction = resolved.manifest.actions?.find(
-    // Only a file change (`kind:1851`): a listing may name any kind for it, and Leaf signs nothing else as a file's text.
-    (candidate) => candidate.emits.field === TEXT_FIELD && candidate.emits.kind === FILE_CHANGE && [candidate.appliesTo].flat().includes(String(kind)),
-  )
+  const textOf = (manifest: typeof resolved.manifest) =>
+    manifest.actions?.find(
+      // Only a file change (`kind:1851`): a listing may name any kind for it, and Leaf signs nothing else as a file's text.
+      (candidate) => candidate.emits.field === TEXT_FIELD && candidate.emits.kind === FILE_CHANGE && [candidate.appliesTo].flat().includes(String(kind)),
+    )
+  // The text is written as the new file's own app declares it. A creation borrowed on a team comes with only itself
+  // (interop's resolveActingManifest), so a project's text is read from its app's whole manifest, and only from the
+  // same app that offered the creation (KIN-11: Ship's New project from Leaf carried no description action).
+  let textManifest = resolved.manifest
+  let textAction = textOf(textManifest)
+  if (text && !textAction) {
+    const owner = await resolveManifest({ kind, pubkey, identifier: newId, relays: [] }, query, manifests).catch(() => null)
+    if (owner && owner.address === resolved.address) {
+      textManifest = owner.manifest
+      textAction = textOf(textManifest)
+    }
+  }
   if (text && !textAction) return fail('Its app does not take this text from Leaf yet, so nothing was made.')
   const built = buildActionEvents({ ...common, value: rest, createdAtMs: Date.now() })
   if (typeof built === 'string') return fail(built)
@@ -171,6 +184,7 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
     build: (input) => {
       const one = buildActionEvents({
         ...common,
+        manifest: textManifest,
         kind,
         address: `${kind}:${pubkey}:${newId}`,
         objectAuthor: pubkey,
@@ -182,7 +196,10 @@ export async function applyAction(args: LauncherApply): Promise<LauncherApplied>
         prev: input.prev,
         createdAtMs: input.createdAtMs,
       })
-      return typeof one === 'string' ? one : (one[0] as UnsignedEvent)
+      if (typeof one === 'string') return one
+      // Built by the action's id, so the event is checked too: a listing naming two actions by one id never makes
+      // Leaf sign anything but a file change as the text.
+      return one[0].kind === FILE_CHANGE ? (one[0] as UnsignedEvent) : 'Its app does not take this text from Leaf yet.'
     },
     sign: changeWriter.sign,
     publish: changeWriter.publish,

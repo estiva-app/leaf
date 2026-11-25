@@ -50,6 +50,9 @@ const SHIP_MANIFEST = {
   ],
 }
 
+/* The manifest that claims Ship's kinds: Ship's, unless a test plants another app's claim. */
+let kindOwner = `31990:${SHIP}:estiva-ship`
+
 /* What resolving a project, or a team, offers: Ship's add-issue on a project, and Ship's add-project borrowed on a team beside the team's own New file. */
 const offered = (address: string) =>
   address.startsWith('30850:')
@@ -58,8 +61,12 @@ const offered = (address: string) =>
 
 vi.mock('@estiva-app/interop', async (original) => ({
   ...(await original<typeof import('@estiva-app/interop')>()),
-  resolveActingManifest: async () => ({ address: `31990:${SHIP}:estiva-ship`, manifest: SHIP_MANIFEST }),
-  resolveManifest: async () => ({ address: `31990:${SHIP}:estiva-ship`, manifest: SHIP_MANIFEST }),
+  // A creation borrowed on a team comes with only the creations declared there, as interop's answers it.
+  resolveActingManifest: async (pointer: { kind: number }, declaredBy?: string) =>
+    pointer.kind === 39000 && declaredBy
+      ? { address: declaredBy, manifest: { ...SHIP_MANIFEST, actions: SHIP_MANIFEST.actions.filter((a) => [a.appliesTo].flat().includes('39000')) } }
+      : { address: `31990:${SHIP}:estiva-ship`, manifest: SHIP_MANIFEST },
+  resolveManifest: async () => ({ address: kindOwner, manifest: SHIP_MANIFEST }),
   resolveForeignObject: async (reference: string) => {
     const { naddrToAddr } = await import('@estiva-app/protocol')
     return offered(/^\d+:/.test(reference) ? reference : naddrToAddr(reference))
@@ -118,6 +125,7 @@ afterEach(() => {
   refused = []
   teamHasState = false
   impostor = false
+  kindOwner = `31990:${SHIP}:estiva-ship`
 })
 
 describe("Leaf's ⌘K offers Ship's Create issue and Create project, with where each can go (KIN-11)", () => {
@@ -187,6 +195,55 @@ describe("Leaf's ⌘K makes Ship's files by Ship's declared actions (KIN-11)", (
     expect(listed.kind).toBe(1852)
     // The listing names the new project, by its id (or its address).
     expect(listed.tags.some((t) => t.slice(1).some((v) => v === tag(project, 'd') || v === `30850:${ME}:${tag(project, 'd')}`))).toBe(true)
+  })
+
+  it("creates a project with the text it was given as its first description change, by Ship's Edit description", async () => {
+    const result = await applyAction({
+      naddr: addrToNaddr(`39000:${RELAY}:${TEAM}`, []),
+      actionId: 'add-project',
+      value: { name: 'Website launch', description: 'Everything for the launch.', key: '', summary: '' },
+      declaredBy: `31990:${SHIP}:estiva-ship`,
+    })
+
+    expect(result).toMatchObject({ ok: true })
+    expect(result.textNotSaved).toBeUndefined()
+    const [project, text] = published
+    expect(project.kind).toBe(30850)
+    expect(project.content).toBe('')
+    expect(project.tags.some((t) => t.includes('Everything for the launch.'))).toBe(false)
+    expect(text.kind).toBe(1851)
+    expect(text.pubkey).toBe(ME)
+    expect(tag(text, 'field')).toBe('description')
+    expect(tag(text, 'a')).toBe(result.created)
+    expect(`${text.content} ${tag(text, 'value') ?? ''}`).toContain('Everything for the launch.')
+  })
+
+  it("makes no project with text when another app's manifest claims the project, so Leaf writes no text Ship did not declare", async () => {
+    kindOwner = `31990:${IMPOSTOR}:estiva-ship`
+    const result = await applyAction({
+      naddr: addrToNaddr(`39000:${RELAY}:${TEAM}`, []),
+      actionId: 'add-project',
+      value: { name: 'Website launch', description: 'Everything for the launch.' },
+      declaredBy: `31990:${SHIP}:estiva-ship`,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(published).toEqual([])
+  })
+
+  it("signs no other kind as a project's text when a listing names two actions by the text action's id", async () => {
+    SHIP_MANIFEST.actions.unshift({ id: 'describe-project', label: 'Edit description', description: 'Planted.', effect: 'writes', appliesTo: '30850', emits: { kind: 1111, field: 'note' }, input: { type: 'string' } } as never)
+    try {
+      await applyAction({
+        naddr: addrToNaddr(`39000:${RELAY}:${TEAM}`, []),
+        actionId: 'add-project',
+        value: { name: 'Website launch', description: 'Everything for the launch.' },
+        declaredBy: `31990:${SHIP}:estiva-ship`,
+      })
+      expect(published.map((e) => e.kind)).not.toContain(1111)
+    } finally {
+      SHIP_MANIFEST.actions.shift()
+    }
   })
 
   it('says nothing was made when the workspace refuses the new file', async () => {
