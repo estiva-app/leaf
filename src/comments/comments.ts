@@ -145,7 +145,7 @@ export async function readThreads(doc: Commented): Promise<Threads> {
   const kept = [...on, ...on.flatMap((root) => replies[root.id] ?? []), ...missingRoots.flatMap((id) => (replies[id] ?? []).filter((e) => isAbout(e, doc.address)))]
   // Everything the reads by `#e` return goes to the fold with the comments.
   const read: SignedEvent[] = []
-  const recording: typeof query = async (filters) => {
+  const recording = async (filters: Record<string, unknown>[]): Promise<SignedEvent[]> => {
     const answer = await query(filters)
     read.push(...answer)
     return answer

@@ -108,10 +108,15 @@ export async function queryTimes(filters: Record<string, unknown>[]): Promise<Fi
   return waitingOut((relay) => relay.queryTimes(filters))
 }
 
+// The same reader's times read rides on the query (interop's `QueryFn.times`): a file the list read leaves out, a
+// deleted parent or a deleted page, is read by its current changes, never by every change it ever had (aa0ddf0c).
+query.times = queryTimes
+
 /** {@link query}, paged to the end: for a read that must be whole, which the relay's per-filter cap would cut. */
 export async function queryAll(filters: Record<string, unknown>[]): Promise<SignedEvent[]> {
   return waitingOut((relay) => relay.queryAll(filters))
 }
+queryAll.times = queryTimes
 
 /** {@link query} answered with what each event matched: the relay's search by a file's current fields (§6.13). */
 export async function queryWithMatches(filters: Record<string, unknown>[]): Promise<Awaited<ReturnType<Relay['queryWithMatches']>>> {
