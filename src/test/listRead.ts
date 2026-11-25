@@ -59,7 +59,7 @@ export function timesAnswer(events: readonly SignedEvent[], filters: readonly Fi
     for (const root of roots) {
       const a = addressOf(root)
       const changes = events.filter((event) => event.kind === 1851 && tagValue(event, 'a') === a)
-      if (changes.filter((change) => tagValue(change, 'field') === 'deleted').sort((x, y) => x.created_at - y.created_at).at(-1)?.tags.some((t) => t[0] === 'value' && t[1] === 'true')) continue
+      // A deleted file is answered too: the times read is how a deleted file is found (SPEC §6.5).
       out.set(a, {
         a,
         created_at: root.created_at,

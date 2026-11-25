@@ -44,7 +44,9 @@ export function declaredManifests(): Promise<SignedEvent[]> {
  * Anything else, a failed or empty declared read, or one that filled its limit, goes to the relay as before.
  */
 export function withDeclaredManifests(read: QueryFn): QueryFn {
-  return async (filters) => {
+  // `read`'s times read goes with it: a deleted file is read by its current changes (aa0ddf0c).
+  return Object.assign(served, read.times ? { times: read.times } : {})
+  async function served(filters: Record<string, unknown>[]): Promise<SignedEvent[]> {
     if (filters.length === 0 || !filters.every(isServed)) return read(filters)
     const newest = await declaredManifests().catch(() => null)
     if (!newest?.length || newest.length >= DECLARED_LIMIT) return read(filters)
