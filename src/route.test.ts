@@ -3,6 +3,7 @@
  * `returnTo` is the one thing between a sign-in and an open redirect.
  */
 import { describe, expect, it } from 'vitest'
+import { addrToNaddr } from '@estiva-app/protocol'
 import { documentPath, newDocumentFolderOf, newDocumentPath, ownPath, pagePath, routeOf } from './route'
 
 describe('ownPath, the place sign-in returns to', () => {
@@ -59,15 +60,21 @@ describe("a document's link", () => {
     expect(routeOf(`/document/${D}`)).toEqual({ page: 'document', d: D })
   })
 
-  it('still opens a file by its old /f/ link, and a path with no d is Home', () => {
+  it('opens a file by its /o/ address, still by its old /f/ link, and a path with no d is Home', () => {
+    expect(routeOf('/o/naddr1xyz')).toEqual({ page: 'file', naddr: 'naddr1xyz' })
     expect(routeOf('/f/naddr1xyz')).toEqual({ page: 'file', naddr: 'naddr1xyz' })
     expect(routeOf('/document/plan')).toEqual({ page: 'home' })
     expect(routeOf('/document/%E0%A4%A')).toEqual({ page: 'home' })
   })
 
-  it("opens a document at its own link and another app's file at its naddr", () => {
-    expect(pagePath({ kind: 30842, address: `30842:${'a'.repeat(64)}:${D}`, naddr: 'naddr1d', title: 'Plan' })).toBe(`/document/plan-${D}`)
-    expect(pagePath({ kind: 30851, address: `30851:${'a'.repeat(64)}:${D}`, naddr: 'naddr1i', title: 'Bug' })).toBe('/f/naddr1i')
+  it("writes a document at its own link, another app's file at its app's word, and never the old /f/", () => {
+    const issue = `30851:${'a'.repeat(64)}:${D}`
+    expect(pagePath({ kind: 30842, address: `30842:${'a'.repeat(64)}:${D}`, title: 'Plan' })).toBe(`/document/plan-${D}`)
+    expect(pagePath({ kind: 30851, address: issue, title: 'Bug' }, { byKind: { 30851: 'issue' } })).toBe(`/issue/bug-${D}`)
+    // Before the manifests name the issue's word: its /o/ address, which every app answers.
+    expect(pagePath({ kind: 30851, address: issue, title: 'Bug' }, { byKind: {} })).toBe(`/o/${addrToNaddr(issue)}`)
+    // An id no file can have gets no link.
+    expect(pagePath({ kind: 30851, address: `30851:${'a'.repeat(64)}:PROJ-1` }, { byKind: { 30851: 'issue' } })).toBe('/')
   })
 })
 

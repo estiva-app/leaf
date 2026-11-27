@@ -2,7 +2,7 @@
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { BLOCK_DOCUMENT_FORMAT, BODY_SLOT, planListInTopic } from '@estiva-app/interop'
 import { buildMembershipChange } from '@estiva-app/conversation'
-import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { addrToNaddr, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { ToastProvider, TooltipProvider } from '@estiva-app/ui'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -197,7 +197,7 @@ describe("a topic's page in Leaf", () => {
     // Each under its own kind's heading (brainstorm 1.A), each a link inside Leaf.
     const plans = await screen.findByRole('link', { name: /Launch plan/ })
     expect(plans.getAttribute('href')).toBe(`/document/launch-plan-${plan.address!.split(':')[2]}`)
-    expect(screen.getByRole('link', { name: /Write the brief/ }).getAttribute('href')).toBe(`/f/${issue.naddr}`)
+    expect(screen.getByRole('link', { name: /Write the brief/ }).getAttribute('href')).toBe(`/o/${addrToNaddr(issue.address!)}`)
     expect(plans.closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('page')
     expect(screen.getByRole('link', { name: /Write the brief/ }).closest('[data-topic-kind]')?.getAttribute('data-topic-kind')).toBe('issue')
   })
@@ -235,7 +235,7 @@ describe("a topic's page in Leaf", () => {
     outside = { [plan.address!]: plan, [issue.address!]: issue }
     show(topic('Widgets', [plan, issue]))
     const planD = plan.address!.split(':')[2]!
-    expect((await screen.findByRole('link', { name: /^Write the brief/ })).getAttribute('href')).toBe(`/f/${issue.naddr}`)
+    expect((await screen.findByRole('link', { name: /^Write the brief/ })).getAttribute('href')).toBe(`/o/${addrToNaddr(issue.address!)}`)
     expect((await screen.findByRole('link', { name: /^Launch plan/ })).getAttribute('href')).toBe(`/document/launch-plan-${planD}`)
     expect(document.querySelector('[data-topic-page] a[href^="https://"]')).toBeNull()
   })

@@ -1,4 +1,5 @@
-import { nestingOf, type ForeignObject } from '@estiva-app/interop'
+import { nestingOf, type FileLinkWords, type ForeignObject } from '@estiva-app/interop'
+import { linkWords } from '../linkWords'
 import { sharesText } from '../document/writable'
 import { KIND } from '@estiva-app/protocol'
 import { Chip, KindIcon, thingKindOf, type NavTreeGroup, type NavTreeNode } from '@estiva-app/ui'
@@ -45,19 +46,19 @@ export function fileKey(file: ForeignObject): string {
 export type Expansion = Pick<Workspace, 'children' | 'opened' | 'setOpen' | 'setFolderOpen'>
 
 /** A file's row as every sidebar list draws it: its title, its link, its kind's icon and, for another app's file, its type. */
-export function rowOf(file: ForeignObject): NavTreeNode {
+export function rowOf(file: ForeignObject, words: FileLinkWords = linkWords()): NavTreeNode {
   return {
     id: fileKey(file),
     label: titleOf(file),
-    href: pagePath({ ...file, title: file.slots.title?.value }),
+    href: pagePath({ ...file, title: file.slots.title?.value }, words),
     icon: <KindIcon kind={isDocument(file) ? 'file' : thingKindOf(file.kind)} />,
     hint: isDocument(file) ? undefined : <Chip type="neutral" label={typeOf(file)} />,
   }
 }
 
-function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignObject[], expansion: Expansion): NavTreeNode {
-  const node = rowOf(file)
-  const nested = nestedUnder(file).map((c) => nodeOf(c, nestedUnder, expansion))
+function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignObject[], expansion: Expansion, words: FileLinkWords): NavTreeNode {
+  const node = rowOf(file, words)
+  const nested = nestedUnder(file).map((c) => nodeOf(c, nestedUnder, expansion, words))
   // A file whose app lists its own children — a project its issues — reads them when the row opens,
   // and draws them after anything filed under it in the Folder. A page's children are pages filed in
   // its Folder, already nested above, so it opens only when there are some, and reads nothing (LFB-4).
@@ -65,7 +66,7 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
     return { ...node, children: nested, open: expansion.opened.has(file.ref), onOpenChange: (open) => expansion.setFolderOpen(file.ref, open) }
   if (!file.listsChildren || isDocument(file)) return nested.length ? { ...node, children: nested } : node
   const read = expansion.children[file.ref]
-  const listed = Array.isArray(read) ? read.filter(isListed).map((c) => nodeOf(c, () => [], expansion)) : undefined
+  const listed = Array.isArray(read) ? read.filter(isListed).map((c) => nodeOf(c, () => [], expansion, words)) : undefined
   return {
     ...node,
     hasChildren: true,
@@ -81,7 +82,7 @@ function nodeOf(file: ForeignObject, nestedUnder: (f: ForeignObject) => ForeignO
  * The tree's groups: a Folder each, with the files it lists nested as Peek nests them.
  * A file the viewer cannot read is not drawn at all — the row would disclose it.
  */
-export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion): NavTreeGroup[] | null {
+export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion, words: FileLinkWords = linkWords()): NavTreeGroup[] | null {
   if (!folders) return null
   return folders.map(({ folder, contents, failed }) => {
     // Filtered before nesting, so a page whose parent is not listed is one of the Folder's roots.
@@ -92,7 +93,7 @@ export function groupsOf(folders: WorkspaceFolder[] | null, expansion: Expansion
       title: folder.name ?? folder.id,
       open: expansion.opened.has(folder.id),
       onOpenChange: (open) => expansion.setFolderOpen(folder.id, open),
-      nodes: nesting ? nesting.roots.map((f) => nodeOf(f, nesting.childrenOf, expansion)) : failed ? [] : null,
+      nodes: nesting ? nesting.roots.map((f) => nodeOf(f, nesting.childrenOf, expansion, words)) : failed ? [] : null,
       // Said in the rows' place, so a Folder that kept its files through a busy re-read (APP-9) shows them, not this.
       message: !nesting && failed ? 'This could not be read. Reload to try again.' : readable?.length === 0 ? 'Nothing in this yet.' : undefined,
     }

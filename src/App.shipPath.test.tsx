@@ -14,18 +14,27 @@ const TOPIC_D = '5bd936dc-1111-4222-8333-444455556666'
 const ISSUE = `30851:${MIKY}:${D}`
 const TOPIC = `30840:${MIKY}:${TOPIC_D}`
 
-function event(kind: number, pubkey: string, tags: string[][]): SignedEvent {
-  return { id: `${kind}${pubkey}${tags.length}`.slice(0, 64).padEnd(64, '0'), sig: '0'.repeat(128), pubkey, kind, created_at: 1, tags, content: '{}' }
+function event(kind: number, pubkey: string, tags: string[][], content = '{}'): SignedEvent {
+  return { id: `${kind}${pubkey}${tags.length}`.slice(0, 64).padEnd(64, '0'), sig: '0'.repeat(128), pubkey, kind, created_at: 1, tags, content }
 }
+// Ship's and Peek's manifests as production holds them: Ship projects its kinds, Peek opens every file's conversation.
 const MANIFESTS = [
-  event(31990, 'b'.repeat(64), [
-    ['d', 'estiva-ship'], ['k', '30850'], ['k', '30851'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'],
-    ['urls', 'https://ship.estiva.app/project/<slug>-<d>#block-<block>', '30850'],
-    ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851'],
-  ]),
-  event(31990, 'c'.repeat(64), [
-    ['d', 'estiva-peek'], ['k', '30840'], ['web', 'https://peek.estiva.app/o/<bech32>', 'naddr'], ['urls', 'https://peek.estiva.app/topic/<slug>-<d>', '30840'],
-  ]),
+  event(
+    31990,
+    'b'.repeat(64),
+    [
+      ['d', 'estiva-ship'], ['k', '30850'], ['k', '30851'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'],
+      ['urls', 'https://ship.estiva.app/project/<slug>-<d>#block-<block>', '30850'],
+      ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851'],
+    ],
+    JSON.stringify({ projections: { 30850: {}, 30851: {} } }),
+  ),
+  event(
+    31990,
+    'c'.repeat(64),
+    [['d', 'estiva-peek'], ['k', '30840'], ['web', 'https://peek.estiva.app/o/<bech32>', 'naddr'], ['urls', 'https://peek.estiva.app/topic/<slug>-<d>', '30840']],
+    JSON.stringify({ aspect: 'conversation' }),
+  ),
 ]
 let held: SignedEvent[] = []
 
@@ -116,6 +125,13 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     render(<App />)
     expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Open in Ship' })).toBeTruthy()
+    await waitFor(() => expect(window.location.pathname).toBe(`/issue/${slug}-${D}`))
+  })
+
+  it('opens an issue at its /o/ address, the one every app answers, and the bar takes its short link', async () => {
+    window.history.replaceState(null, '', `/o/${issue.naddr}`)
+    render(<App />)
+    expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
     await waitFor(() => expect(window.location.pathname).toBe(`/issue/${slug}-${D}`))
   })
 

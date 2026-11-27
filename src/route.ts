@@ -1,15 +1,17 @@
 import { useSyncExternalStore } from 'react'
-import { identifierFromRef, objectRef } from '@estiva-app/interop'
-import { KIND } from '@estiva-app/protocol'
+import { filePathOf, identifierFromRef, objectRef, type FileLinkWords } from '@estiva-app/interop'
+import { linkWords } from './linkWords'
 
 /**
  * Leaf's places: Home at `/`, a document at `/document/<slug>-<d>`, any
- * other file at `/f/<naddr>`, a topic at `/topic/<slug>-<d>` and Explore
- * topics at `/topics`. A document's link is the shape Leaf's manifest
- * declares in `urls` (SPEC §7.7), so every app reads it as the page's chip and
- * `#block-<id>` as one of its blocks; the word is Miky's (the issue
- * conversation, 2026-10-19). The `/f/` link of a document still opens it, and
- * is replaced by the document's own link once the page is found.
+ * file by its `naddr` at `/o/<naddr>` (SPEC §7.7 rule 3), a topic at
+ * `/topic/<slug>-<d>` and Explore topics at `/topics`. A document's link is
+ * the shape Leaf's manifest declares in `urls` (SPEC §7.7), so every app reads
+ * it as the page's chip and `#block-<id>` as one of its blocks; the word is
+ * Miky's (the issue conversation, 2026-10-19). A file reached at `/o/` is
+ * replaced by its own link once it is found. The old `/f/<naddr>` still opens
+ * the same way until the stored links are rewritten (LIN-5); Leaf no longer
+ * writes it.
  *
  * Any other `/<word>/<ref>` is another app's address for a file, with Leaf's
  * host in front: `/issue/<slug>-<d>` is the Ship issue `ship.estiva.app` shows
@@ -33,7 +35,7 @@ export const EXPLORE_TOPICS_PATH = '/topics'
  * Leaf's own first segments, which are never another app's word. Not `topic`: it is Peek's word, which Leaf matches
  * first for its own topic page (LTN-3), and still the word another app's topic is drawn at here (`ownerPathOf`).
  */
-const OWN = new Set(['f', 'document', 'new', 'app'])
+const OWN = new Set(['f', 'o', 'document', 'new', 'app'])
 
 /** Whether `word` can be another app's type word on Leaf's host: the grammar {@link routeOf} reads, and none of Leaf's own. */
 export function isOtherAppsWord(word: string): boolean {
@@ -42,7 +44,8 @@ export function isOtherAppsWord(word: string): boolean {
 
 /** The place a path names. Anything Leaf does not know is Home. */
 export function routeOf(pathname: string): Route {
-  const file = /^\/f\/([a-z0-9]+)\/?$/.exec(pathname)
+  // `/o/` is the `naddr` form every app answers; `/f/` is Leaf's old one, read until the stored links are rewritten.
+  const file = /^\/[fo]\/([a-z0-9]+)\/?$/.exec(pathname)
   if (file) return { page: 'file', naddr: file[1] }
   // The slug is decoration and may be stale after a rename: only the `d` names the page (SPEC §7.7).
   const document = /^\/document\/([^/]+)\/?$/.exec(pathname)
@@ -66,11 +69,6 @@ function decodeRef(ref: string): string {
   }
 }
 
-/** The path of a file's page by its `naddr`: what a file of another app opens at. */
-export function filePath(naddr: string): string {
-  return `/f/${naddr}`
-}
-
 /** The path of a document's page: `/document/<slug>-<d>`, the slug from its title. */
 export function documentPath(d: string, title?: string): string {
   return `/document/${objectRef(d, title)}`
@@ -81,13 +79,15 @@ export function dOf(address: string): string {
   return address.split(':').slice(2).join(':')
 }
 
-/** Where a file opens in Leaf: a document at its own link, anything else at its `naddr`. */
-export function pagePath(file: { kind: number; address?: string; naddr?: string; title?: string }): string {
-  // A document address carries a uuid `d` only; any other would open Home, so that file keeps its naddr page (TES-4).
-  if (file.kind === KIND.DOCUMENT && file.address && identifierFromRef(dOf(file.address)) === dOf(file.address)) {
-    return documentPath(dOf(file.address), file.title)
-  }
-  return file.naddr ? filePath(file.naddr) : '/'
+/**
+ * Where a file opens in Leaf, and the path its link carries on any app's host (LIN-5): written by the shared writer,
+ * interop's `filePathOf`, as Peek, Ship and the agent write it. A document at `/document/<slug>-<d>`, another app's file
+ * at its own app's word, and a file whose kind has no word yet at its `/o/<naddr>`. `/` for an address no file can have
+ * (an id that is not a random lowercase uuid, which the relay refuses): there is no link to write.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-a-random-uuid-the-same-rule-as-a-teams-id.md
+ */
+export function pagePath(file: { kind: number; address?: string; title?: string }, words: FileLinkWords = linkWords()): string {
+  return (file.address && filePathOf(file.address, words, file.title)) || '/'
 }
 
 /**

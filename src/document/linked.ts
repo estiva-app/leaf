@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { openingWords } from '@estiva-app/conversation'
-import { KIND, referenceToPointer } from '@estiva-app/protocol'
+import { referenceToPointer } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { linkStateFrom, loadingShapeOf, thingKindOf, useToast, type LinkState, type LinkedFromOptions, type LinkedKind, type LoadingShape } from '@estiva-app/ui'
 import { links } from '../comments/links'
@@ -108,9 +108,9 @@ export function linkStateOf(
  */
 function conversationOf(file: ForeignObject, opens: string, written?: string): string {
   if (isTopicAddress(file.address)) return awayOf(file, written) || opens
-  if (!file.address || !sharesText(file) || (file.kind !== KIND.DOCUMENT && !file.naddr)) return opens
+  if (!file.address || !sharesText(file)) return opens
   const title = file.slots.title?.isPubkey ? undefined : file.slots.title?.value
-  return `${pagePath({ kind: file.kind, address: file.address, naddr: file.naddr, title })}${COMMENTS_HASH}`
+  return `${pagePath({ kind: file.kind, address: file.address, title })}${COMMENTS_HASH}`
 }
 
 /** A read file's comment count and where it opens, once counted (5ebf2756); nothing for a file with nowhere to open. */
