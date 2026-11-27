@@ -67,7 +67,7 @@ describe('a silent attempt that found no session', () => {
 })
 
 describe('opening a document with an expired access token and a live sign-in (AUT-5)', () => {
-  const PAGE = '/f/naddr1qqjrjepj89skxef595erwwp3956xvepn943xydnz95mxyvrzxfjnvdpjxfsnyq3q8wes66ph3qqkhpwgxczd64nqunsh962agm2w86atvglltprmracsxpqqqpu856jena5'
+  const PAGE = '/o/naddr1qqjrjepj89skxef595erwwp3956xvepn943xydnz95mxyvrzxfjnvdpjxfsnyq3q8wes66ph3qqkhpwgxczd64nqunsh962agm2w86atvglltprmracsxpqqqpu856jena5'
   beforeEach(() => {
     window.history.replaceState({}, '', PAGE)
     state.canRenew = true

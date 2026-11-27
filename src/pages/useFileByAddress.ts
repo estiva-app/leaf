@@ -3,7 +3,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { readDocument } from '../document/save'
 
 /**
- * A file opened by its `/f/<naddr>` address that no listing holds: an issue whose project row was never opened, or
+ * A file opened by its `/o/<naddr>` address, or another app's path, that no listing holds: an issue whose project row was never opened, or
  * one reloaded on its own page. Read by its address once the tree has been read without it; `naddr` is null while
  * the tree still holds the file or is still reading.
  */

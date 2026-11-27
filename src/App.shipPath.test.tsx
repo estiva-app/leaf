@@ -1,6 +1,6 @@
 /**
  * Ship's address for an issue, with Leaf's host (RFC 0.5 §7.7): it opens the issue as a Leaf page, and an issue
- * opened at `/f/<naddr>` gets that address in the bar, so swapping the host opens it in Ship.
+ * opened at `/o/<naddr>` gets that address in the bar, so swapping the host opens it in Ship.
  */
 import type { FolderContents, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { encodeNaddr, type PublishResult, type SignedEvent } from '@estiva-app/protocol'
@@ -135,8 +135,8 @@ describe("Ship's address for an issue, on Leaf's host", () => {
     await waitFor(() => expect(window.location.pathname).toBe(`/issue/${slug}-${D}`))
   })
 
-  it('gives an issue opened at /f/ the address Ship shows it at, on Leaf’s host', async () => {
-    window.history.replaceState(null, '', `/f/${issue.naddr}`)
+  it('gives an issue opened at /o/ the address Ship shows it at, on Leaf’s host', async () => {
+    window.history.replaceState(null, '', `/o/${issue.naddr}`)
     render(<App />)
     expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
     await waitFor(() => expect(window.location.pathname).toBe(`/issue/${slug}-${D}`))

@@ -1,5 +1,5 @@
 /**
- * Another app's file opened by its `/f/<naddr>` address that no listing holds — a Ship issue whose project row was
+ * Another app's file opened by its `/o/<naddr>` address that no listing holds — a Ship issue whose project row was
  * never opened, or one reloaded on its own page (LEAF-13): read by its address, and opened as a page.
  */
 import type { FolderContents, FolderSummary } from '@estiva-app/interop'
@@ -51,12 +51,12 @@ beforeAll(() => {
 })
 
 // Drawn once before any test's clock starts: `drawOnce` says why.
-window.history.replaceState(null, '', `/f/${ISSUE_NADDR}`)
+window.history.replaceState(null, '', `/o/${ISSUE_NADDR}`)
 await drawOnce(async () => { const fresh = await import('./App'); return <fresh.App /> }, () => screen.getByRole('textbox', { name: 'Document' }))
 
 describe("a Ship issue's address in Leaf", () => {
   it('opens the issue as a page when no Folder lists it, as after a reload', async () => {
-    window.history.replaceState(null, '', `/f/${ISSUE_NADDR}`)
+    window.history.replaceState(null, '', `/o/${ISSUE_NADDR}`)
     render(<App />)
     expect(await screen.findByRole('textbox', { name: 'Document' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Open in Ship' })).toBeTruthy()
@@ -71,7 +71,7 @@ describe("a Ship issue's address in Leaf", () => {
   })
 
   it('says it cannot be found when the address reads nothing', async () => {
-    window.history.replaceState(null, '', '/f/naddr1nothing')
+    window.history.replaceState(null, '', '/o/naddr1nothing')
     render(<App />)
     // Changed on purpose: the kit's NoAccessNotice words (ONE-5 step 1), where Leaf said "This could not be found, or you cannot read it.".
     expect(await screen.findByText("You can't open this page")).toBeTruthy()

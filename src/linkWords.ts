@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react'
  * Two words are Leaf's own and stay so whatever a newer manifest says: a document opens at `/document/`, Leaf's page
  * route, and a topic at `/topic/`, Leaf's topic page. Any other word that is one of Leaf's own root paths is dropped,
  * and that kind falls back to its `/o/<naddr>`, which opens the file: any member can publish a manifest, and one naming
- * `/f/…` or `/document/…` for an issue would send every such link to a page that opens something else (Ship and Peek
+ * `/o/…` or `/document/…` for an issue would send every such link to a page that opens something else (Ship and Peek
  * drop their own the same way, LIN-3 and LIN-4 security reviews).
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
@@ -24,10 +24,10 @@ const OWN_WORDS: Readonly<Record<number, string>> = { [KIND.DOCUMENT]: 'document
 const LEAF_WORDS: Readonly<Record<number, string>> = { [KIND.DOCUMENT]: 'document' }
 
 /**
- * Leaf's root paths that are not another app's word: its pages, the old `/f/` and the `naddr` form `/o/`, and
- * `assets`, which the server answers from disk and never hands to the app (`deploy/nginx.conf`).
+ * Leaf's root paths that are not another app's word: its pages, the `naddr` form `/o/`, and `assets`, which the
+ * server answers from disk and never hands to the app (`deploy/nginx.conf`). The old `/f/` is not one since LIN-8.
  */
-export const LEAF_ROOT_PATHS: readonly string[] = ['f', 'o', 'document', 'topic', 'topics', 'new', 'app', 'assets']
+export const LEAF_ROOT_PATHS: readonly string[] = ['o', 'document', 'topic', 'topics', 'new', 'app', 'assets']
 
 /**
  * The shared writer's words, minus a word that is one of Leaf's own pages unless it is that kind's own (`topic` for a

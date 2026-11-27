@@ -201,8 +201,8 @@ export function buildManifest(pubkey: string, createdAtMs: number, appUrl = DEFA
       to its document, drawing the page's chip, and with `#block-<id>` that
       block's live part — Ship's issue links in the same shape. The block menu's
       Copy link builds from it. The `/f/<naddr>` links Leaf gave out before are
-      not declared, and Leaf no longer writes them: only Leaf opens them, until
-      the stored ones are rewritten.
+      not declared, and no app opens them since the stored ones were rewritten
+      (LIN-8).
     */
     ['urls', `${appUrl.replace(/\/+$/, '')}/document/<slug>-<d>#block-<block>`, DOCUMENT],
   ]

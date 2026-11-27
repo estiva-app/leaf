@@ -162,9 +162,9 @@ function Frame() {
   const naddr = route.page === 'file' ? route.naddr : named.address ? naddrOf(named.address) : null
   const byAddress = useFileByAddress(naddr && !open ? naddr : null)
   /*
-    The address bar holds the link every app reads (SPEC §7.7). A document opened by its old `/f/<naddr>` link gets
-    its own link, block included; another app's file gets its own app's path on Leaf's host, slug refreshed, so
-    swapping the host opens it there (RFC 0.5 §7.7 rule 4).
+    The address bar holds the link every app reads (SPEC §7.7). A document opened by its `/o/<naddr>` gets its own
+    link, block included; another app's file gets its own app's path on Leaf's host, slug refreshed, so swapping the
+    host opens it there (RFC 0.5 §7.7 rule 4).
   */
   const shown = route.page === 'file' || route.page === 'path' ? (open?.file ?? byAddress.file) : null
   const readable = shown && !shown.unreachable ? shown : null
@@ -178,8 +178,8 @@ function Frame() {
   useEffect(() => {
     // `/` is `pagePath`'s answer for an address no file can have (TES-4): stay on the page it is open at.
     if (!relink || relink === '/' || relink === window.location.pathname) return
-    // A kind with no word keeps the address it was reached at (SPEC §7.7 rule 4); only the old `/f/` moves to its `/o/`.
-    if (relink.startsWith('/o/') && !window.location.pathname.startsWith('/f/')) return
+    // A kind with no word keeps the address it was reached at (SPEC §7.7 rule 4).
+    if (relink.startsWith('/o/')) return
     if (shown?.address) rememberPath(relink, shown.address)
     replace(`${relink}${window.location.hash}`)
   }, [relink, shown])
