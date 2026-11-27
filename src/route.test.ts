@@ -9,7 +9,7 @@ import { documentPath, newDocumentFolderOf, newDocumentPath, ownPath, pagePath, 
 describe('ownPath, the place sign-in returns to', () => {
   it('keeps a path of Leaf’s own, query and all', () => {
     expect(ownPath('/new?folder=a78e60b1')).toBe('/new?folder=a78e60b1')
-    expect(ownPath('/f/naddr1xyz')).toBe('/f/naddr1xyz')
+    expect(ownPath('/o/naddr1xyz')).toBe('/o/naddr1xyz')
   })
 
   it.each([
@@ -60,11 +60,14 @@ describe("a document's link", () => {
     expect(routeOf(`/document/${D}`)).toEqual({ page: 'document', d: D })
   })
 
-  it('opens a file by its /o/ address, still by its old /f/ link, and a path with no d is Home', () => {
+  it('opens a file by its /o/ address, and a path with no d is Home', () => {
     expect(routeOf('/o/naddr1xyz')).toEqual({ page: 'file', naddr: 'naddr1xyz' })
-    expect(routeOf('/f/naddr1xyz')).toEqual({ page: 'file', naddr: 'naddr1xyz' })
     expect(routeOf('/document/plan')).toEqual({ page: 'home' })
     expect(routeOf('/document/%E0%A4%A')).toEqual({ page: 'home' })
+  })
+
+  it('reads no file out of the old /f/<naddr> link: it is a word nobody declared, naming no d (LIN-8)', () => {
+    expect(routeOf('/f/naddr1xyz')).toEqual({ page: 'path', word: 'f', ref: 'naddr1xyz' })
   })
 
   it("writes a document at its own link, another app's file at its app's word, and never the old /f/", () => {

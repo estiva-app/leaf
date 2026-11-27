@@ -117,7 +117,7 @@ export async function documentAddressOf(d: string): Promise<string | null> {
   return authors.size === 1 ? `${KIND.DOCUMENT}:${[...authors][0]}:${d}` : null
 }
 
-/** The `naddr` of an address `<kind>:<pubkey>:<d>`: what `/o/` (and the old `/f/`) know a file by. */
+/** The `naddr` of an address `<kind>:<pubkey>:<d>`: what `/o/` knows a file by. */
 export function naddrOf(address: string): string {
   const [kind, pubkey, ...d] = address.split(':')
   return encodeNaddr({ kind: Number(kind), pubkey, identifier: d.join(':'), relays: [] })

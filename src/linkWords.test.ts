@@ -60,7 +60,6 @@ describe('the link Leaf writes for a file', () => {
   })
 
   it.each([
-    ['the old /f/', 'https://elsewhere.example/f/<slug>-<d>'],
     ['Leaf’s document page', 'https://elsewhere.example/document/<slug>-<d>'],
     ['the /o/ form', 'https://elsewhere.example/o/<slug>-<d>'],
     ['the server’s assets folder', 'https://elsewhere.example/assets/<slug>-<d>'],

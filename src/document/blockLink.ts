@@ -45,7 +45,7 @@ const PERSON = ['wheel', 'touchmove', 'keydown', 'pointerdown'] as const
 
 /*
   The fragment: a new one is a new arrival. Not the path — the page is drawn afresh for each document, and an
-  old `/f/` link replaced by the document's own link is the same arrival, not a second one.
+  `/o/` address replaced by the document's own link is the same arrival, not a second one.
 */
 const currentArrival = () => window.location.hash
 function subscribeArrival(changed: () => void): () => void {

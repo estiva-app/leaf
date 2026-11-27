@@ -9,9 +9,9 @@ import { linkWords } from './linkWords'
  * the shape Leaf's manifest declares in `urls` (SPEC §7.7), so every app reads
  * it as the page's chip and `#block-<id>` as one of its blocks; the word is
  * Miky's (the issue conversation, 2026-10-19). A file reached at `/o/` is
- * replaced by its own link once it is found. The old `/f/<naddr>` still opens
- * the same way until the stored links are rewritten (LIN-5); Leaf no longer
- * writes it.
+ * replaced by its own link once it is found. Leaf's old `/f/<naddr>` is read by
+ * nothing (LIN-8): the stored ones were rewritten, and `f` is no longer a word
+ * of Leaf's, so such a link names no file.
  *
  * Any other `/<word>/<ref>` is another app's address for a file, with Leaf's
  * host in front: `/issue/<slug>-<d>` is the Ship issue `ship.estiva.app` shows
@@ -35,7 +35,7 @@ export const EXPLORE_TOPICS_PATH = '/topics'
  * Leaf's own first segments, which are never another app's word. Not `topic`: it is Peek's word, which Leaf matches
  * first for its own topic page (LTN-3), and still the word another app's topic is drawn at here (`ownerPathOf`).
  */
-const OWN = new Set(['f', 'o', 'document', 'new', 'app'])
+const OWN = new Set(['o', 'document', 'new', 'app'])
 
 /** Whether `word` can be another app's type word on Leaf's host: the grammar {@link routeOf} reads, and none of Leaf's own. */
 export function isOtherAppsWord(word: string): boolean {
@@ -44,8 +44,8 @@ export function isOtherAppsWord(word: string): boolean {
 
 /** The place a path names. Anything Leaf does not know is Home. */
 export function routeOf(pathname: string): Route {
-  // `/o/` is the `naddr` form every app answers; `/f/` is Leaf's old one, read until the stored links are rewritten.
-  const file = /^\/[fo]\/([a-z0-9]+)\/?$/.exec(pathname)
+  // `/o/` is the `naddr` form every app answers.
+  const file = /^\/o\/([a-z0-9]+)\/?$/.exec(pathname)
   if (file) return { page: 'file', naddr: file[1] }
   // The slug is decoration and may be stale after a rename: only the `d` names the page (SPEC §7.7).
   const document = /^\/document\/([^/]+)\/?$/.exec(pathname)

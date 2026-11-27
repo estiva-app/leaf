@@ -1,7 +1,8 @@
 /**
  * A document's link, `/document/<slug>-<d>`: what Copy link gives out and every
- * app reads (SPEC §7.7). It opens the page; the old `/f/<naddr>` link still
- * does, and gives way to the new one; a `d` two authors hold opens nothing.
+ * app reads (SPEC §7.7). It opens the page; its `/o/<naddr>` address does too,
+ * and gives way to it; the old `/f/<naddr>` opens nothing (LIN-8); a `d` two
+ * authors hold opens nothing.
  */
 import { BODY_SLOT, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { descriptionTextToBlockDocument, serializeBlockDocument, type PublishResult } from '@estiva-app/protocol'
@@ -122,9 +123,18 @@ describe("a document's link", () => {
     await waitFor(() => expect(document.title).toBe('Plan – Leaf'))
   })
 
-  it('takes the place of an old /f/ link once the page is found, keeping the block it named', async () => {
+  it('opens nothing from the old /f/ link to a page you can read, and leaves it in the address bar (LIN-8)', async () => {
     listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
-    window.history.replaceState(null, '', '/f/naddr1mine#block-28bad0a555e9')
+    window.history.replaceState(null, '', '/f/naddr1mine')
+    render(<App />)
+    expect(await screen.findByText("You can't open this page")).toBeTruthy()
+    expect(screen.queryByText('Written by QA-1.')).toBeNull()
+    expect(window.location.pathname).toBe('/f/naddr1mine')
+  })
+
+  it('takes the place of an /o/ address once the page is found, keeping the block it named', async () => {
+    listed[QA] = [page('a'.repeat(64), 'naddr1mine', 'Written by QA-1.')]
+    window.history.replaceState(null, '', '/o/naddr1mine#block-28bad0a555e9')
     const entries = window.history.length
     render(<App />)
     expect(await screen.findByText('Written by QA-1.')).toBeTruthy()
@@ -194,11 +204,11 @@ describe("a document's link", () => {
     expect(screen.getByText('Read by its address.')).toBe(before)
   })
 
-  it('gives an old /f/ link its own link before the Folders are read, without asking for the page again (APP-3)', async () => {
+  it('gives an /o/ address its own link before the Folders are read, without asking for the page again (APP-3)', async () => {
     const release = holdTree()
     const naddr = naddrOf(`30842:${'a'.repeat(64)}:${D}`)
     relay.read[naddr] = page('a'.repeat(64), naddr, 'Read by its address.')
-    window.history.replaceState(null, '', `/f/${naddr}`)
+    window.history.replaceState(null, '', `/o/${naddr}`)
     render(<App />)
     expect(await screen.findByText('Read by its address.')).toBeTruthy()
     await waitFor(() => expect(window.location.pathname).toBe(`/document/plan-${D}`))
