@@ -169,6 +169,11 @@ function Frame() {
   const shown = route.page === 'file' || route.page === 'path' ? (open?.file ?? byAddress.file) : null
   const readable = shown && !shown.unreachable ? shown : null
   // Another app's file waits for the manifests, which name its word: until then the writer could only give its `/o/`.
+  // A startup read that failed is asked again here, as the page's own read of them once did.
+  const waitsForWords = Boolean(readable && !isDocument(readable) && !linkWords.read)
+  useEffect(() => {
+    if (waitsForWords) void declaredManifests().catch(() => null)
+  }, [waitsForWords])
   const relink = readable && (isDocument(readable) || linkWords.read) ? pagePath({ ...readable, title: readable.slots.title?.value }, linkWords.words) : null
   useEffect(() => {
     // `/` is `pagePath`'s answer for an address no file can have (TES-4): stay on the page it is open at.

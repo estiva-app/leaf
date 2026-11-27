@@ -29,6 +29,7 @@ import { CommentsColumn } from '../comments/CommentsColumn'
 import { useSideColumn } from './sideColumn'
 import { isDocument, rowOf, typeOf } from '../folders/tree'
 import { replace } from '../route'
+import { useLinkWords } from '../linkWords'
 import { useTabTitle } from '../tabTitle'
 import { isSiblingHost, topicPath } from '../topics/topicLinks'
 import { useTopicPage, type TopicPageState } from '../topics/useTopicPage'
@@ -364,8 +365,10 @@ const firstName = (name: string) => name.split(' ')[0] ?? name
  * an issue says what it is in, as Ship's rows name an issue's project.
  */
 function FileRows({ files, label, directory }: { files: readonly ForeignObject[]; label: string; directory: Record<string, LinkedProfile> }) {
+  // A row's link takes its word from the manifests, drawn again once they are read (LIN-5).
+  const { words } = useLinkWords()
   const rows = files.map((file): ItemListRow => {
-    const row = rowOf(file)
+    const row = rowOf(file, words)
     const kind = kindOf(file)
     const linked = linkedFrom(file, { hrefOf: () => row.href, previewText: () => '', directory })
     const status = linked.status?.options.find((option) => option.value === linked.status?.value)

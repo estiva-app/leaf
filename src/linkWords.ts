@@ -20,16 +20,26 @@ const KIND_BARE_FILE = 30840
 /** The word each kind Leaf has a page of its own for opens at here: what `routeOf` reads back. */
 const OWN_WORDS: Readonly<Record<number, string>> = { [KIND.DOCUMENT]: 'document', [KIND_BARE_FILE]: 'topic' }
 
+/** Leaf's own kind, whose word is Leaf's to declare: its document page. */
+const LEAF_WORDS: Readonly<Record<number, string>> = { [KIND.DOCUMENT]: 'document' }
+
 /**
  * Leaf's root paths that are not another app's word: its pages, the old `/f/` and the `naddr` form `/o/`, and
  * `assets`, which the server answers from disk and never hands to the app (`deploy/nginx.conf`).
  */
 export const LEAF_ROOT_PATHS: readonly string[] = ['f', 'o', 'document', 'topic', 'topics', 'new', 'app', 'assets']
 
-/** The shared writer's words, minus a word that is one of Leaf's own pages, with Leaf's own two kept. */
+/**
+ * The shared writer's words, minus a word that is one of Leaf's own pages unless it is that kind's own (`topic` for a
+ * topic, as Peek declares it), with the document's kept: Leaf owns that kind. A word the shared writer withholds, as
+ * when a stranger's manifest makes it read back as another kind, stays withheld, so Leaf writes the `/o/` Peek and
+ * Ship write.
+ */
 export function leafLinkWordsOf(manifests: readonly LinkManifest[]): FileLinkWords {
-  const byKind = Object.fromEntries(Object.entries(fileLinkWordsOf(manifests).byKind).filter(([, word]) => !LEAF_ROOT_PATHS.includes(word.toLowerCase())))
-  return { byKind: { ...byKind, ...OWN_WORDS } }
+  const byKind = Object.fromEntries(
+    Object.entries(fileLinkWordsOf(manifests).byKind).filter(([kind, word]) => !LEAF_ROOT_PATHS.includes(word.toLowerCase()) || OWN_WORDS[Number(kind)] === word),
+  )
+  return { byKind: { ...byKind, ...LEAF_WORDS } }
 }
 
 /** The words before the manifests are read: Leaf's own only, so another app's file links its `/o/<naddr>` until then. */
