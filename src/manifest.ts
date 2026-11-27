@@ -66,9 +66,9 @@ export function manifestContent() {
         id: 'add-document',
         label: 'New document',
         description:
-          'Start a document in a team: a title and, if you like, a one- or two-sentence summary. Everyone who ' +
-          'can read the team can read and change it, and the team lists it straight away. Write its text ' +
-          'afterwards with describe.',
+          'Start a document in a team: a title and, if you like, a one- or two-sentence summary and its first ' +
+          'text. Everyone who can read the team can read and change it, and the team lists it straight away. ' +
+          'Change its text afterwards with describe.',
         effect: 'writes',
         appliesTo: FOLDER,
         emits: { kind: KIND.DOCUMENT, placement: 'h', listed: true },
@@ -78,6 +78,13 @@ export function manifestContent() {
             title: { type: 'string' },
             // The root's `summary` tag, the seed `summarize` folds over (SPEC §6.12). Plain text, so no `format`.
             summary: { type: 'string' },
+            /*
+              The new document's text (KIN-9): another app's ⌘K starts a document with the answer you just read. It is
+              `content`, so a consumer writes the root with none and the text as its first `description` change, as
+              Leaf's own describe writes it (SPEC §7.3, §6.10), in the block format Leaf saves.
+              why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-new-files-text-is-its-first-change.md
+            */
+            description: { type: 'string', target: 'content', format: BLOCK_DOCUMENT_FORMAT },
           },
           required: ['title'],
         },
