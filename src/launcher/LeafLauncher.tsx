@@ -23,7 +23,7 @@ import { readDocument } from '../document/save'
 import { naddrOf } from '../fileAddress'
 import { openerOf } from '../pages/OwnerRow'
 import { useFileByAddress } from '../pages/useFileByAddress'
-import { documentPath, dOf, filePath, navigate, usePathname } from '../route'
+import { documentPath, dOf, navigate, pagePath, usePathname } from '../route'
 import { topicOpener } from '../topics/topicLinks'
 import type { ForeignObject } from '@estiva-app/interop'
 import { applyAction, creatableUnder, leafMaySign } from './creations'
@@ -92,7 +92,7 @@ export function openFile(address: string, title: string): void {
       // Only to Estiva's own Ship or Peek, beside Leaf: any key can publish a manifest until WOR-2, so a planted
       // address never takes the tab elsewhere (KIN-5 security review). Anything else opens here.
       if (away && isSibling(away)) window.location.assign(away)
-      else navigate(filePath(naddr))
+      else navigate(pagePath({ kind, address }))
     })
 }
 

@@ -6,6 +6,7 @@ import { relayLabel } from '../config'
 import { exactly, whenOf } from '../home/recent'
 import type { HomeRow, Recent } from '../home/useRecent'
 import { pagePath } from '../route'
+import { useLinkWords } from '../linkWords'
 import { useReportFailure } from '@/lib/failureReports'
 
 export interface HomePageProps {
@@ -52,6 +53,8 @@ function placeAndWho(r: HomeRow): string {
 export function HomePage({ relay, state, name, recent = null, onNew, now }: HomePageProps) {
   // Home is drawn afresh each time it opens, so "now" is when it opened.
   const [opened] = useState(() => Date.now())
+  // A card's link takes its word from the manifests, drawn again once they are read (LIN-5).
+  const { words } = useLinkWords()
   useReportFailure(state === 'failed' ? 'not-reached' : recent === 'failed' ? 'not-loaded' : undefined)
   if (!relay || state === 'off') {
     const line = !relay
@@ -87,7 +90,7 @@ export function HomePage({ relay, state, name, recent = null, onNew, now }: Home
             ) : (
               recent.map((r) => (
                 // The summary is one line under the title, and the row keeps to one line without it (the short-summary story's LeafRecentRow).
-                <Card key={r.address} href={pagePath(r)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
+                <Card key={r.address} href={pagePath(r, words)} hover="fill" quietUntilHover className={cn('flex gap-3 px-3 py-2', r.summary ? 'items-start' : 'items-center')}>
                   <span className={cn('flex shrink-0', r.summary && 'pt-0.5')}>
                     <KindIcon kind={r.type ? thingKindOf(r.kind) : 'file'} />
                   </span>

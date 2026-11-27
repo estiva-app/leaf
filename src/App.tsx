@@ -32,7 +32,8 @@ import { useRecent } from './home/useRecent'
 import { FilePage } from './pages/FilePage'
 import { useSidebarFold } from './frame/folds'
 import { useFileByAddress } from './pages/useFileByAddress'
-import { rememberPath, useOwnerPath, usePathAddress } from './pages/usePathAddress'
+import { rememberPath, usePathAddress } from './pages/usePathAddress'
+import { useLinkWords } from './linkWords'
 import { ExploreTopicsPage } from './pages/ExploreTopicsPage'
 import { HomePage } from './pages/HomePage'
 import { TopicPage } from './pages/TopicPage'
@@ -120,9 +121,11 @@ function Frame() {
   }, [signedIn])
 
   const { folders, children, opened, setOpen, setFolderOpen } = workspace
+  const linkWords = useLinkWords()
   const groups = useMemo(
-    () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }),
-    [folders, children, opened, setOpen, setFolderOpen],
+    // Drawn again when the manifests are read: a row's link takes its word from them (LIN-5).
+    () => groupsOf(folders, { children, opened, setOpen, setFolderOpen }, linkWords.words),
+    [folders, children, opened, setOpen, setFolderOpen, linkWords.words],
   )
   // Which teams you are in: those first, the rest folded under Other teams (Katerina, 23 November, as Peek's Teams column).
   const yours = useTeamsYouAreIn(useMemo(() => folders?.map(({ folder }) => folder.id), [folders]))
@@ -165,12 +168,13 @@ function Frame() {
   */
   const shown = route.page === 'file' || route.page === 'path' ? (open?.file ?? byAddress.file) : null
   const readable = shown && !shown.unreachable ? shown : null
-  const elsewhere = readable && !isDocument(readable) ? readable : null
-  const ownerPath = useOwnerPath(elsewhere)
-  const relink = readable && isDocument(readable) ? pagePath({ ...readable, title: readable.slots.title?.value }) : elsewhere ? ownerPath : null
+  // Another app's file waits for the manifests, which name its word: until then the writer could only give its `/o/`.
+  const relink = readable && (isDocument(readable) || linkWords.read) ? pagePath({ ...readable, title: readable.slots.title?.value }, linkWords.words) : null
   useEffect(() => {
-    // `/` is `pagePath`'s answer for a document with no address it can write (TES-4): stay on the page it is open at.
+    // `/` is `pagePath`'s answer for an address no file can have (TES-4): stay on the page it is open at.
     if (!relink || relink === '/' || relink === window.location.pathname) return
+    // A kind with no word keeps the address it was reached at (SPEC §7.7 rule 4); only the old `/f/` moves to its `/o/`.
+    if (relink.startsWith('/o/') && !window.location.pathname.startsWith('/f/')) return
     if (shown?.address) rememberPath(relink, shown.address)
     replace(`${relink}${window.location.hash}`)
   }, [relink, shown])

@@ -3,7 +3,7 @@
  * links Ship and Peek write for a file open that file in Leaf (TES-4).
  *
  * Leaf writes a document's address as `/document/<slug>-<d>` and shows another
- * app's file at that app's own word (`ownerPathOf`; record
+ * app's file at that app's own word (the shared writer, LIN-5; record
  * a-files-path-is-the-same-on-every-apps-host). Each must read back as the
  * same file whatever the title holds, and Leaf must never write an address it
  * cannot read back as the file it was written for.
@@ -18,7 +18,8 @@ import { documentPath, pagePath, routeOf } from './route'
 
 // `fileAddress` reads manifests and files from the relay; the rules tested here read neither.
 vi.mock('./relay/bridge', () => ({ query: async () => [] }))
-const { lookupFor, ownerPathOf } = await import('./fileAddress')
+const { lookupFor } = await import('./fileAddress')
+const { leafLinkWordsOf } = await import('./linkWords')
 
 const settings = {
   seed: process.env.FC_SEED ? Number(process.env.FC_SEED) : 20_261_120,
@@ -30,6 +31,9 @@ if (!Number.isSafeInteger(settings.seed) || !Number.isSafeInteger(settings.numRu
 
 // Ship's and Peek's manifests as they publish them (each repo's `scripts/publish-manifest.ts`).
 const SHIP = {
+  pubkey: 'b'.repeat(64),
+  created_at: 1_793_500_000,
+  content: JSON.stringify({ projections: { 30850: {}, 30851: {} } }),
   tags: [
     ['d', 'estiva-ship'], ['k', '30850'], ['k', '30851'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'],
     ['urls', 'https://ship.estiva.app/project/<slug>-<d>#block-<block>', '30850'],
@@ -38,6 +42,9 @@ const SHIP = {
   ],
 }
 const PEEK = {
+  pubkey: 'a'.repeat(64),
+  created_at: 1_793_000_000,
+  content: JSON.stringify({ aspect: 'conversation' }),
   tags: [
     ['d', 'estiva-peek'], ['k', '30840'], ['web', 'https://peek.estiva.app/o/<bech32>', 'naddr'],
     ['urls', 'https://peek.estiva.app/topic/<slug>-<d>', '30840'],
@@ -63,7 +70,7 @@ const anyDArb = fc.oneof(
 describe("Leaf's page addresses", () => {
   it("a document's address opens that document again, whatever its title", () => {
     fc.assert(
-      fc.property(hex64, fc.uuid(), titleArb, (pubkey, d, title) => {
+      fc.property(hex64, fc.uuid({ version: 4 }), titleArb, (pubkey, d, title) => {
         const path = pagePath({ kind: 30842, address: `30842:${pubkey}:${d}`, title })
         expect(path).toBe(documentPath(d, title))
         expect(routeOf(path), path).toEqual({ page: 'document', d })
@@ -72,13 +79,13 @@ describe("Leaf's page addresses", () => {
     )
   })
 
-  it("a document whose d an address cannot carry is opened by its naddr, never by an address that names nothing", () => {
+  it('a document whose d no file can have gets no address at all, never one that names another file or the old /f/', () => {
     fc.assert(
       fc.property(hex64, anyDArb, titleArb, (pubkey, d, title) => {
-        const path = pagePath({ kind: 30842, address: `30842:${pubkey}:${d}`, naddr: 'naddr1qqtest', title })
+        const path = pagePath({ kind: 30842, address: `30842:${pubkey}:${d}`, title })
         const route = routeOf(path)
         if (route.page === 'document') expect(route.d, path).toBe(d)
-        else expect(route, path).toEqual({ page: 'file', naddr: 'naddr1qqtest' })
+        else expect(path).toBe('/')
       }),
       settings,
     )
@@ -98,16 +105,26 @@ describe("Leaf's page addresses", () => {
     )
   })
 
-  it("the address Leaf shows for another app's file opens that file, and none is written that would not", () => {
+  it("the address Leaf shows and copies for another app's file opens that file, and none is written that would not", () => {
+    const words = leafLinkWordsOf(MANIFESTS)
     fc.assert(
       fc.property(hex64, anyDArb, titleArb, fc.constantFrom(30850, 30851), (pubkey, d, title, kind) => {
-        const file = { kind, address: `${kind}:${pubkey}:${d}`, openUrl: 'https://ship.estiva.app/o/naddr1x', slots: { title: { value: title } } }
-        const path = ownerPathOf(file, MANIFESTS)
-        if (path === undefined) return
+        const path = pagePath({ kind, address: `${kind}:${pubkey}:${d}`, title }, words)
+        if (path === '/') return
         const route = routeOf(path)
         expect(route.page, path).toBe('path')
         if (route.page !== 'path') return
         expect(lookupFor(route.word, route.ref, MANIFESTS), path).toEqual({ by: 'd', identifier: d, kinds: [kind] })
+      }),
+      settings,
+    )
+  })
+
+  it("a random lowercase uuid always gets the owner's word, so Leaf writes the same link as Ship", () => {
+    const words = leafLinkWordsOf(MANIFESTS)
+    fc.assert(
+      fc.property(hex64, fc.uuid({ version: 4 }), titleArb, fc.constantFrom(['issue', 30851], ['project', 30850]), (pubkey, d, title, [word, kind]) => {
+        expect(pagePath({ kind: kind as number, address: `${kind}:${pubkey}:${d}`, title }, words)).toBe(`/${word}/${objectRef(d, title)}`)
       }),
       settings,
     )

@@ -45,7 +45,7 @@ function root(kind: number, pubkey: string, d: string): SignedEvent {
   return { id: `${kind}${pubkey}`.slice(0, 64), sig: '0'.repeat(128), pubkey, kind, created_at: 1, tags: [['d', d]], content: '' }
 }
 
-const { addressOfPath, ownerBlockLinker, ownerPathOf } = await import('./fileAddress')
+const { addressOfPath, ownerBlockLinker } = await import('./fileAddress')
 const { matchObjectUrl, urlPatternsOf } = await import('@estiva-app/interop')
 
 beforeEach(() => {
@@ -81,28 +81,6 @@ describe('the file another app’s path names on Leaf’s host', () => {
   it('names no file for a message’s path, nor for one with no identity in it', async () => {
     expect(await addressOfPath('message', 'f'.repeat(64))).toBeNull()
     expect(await addressOfPath('issue', 'no-identity-here')).toBeNull()
-  })
-})
-
-describe('the path Leaf shows for another app’s file', () => {
-  const issue = { kind: 30851, address: `30851:${MIKY}:${D}`, openUrl: 'https://ship.estiva.app/o/naddr1x', slots: { title: { value: 'Plan the launch' } } }
-
-  it('is its own app’s word on Leaf’s host, with the slug of its title', () => {
-    expect(ownerPathOf(issue, [SHIP, PEEK])).toBe(`/issue/plan-the-launch-${D}`)
-  })
-
-  it('takes the word from the app its "Open in" goes to, not from another manifest claiming the kind', () => {
-    const planted = manifest(MALLORY, [['d', 'x'], ['k', '30851'], ['web', 'https://elsewhere.example/o/<bech32>', 'naddr'], ['urls', 'https://elsewhere.example/ticket/<slug>-<d>', '30851']])
-    expect(ownerPathOf(issue, [planted, SHIP])).toBe(`/issue/plan-the-launch-${D}`)
-    expect(ownerPathOf({ ...issue, openUrl: 'https://unknown.example/o/naddr1x' }, [planted, SHIP])).toBeUndefined()
-  })
-
-  it.each([
-    ['Leaf’s own page word, which would read every such file as not found', 'https://ship.estiva.app/document/<slug>-<d>'],
-    ['a word the URL parser takes for another origin', 'https://ship.estiva.app/\\evil.example/<slug>-<d>'],
-  ])('is not written to the bar when the opener’s manifest names %s', (_, pattern) => {
-    const opener = manifest(MALLORY, [['d', 'x'], ['k', '30851'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', pattern, '30851']])
-    expect(ownerPathOf(issue, [opener])).toBeUndefined()
   })
 })
 

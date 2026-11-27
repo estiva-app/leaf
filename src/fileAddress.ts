@@ -12,7 +12,7 @@
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
-import { blockUrlOf, eventIdFromRef, identifierFromRef, matchObjectUrl, objectRef, urlPatternsOf, type ForeignObject } from '@estiva-app/interop'
+import { blockUrlOf, eventIdFromRef, identifierFromRef, matchObjectUrl, urlPatternsOf, type ForeignObject } from '@estiva-app/interop'
 import { encodeNaddr, KIND } from '@estiva-app/protocol'
 import { query } from './relay/bridge'
 import { declaredManifests } from './relay/manifests'
@@ -135,36 +135,11 @@ function manifestOfLink<M extends Manifest>(url: string, manifests: readonly M[]
 }
 
 /**
- * Where another app's file is drawn on Leaf's host: `/<word>/<slug>-<d>`, the
- * word its own app declares for its kind (rule 4: drawn at its right type
- * word, the slug refreshed). The owner is the manifest the file's "Open in"
- * link came from, so no other relay member's 31990 chooses the word. Undefined
- * when that app declares no address for the kind.
- */
-export function ownerPathOf(file: Pick<ForeignObject, 'kind' | 'address' | 'openUrl' | 'slots'>, manifests: readonly Manifest[]): string | undefined {
-  if (!file.address || !file.openUrl) return undefined
-  const owner = manifestOfLink(file.openUrl, manifests)
-  /*
-    Only a word Leaf's own route reads back as another app's: a manifest anyone may publish could otherwise name
-    `document` (Leaf's page route, so every such file reads as not found) or `\evil.example`, which the URL parser
-    takes for another origin and `replaceState` refuses with a throw.
-  */
-  const shape =
-    owner &&
-    fileShapesOf(owner).find((s) => s.kind === file.kind && isOtherAppsWord(s.word) && s.pattern.split('?')[0].includes('<d>') && !s.pattern.includes('#/'))
-  if (!shape) return undefined
-  const d = file.address.split(':').slice(2).join(':')
-  // A path carries a uuid `d` only; for any other, Leaf's route would read back nothing, or another file (TES-4).
-  if (identifierFromRef(d) !== d) return undefined
-  return `/${shape.word}/${objectRef(d, file.slots.title?.value)}`
-}
-
-/**
  * Leaf's link to one block of another app's file (LTX-6): the block shape its
  * own app declares for its kind (Ship's `/issue/<slug>-<d>#block-<block>`),
  * with Leaf's host in front, so every reader takes it as that block and Leaf
  * opens it there. The owner is the manifest the file's "Open in" link came
- * from, as for `ownerPathOf`. Undefined when that app declares no block shape
+ * from, so no other relay member's 31990 chooses the shape. Undefined when that app declares no block shape
  * for the kind (Peek's topics): there is then no link to copy.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
@@ -177,7 +152,11 @@ export function ownerBlockLinker(
   const owner = address && file.openUrl ? manifestOfLink(file.openUrl, manifests) : undefined
   if (!address || !owner) return undefined
   const here = origin.replace(/\/+$/, '')
-  // Only a word Leaf's own route reads back as another app's, for the reasons `ownerPathOf` gives.
+  /*
+    Only a word Leaf's own route reads back as another app's: a manifest anyone may publish could otherwise name
+    `document` (Leaf's page route, so every such link reads as not found) or `\evil.example`, which the URL parser
+    takes for another origin.
+  */
   const shapes = urlPatternsOf(owner).flatMap((p) => {
     const at = originOf(p.pattern)
     const word = typeWordOf(p.pattern)

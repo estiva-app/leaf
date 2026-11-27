@@ -71,7 +71,7 @@ describe("Leaf's 31990 declares the document app (SPEC §7.8, LTX-4)", () => {
     const event = buildManifest(ME, 1_759_000_000_000, 'https://leaf.estiva.app/')
     expect(event.tags.filter((t) => t[0] === 'k')).toEqual([['k', String(KIND.DOCUMENT)]])
     expect(JSON.parse(event.content).aspect).toBe('document')
-    expect(event.tags.find((t) => t[0] === 'web')).toEqual(['web', 'https://leaf.estiva.app/f/<bech32>', 'naddr'])
+    expect(event.tags.find((t) => t[0] === 'web')).toEqual(['web', 'https://leaf.estiva.app/o/<bech32>', 'naddr'])
   })
 })
 

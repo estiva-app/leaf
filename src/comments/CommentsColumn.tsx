@@ -26,7 +26,7 @@ import {
   type DraftStore,
   type RowLine,
 } from '@estiva-app/conversation'
-import { contentFormatOf, decodeNevent, decodeNpub, encodeNaddr, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
+import { contentFormatOf, decodeNevent, decodeNpub, findNostrUris, toRenderTree, type EditorDocument, type Embed, type Imeta } from '@estiva-app/protocol'
 import {
   caretOnOpen,
   Chip,
@@ -730,8 +730,7 @@ function messageLinkOf(quoted: CommentItem, nameOf: (pubkey: string) => string |
   const name = nameOf(quoted.by) ?? 'Someone'
   const picture = pictures[quoted.by]
   const bot = bots[quoted.by]
-  const [kind, pubkey, ...d] = (here ?? '').split(':')
-  const page = here ? `${pagePath({ kind: Number(kind), address: here, naddr: encodeNaddr({ kind: Number(kind), pubkey, identifier: d.join(':'), relays: [] }) })}${COMMENTS_HASH}` : ''
+  const page = here ? `${pagePath({ kind: Number(here.split(':')[0]), address: here })}${COMMENTS_HASH}` : ''
   return {
     state: 'ready',
     linked: {

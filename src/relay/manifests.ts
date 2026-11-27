@@ -1,6 +1,7 @@
 import { createProjectionCache, MANIFEST_TTL_MS, type QueryFn } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { query } from './bridge'
+import { setLinkWords } from '../linkWords'
 
 /**
  * Every resolve's manifest cache, one per tab: the tree, the page and its references open together, so one cache
@@ -25,6 +26,8 @@ export function declaredManifests(): Promise<SignedEvent[]> {
   const read = query([{ kinds: [KIND_MANIFEST], limit: DECLARED_LIMIT }]).then(
     (found) => {
       if (found.length === 0 && manifests?.read === read) manifests = null
+      // Every link Leaf writes takes its words from this read (LIN-5); an empty one keeps the last words.
+      if (found.length) setLinkWords(found)
       return [...found].sort((a, b) => b.created_at - a.created_at)
     },
     (error: unknown) => {

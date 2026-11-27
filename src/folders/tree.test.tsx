@@ -1,4 +1,5 @@
 import type { ForeignObject } from '@estiva-app/interop'
+import { addrToNaddr } from '@estiva-app/protocol'
 import { describe, expect, it } from 'vitest'
 import { shipIssue, shipProject } from '../pages/fixtures/shipFiles'
 import { findDocument, findFile, groupsOf, typeOf, type Expansion } from './tree'
@@ -100,14 +101,17 @@ describe('the Folders tree', () => {
 
   it("reads a project's issues when its row opens, and finds an issue opened from there", () => {
     const project = shipProject()
-    const issue = shipIssue()
+    // An id a file can have: the fixture's `ltx-3` gets no link (LIN-5).
+    const issue = { ...shipIssue(), address: `30851:${A}:${D}` }
     const closed = groupsOf([folder([project])], none)![0].nodes![0]
     expect(closed.hasChildren).toBe(true)
     expect(closed.children).toBeUndefined()
     const read: Expansion = { ...none, children: { [project.ref]: [issue] }, opened: new Set([project.ref]) }
     const open = groupsOf([folder([project])], read)![0].nodes![0]
     expect(open.open).toBe(true)
-    expect(open.children?.map((n) => n.href)).toEqual([`/f/${issue.naddr}`])
+    // Before the manifests are read, its /o/ address; once they are, the word Ship gives it.
+    expect(open.children?.map((n) => n.href)).toEqual([`/o/${addrToNaddr(issue.address)}`])
+    expect(groupsOf([folder([project])], read, { byKind: { 30851: 'issue' } })![0].nodes![0].children?.map((n) => n.href)).toEqual([`/issue/sidebar-should-not-show-peek-topics-${D}`])
     expect(findFile([folder([project])], read.children, issue.naddr!)?.file.ref).toBe(issue.ref)
   })
 })

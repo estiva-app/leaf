@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { addressOfPath, documentAddressOf, ownerBlockLinker, ownerPathOf } from '../fileAddress'
+import { addressOfPath, documentAddressOf, ownerBlockLinker } from '../fileAddress'
 import { declaredManifests } from '../relay/manifests'
 import { routeOf } from '../route'
 
@@ -46,25 +46,6 @@ export function usePathAddress(path: { word: string; ref: string } | null): { ad
   const remembered = known.get(key)
   if (remembered) return { address: remembered, loading: false }
   return read?.key === key ? { address: read.address, loading: false } : { address: null, loading: true }
-}
-
-/** Where another app's file is drawn on Leaf's host (`ownerPathOf`), once the manifests are read; null until then. */
-export function useOwnerPath(file: ForeignObject | null): string | null {
-  const [found, setFound] = useState<{ file: ForeignObject; path: string | null } | null>(null)
-  useEffect(() => {
-    if (!file) return
-    let live = true
-    void declaredManifests()
-      .then((manifests) => ownerPathOf(file, manifests) ?? null)
-      .catch(() => null)
-      .then((path) => {
-        if (live) setFound({ file, path })
-      })
-    return () => {
-      live = false
-    }
-  }, [file])
-  return file && found?.file === file ? found.path : null
 }
 
 /**
